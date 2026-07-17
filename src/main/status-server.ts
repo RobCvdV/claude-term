@@ -87,7 +87,8 @@ export class StatusServer {
       gitFetchedAt: 0,
       status: {
         tabId,
-        activity: 'starting',
+        claudeActive: false,
+        activity: 'idle',
         busySince: null,
         sessionId: null,
         exitCode: null,
@@ -117,9 +118,11 @@ export class StatusServer {
     return false
   }
 
+  /** The tab's shell (the PTY) exited — the whole tab is done. */
   markExited(tabId: TabId, exitCode: number): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
+    tab.status.claudeActive = false
     tab.status.activity = 'exited'
     tab.status.exitCode = exitCode
     tab.status.busySince = null
@@ -129,14 +132,17 @@ export class StatusServer {
   markRestarted(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
-    tab.status.activity = 'starting'
+    tab.status.claudeActive = false
+    tab.status.activity = 'idle'
     tab.status.exitCode = null
+    tab.status.payload = null
     this.onUpdate(tab.status)
   }
 
   private handleStatusline(tabId: TabId, payload: StatuslinePayload): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
+    tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
     const dir = payload.workspace?.current_dir ?? payload.cwd
@@ -157,20 +163,36 @@ export class StatusServer {
     // your input" ping that arrives AFTER `Stop` — mapping it to
     // needs-attention left tabs stuck yellow and blocked refocus-on-idle. Real
     // dialogs come through PermissionRequest/Elicitation, which precede Stop.
+    const name = evt.hook_event_name ?? ''
+    // SessionStart/End gate the whole Claude UI: the tab is a plain terminal
+    // until a claude session starts, and returns to one when it ends.
+    if (name === 'SessionStart') {
+      tab.status.claudeActive = true
+      tab.status.activity = 'idle'
+      tab.status.busySince = null
+      this.onUpdate(tab.status)
+      return
+    }
+    if (name === 'SessionEnd') {
+      tab.status.claudeActive = false
+      tab.status.activity = 'idle'
+      tab.status.busySince = null
+      tab.status.payload = null
+      this.onUpdate(tab.status)
+      return
+    }
     const map: Record<string, ActivityState> = {
-      SessionStart: 'idle',
       UserPromptSubmit: 'busy',
       Stop: 'idle',
       PermissionRequest: 'needs-attention',
-      Elicitation: 'needs-attention',
-      SessionEnd: 'ended'
+      Elicitation: 'needs-attention'
     }
-    const name = evt.hook_event_name ?? ''
     if (name === 'PermissionRequest' || name === 'Elicitation') {
       this.onAttention(tabId, name)
     }
     const next = map[name]
     if (!next) return
+    tab.status.claudeActive = true
     tab.status.activity = next
     tab.status.busySince = next === 'busy' ? Date.now() : null
     this.onUpdate(tab.status)

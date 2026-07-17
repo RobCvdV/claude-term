@@ -6,7 +6,7 @@ interface Props {
   tabId: TabId
   active: boolean
   status: TabStatus | null
-  onRestart: (resume: boolean) => void
+  onRestart: () => void
   onClose: () => void
 }
 
@@ -47,10 +47,9 @@ export function TerminalPane({ tabId, active, status, onRestart, onClose }: Prop
       {exited && (
         <div className="exit-overlay">
           <span>
-            claude exited{status?.exitCode !== null ? ` (code ${status?.exitCode})` : ''}
+            terminal exited{status?.exitCode !== null ? ` (code ${status?.exitCode})` : ''}
           </span>
-          <button onClick={() => onRestart(false)}>Restart</button>
-          {status?.sessionId && <button onClick={() => onRestart(true)}>Resume session</button>}
+          <button onClick={onRestart}>New shell</button>
           <button onClick={onClose}>Close tab</button>
         </div>
       )}

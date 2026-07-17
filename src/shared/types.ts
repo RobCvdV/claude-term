@@ -58,6 +58,9 @@ export interface GitInfo {
 /** Everything the renderer needs to draw one tab's status bar. */
 export interface TabStatus {
   tabId: TabId
+  /** true while a claude session runs in the tab's shell (SessionStart..End).
+   *  When false the tab is a plain terminal and the Claude UI is hidden. */
+  claudeActive: boolean
   activity: ActivityState
   /** epoch ms of the moment activity last flipped to busy (for elapsed timer) */
   busySince: number | null

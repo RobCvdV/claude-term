@@ -11,20 +11,16 @@ interface Props {
   onRename: (tabId: TabId, title: string) => void
 }
 
-function dotClass(activity: ActivityState | undefined): string {
-  switch (activity) {
-    case 'busy':
-      return 'dot busy'
-    case 'needs-attention':
-      return 'dot attention'
-    case 'exited':
-    case 'ended':
-      return 'dot exited'
-    case 'idle':
-      return 'dot idle'
-    default:
-      return 'dot starting'
+function dotClass(status: TabStatus | null | undefined): string {
+  if (status?.activity === 'exited') return 'dot exited'
+  // plain terminal (no claude session) — neutral dot
+  if (!status?.claudeActive) return 'dot terminal'
+  const map: Partial<Record<ActivityState, string>> = {
+    busy: 'dot busy',
+    'needs-attention': 'dot attention',
+    idle: 'dot idle'
   }
+  return map[status.activity] ?? 'dot idle'
 }
 
 export function TabBar({ tabs, activeId, statuses, onSelect, onClose, onNewTab, onRename }: Props): React.JSX.Element {
@@ -57,7 +53,7 @@ export function TabBar({ tabs, activeId, statuses, onSelect, onClose, onNewTab, 
           }}
           title={tab.cwd}
         >
-          <span className={dotClass(statuses[tab.tabId]?.activity)} />
+          <span className={dotClass(statuses[tab.tabId])} />
           {editingId === tab.tabId ? (
             <input
               ref={inputRef}

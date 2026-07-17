@@ -3,9 +3,9 @@ import type { SlashCommand, TabId, TabInfo, TabStatus } from '../shared/types'
 
 export interface ClaudeTermApi {
   initialCwd(): Promise<string | null>
-  createTab(cwd: string): Promise<TabInfo>
+  createTab(cwd?: string): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
-  restartTab(tabId: TabId, resume: boolean): Promise<void>
+  restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
@@ -33,7 +33,7 @@ const api: ClaudeTermApi = {
   initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
   createTab: (cwd) => ipcRenderer.invoke('tab:create', cwd),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
-  restartTab: (tabId, resume) => ipcRenderer.invoke('tab:restart', tabId, resume),
+  restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),

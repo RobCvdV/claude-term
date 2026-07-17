@@ -1,6 +1,7 @@
 import { app } from 'electron'
-import { chmodSync, copyFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
+import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'fs'
+import { basename, join } from 'path'
+import { resolveClaudePath } from './shell-env'
 
 const HOOK_EVENTS = [
   'SessionStart',
@@ -27,6 +28,50 @@ export function installForwarder(): string {
   chmodSync(dest, 0o755)
   forwarderPath = dest
   return dest
+}
+
+/**
+ * Set up a private startup environment so that running `claude` in the tab's
+ * shell transparently gets our `--settings` overlay (so its hooks + statusline
+ * feed this app, which is how we detect a session starting/ending and show the
+ * UI). Returns env vars to merge into the PTY.
+ *
+ * zsh: a private ZDOTDIR whose .zshrc sources the user's real config then
+ * defines a `claude` function (a shell function beats PATH lookup, so it works
+ * regardless of how the user's rc orders PATH). Other shells: a PATH shim
+ * (best effort). Nothing in ~/ is modified.
+ */
+export async function setupClaudeLauncher(shell: string): Promise<Record<string, string>> {
+  const realClaude = await resolveClaudePath()
+  const dir = app.getPath('userData')
+
+  if (basename(shell).includes('zsh')) {
+    const zdotdir = join(dir, 'zdotdir')
+    mkdirSync(zdotdir, { recursive: true })
+    // .zshenv resets ZDOTDIR back to ours in case the user's config changes it,
+    // so our .zshrc (with the claude function) is guaranteed to run.
+    writeFileSync(
+      join(zdotdir, '.zshenv'),
+      `[[ -f "$HOME/.zshenv" ]] && source "$HOME/.zshenv"\nexport ZDOTDIR="${zdotdir}"\n`
+    )
+    writeFileSync(join(zdotdir, '.zprofile'), `[[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile"\n`)
+    writeFileSync(join(zdotdir, '.zlogin'), `[[ -f "$HOME/.zlogin" ]] && source "$HOME/.zlogin"\n`)
+    writeFileSync(
+      join(zdotdir, '.zshrc'),
+      `[[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"\n` +
+        `# claude-term: wrap claude so sessions started here light up the UI\n` +
+        `claude() { "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"; }\n`
+    )
+    return { ZDOTDIR: zdotdir }
+  }
+
+  // fallback: PATH shim
+  const binDir = join(dir, 'bin')
+  mkdirSync(binDir, { recursive: true })
+  const shim = join(binDir, 'claude')
+  writeFileSync(shim, `#!/bin/bash\nexec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"\n`)
+  chmodSync(shim, 0o755)
+  return { CLAUDE_TERM_BIN: binDir }
 }
 
 /**

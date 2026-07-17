@@ -33,6 +33,11 @@ export async function loginShellEnv(): Promise<NodeJS.ProcessEnv> {
   return cachedEnv
 }
 
+export async function resolveShell(): Promise<string> {
+  const env = await loginShellEnv()
+  return env.SHELL || '/bin/zsh'
+}
+
 export async function resolveClaudePath(): Promise<string> {
   if (cachedClaudePath) return cachedClaudePath
   const env = await loginShellEnv()

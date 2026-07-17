@@ -25,6 +25,12 @@ export function setTerminalEscapeHandler(fn: (tabId: TabId) => void): void {
   escapeHandler = fn
 }
 
+/** App registers this to update a tab's title from the shell's OSC title. */
+let titleHandler: (tabId: TabId, title: string) => void = () => {}
+export function setTerminalTitleHandler(fn: (tabId: TabId, title: string) => void): void {
+  titleHandler = fn
+}
+
 function ensureRouting(): void {
   if (dataUnsub) return
   dataUnsub = window.claudeTerm.onPtyData((tabId, data) => {
@@ -59,6 +65,7 @@ export function createTerm(tabId: TabId): TermEntry {
 
   term.onData((data) => window.claudeTerm.ptyInput(tabId, data))
   term.onResize(({ cols, rows }) => window.claudeTerm.ptyResize(tabId, cols, rows))
+  term.onTitleChange((title) => title && titleHandler(tabId, title))
 
   // Return true so xterm still sends the key to the PTY (Claude Code closes its
   // overlay); after that dispatches, App decides whether to refocus the box.

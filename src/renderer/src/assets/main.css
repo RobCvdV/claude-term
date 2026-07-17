@@ -147,6 +147,10 @@ body {
 .dot.starting {
   background: var(--fg-dim);
 }
+.dot.terminal {
+  background: transparent;
+  border: 1px solid var(--fg-dim);
+}
 
 @keyframes pulse {
   50% {

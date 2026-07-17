@@ -4,13 +4,19 @@ import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
-import { disposeTerm, focusTerm, setTerminalEscapeHandler } from './term-registry'
+import {
+  disposeTerm,
+  focusTerm,
+  setTerminalEscapeHandler,
+  setTerminalTitleHandler
+} from './term-registry'
 
 export default function App(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabInfo[]>([])
   const [activeId, setActiveId] = useState<TabId | null>(null)
   const [statuses, setStatuses] = useState<Record<TabId, TabStatus | null>>({})
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
+  const manualTitles = useRef(new Set<TabId>())
 
   useEffect(() => {
     return window.claudeTerm.onStatusUpdate((status) => {
@@ -23,65 +29,86 @@ export default function App(): React.JSX.Element {
   const statusesRef = useRef(statuses)
   statusesRef.current = statuses
 
-  // a dialog (permission prompt / question picker) appeared: give the active
-  // tab's terminal keyboard focus so arrows+Enter work immediately.
-  // Background tabs only get their attention dot — never steal focus across tabs.
+  const focusBox = (tabId: TabId): void => {
+    requestAnimationFrame(() => promptRefs.current.get(tabId)?.focus())
+  }
+
+  // a dialog (permission prompt / question picker) appeared: focus the active
+  // tab's terminal so arrows+Enter work immediately. Never steal across tabs.
   useEffect(() => {
     return window.claudeTerm.onAttention((tabId) => {
       if (tabId === activeIdRef.current) focusTerm(tabId)
     })
   }, [])
 
-  // on tab switch, put focus where it's most useful: a tab with a pending
-  // dialog gets the terminal (answer it now — this also covers a background
-  // tab that raised a dialog while unfocused); any other tab gets the prompt
-  // box, ready to type.
+  // plain terminals: adopt the shell's OSC title unless the user renamed the tab.
+  useEffect(() => {
+    setTerminalTitleHandler((tabId, title) => {
+      if (manualTitles.current.has(tabId)) return
+      setTabs((prev) => prev.map((t) => (t.tabId === tabId ? { ...t, title } : t)))
+    })
+  }, [])
+
+  // on tab switch, put focus where it's most useful: a claude session with a
+  // pending dialog → terminal; an active claude session → prompt box; a plain
+  // terminal (no session) → terminal.
   useEffect(() => {
     if (!activeId) return
     const raf = requestAnimationFrame(() => {
-      if (statusesRef.current[activeId]?.activity === 'needs-attention') {
-        focusTerm(activeId)
-      } else {
+      const st = statusesRef.current[activeId]
+      if (st?.claudeActive && st.activity !== 'needs-attention') {
         promptRefs.current.get(activeId)?.focus()
+      } else {
+        focusTerm(activeId)
       }
     })
     return () => cancelAnimationFrame(raf)
   }, [activeId])
 
-  // when a tab settles back to idle (Stop hook: a response, dialog, or other
-  // terminal interaction just finished), return focus to the active tab's
-  // prompt box — no more ⌘K to get back. Fires only on the transition into
-  // idle (git/statusline updates re-send the same activity and are ignored),
-  // and only for the active tab.
+  // React to claude session start/stop and turn completion on the active tab.
   const prevActivityRef = useRef<Record<TabId, ActivityState>>({})
+  const prevClaudeRef = useRef<Record<TabId, boolean>>({})
   useEffect(() => {
     for (const [tabId, status] of Object.entries(statuses)) {
-      const cur = status?.activity
-      if (!cur) continue
+      if (!status) continue
+      const isActive = tabId === activeIdRef.current
+
+      // claude session appeared → focus the box; ended → back to the terminal
+      const prevClaude = prevClaudeRef.current[tabId]
+      if (status.claudeActive !== prevClaude) {
+        prevClaudeRef.current[tabId] = status.claudeActive
+        if (isActive) {
+          if (status.claudeActive) focusBox(tabId)
+          else focusTerm(tabId)
+        }
+      }
+
+      // a claude turn finished (transition into idle) → return focus to the box
+      const cur = status.activity
       const prev = prevActivityRef.current[tabId]
-      if (cur === prev) continue
-      prevActivityRef.current[tabId] = cur
-      if (cur === 'idle' && prev && prev !== 'idle' && tabId === activeIdRef.current) {
-        promptRefs.current.get(tabId)?.focus()
+      if (cur !== prev) {
+        prevActivityRef.current[tabId] = cur
+        if (status.claudeActive && cur === 'idle' && prev && prev !== 'idle' && isActive) {
+          promptRefs.current.get(tabId)?.focus()
+        }
       }
     }
   }, [statuses])
 
-  // Esc in the terminal: overlays with no turn (e.g. /usage, /config, /help)
-  // close on Esc but fire no Stop hook, so refocus-on-idle can't help. The Esc
-  // is forwarded to the PTY (closing the overlay); here we hand focus back to
-  // the box — but only when idle, so Esc used to interrupt a response (busy) or
-  // cancel a dialog (needs-attention) is left to those flows.
+  // Esc in the terminal closes an overlay (/usage, /config, …) that fires no
+  // hook; forward it to the PTY and return focus to the box — only while a
+  // claude session is idle (so shell Esc, interrupts, and dialogs are untouched).
   useEffect(() => {
     setTerminalEscapeHandler((tabId) => {
       if (tabId !== activeIdRef.current) return
-      const activity = statusesRef.current[tabId]?.activity
-      if (activity === 'busy' || activity === 'needs-attention') return
+      const st = statusesRef.current[tabId]
+      if (!st?.claudeActive) return
+      if (st.activity === 'busy' || st.activity === 'needs-attention') return
       promptRefs.current.get(tabId)?.focus()
     })
   }, [])
 
-  const openTab = useCallback(async (cwd: string): Promise<void> => {
+  const openTab = useCallback(async (cwd?: string): Promise<void> => {
     const tab = await window.claudeTerm.createTab(cwd)
     setTabs((prev) => [...prev, tab])
     setActiveId(tab.tabId)
@@ -89,7 +116,9 @@ export default function App(): React.JSX.Element {
     setStatuses((prev) => ({ ...prev, [tab.tabId]: snapshot }))
   }, [])
 
-  const newTab = useCallback(async (): Promise<void> => {
+  // ⌘T opens a plain terminal in the home dir; ⌘O opens one in a chosen folder.
+  const newTab = useCallback((): void => void openTab(), [openTab])
+  const openFolder = useCallback(async (): Promise<void> => {
     const cwd = await window.claudeTerm.pickFolder()
     if (cwd) await openTab(cwd)
   }, [openTab])
@@ -98,11 +127,8 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (autoOpened.current) return
     autoOpened.current = true
-    void window.claudeTerm.initialCwd().then((cwd) => {
-      if (cwd) void openTab(cwd)
-    })
-    // scripted E2E aid: open a tab in a given cwd, bypassing the folder picker
-    ;(window as unknown as Record<string, unknown>).__openTab = (cwd: string) => openTab(cwd)
+    void window.claudeTerm.initialCwd().then((cwd) => openTab(cwd ?? undefined))
+    ;(window as unknown as Record<string, unknown>).__openTab = (cwd?: string) => openTab(cwd)
   }, [openTab])
 
   const closeTab = useCallback(
@@ -110,7 +136,7 @@ export default function App(): React.JSX.Element {
       const status = statuses[tabId]
       if (
         status?.activity === 'busy' &&
-        !window.confirm('This session is still working. Close it?')
+        !window.confirm('A claude session is still working. Close this tab?')
       ) {
         return
       }
@@ -131,16 +157,18 @@ export default function App(): React.JSX.Element {
         return rest
       })
       promptRefs.current.delete(tabId)
+      manualTitles.current.delete(tabId)
     },
     [statuses]
   )
 
   const renameTab = useCallback((tabId: TabId, title: string): void => {
+    manualTitles.current.add(tabId)
     setTabs((prev) => prev.map((t) => (t.tabId === tabId ? { ...t, title } : t)))
   }, [])
 
-  const restartTab = useCallback((tabId: TabId, resume: boolean): void => {
-    void window.claudeTerm.restartTab(tabId, resume)
+  const restartTab = useCallback((tabId: TabId): void => {
+    void window.claudeTerm.restartTab(tabId)
   }, [])
 
   useEffect(() => {
@@ -148,7 +176,10 @@ export default function App(): React.JSX.Element {
       if (!e.metaKey) return
       if (e.key === 't') {
         e.preventDefault()
-        void newTab()
+        newTab()
+      } else if (e.key === 'o') {
+        e.preventDefault()
+        void openFolder()
       } else if (e.key === 'w') {
         e.preventDefault()
         if (activeId) closeTab(activeId)
@@ -165,9 +196,10 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [tabs, activeId, newTab, closeTab])
+  }, [tabs, activeId, newTab, openFolder, closeTab])
 
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
+  const showClaudeUi = !!activeStatus?.claudeActive
 
   return (
     <div className="app">
@@ -177,13 +209,13 @@ export default function App(): React.JSX.Element {
         statuses={statuses}
         onSelect={setActiveId}
         onClose={closeTab}
-        onNewTab={() => void newTab()}
+        onNewTab={newTab}
         onRename={renameTab}
       />
       {tabs.length === 0 ? (
         <div className="empty-state">
-          <p>No sessions.</p>
-          <button onClick={() => void newTab()}>Open a project folder (⌘T)</button>
+          <p>No terminals open.</p>
+          <button onClick={newTab}>New terminal (⌘T)</button>
         </div>
       ) : (
         <>
@@ -193,22 +225,21 @@ export default function App(): React.JSX.Element {
               tabId={tab.tabId}
               active={tab.tabId === activeId}
               status={statuses[tab.tabId] ?? null}
-              onRestart={(resume) => restartTab(tab.tabId, resume)}
+              onRestart={() => restartTab(tab.tabId)}
               onClose={() => closeTab(tab.tabId)}
             />
           ))}
-          <StatusBar status={activeStatus} />
-          {tabs.map((tab) => (
-            <div key={tab.tabId} style={{ display: tab.tabId === activeId ? 'block' : 'none' }}>
-              <PromptBox
-                ref={(h) => {
-                  if (h) promptRefs.current.set(tab.tabId, h)
-                }}
-                tabId={tab.tabId}
-                disabled={['exited', 'ended'].includes(statuses[tab.tabId]?.activity ?? '')}
-              />
-            </div>
-          ))}
+          {showClaudeUi && activeStatus && <StatusBar status={activeStatus} />}
+          {showClaudeUi && activeId && (
+            <PromptBox
+              key={activeId}
+              ref={(h) => {
+                if (h) promptRefs.current.set(activeId, h)
+              }}
+              tabId={activeId}
+              disabled={false}
+            />
+          )}
         </>
       )}
     </div>

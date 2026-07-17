@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { basename } from 'path'
+import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import type { TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
@@ -38,11 +39,12 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
   const { ptys, status } = services
 
-  ipcMain.handle('tab:create', async (_e, cwd: string): Promise<TabInfo> => {
+  ipcMain.handle('tab:create', async (_e, cwd?: string): Promise<TabInfo> => {
+    const dir = cwd || homedir()
     const tabId: TabId = randomUUID()
-    status.registerTab(tabId, cwd)
-    await ptys.create(tabId, cwd)
-    return { tabId, cwd, title: basename(cwd) }
+    status.registerTab(tabId, dir)
+    await ptys.create(tabId, dir)
+    return { tabId, cwd: dir, title: basename(dir) || dir }
   })
 
   ipcMain.handle('tab:close', (_e, tabId: TabId) => {
@@ -50,10 +52,9 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     status.removeTab(tabId)
   })
 
-  ipcMain.handle('tab:restart', async (_e, tabId: TabId, resume: boolean) => {
-    const sessionId = resume ? (status.snapshot(tabId)?.sessionId ?? null) : null
+  ipcMain.handle('tab:restart', async (_e, tabId: TabId) => {
     status.markRestarted(tabId)
-    await ptys.restart(tabId, sessionId)
+    await ptys.restart(tabId)
   })
 
   ipcMain.handle('dialog:pickFolder', async (): Promise<string | null> => {
