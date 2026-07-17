@@ -1,15 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { SlashCommand, TabId, TabInfo, TabStatus } from '../shared/types'
+import type { PersistedSession, SlashCommand, TabId, TabInfo, TabStatus } from '../shared/types'
 
 export interface ClaudeTermApi {
   initialCwd(): Promise<string | null>
-  createTab(cwd?: string): Promise<TabInfo>
+  createTab(cwd?: string, resume?: string): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
+  loadSession(): Promise<PersistedSession | null>
+  saveSession(state: PersistedSession): Promise<void>
+  saveSessionSync(state: PersistedSession): void
   ptyInput(tabId: TabId, data: string): void
   ptyResize(tabId: TabId, cols: number, rows: number): void
   submitPrompt(tabId: TabId, text: string): void
@@ -31,13 +34,16 @@ function subscribe<Args extends unknown[]>(
 
 const api: ClaudeTermApi = {
   initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
-  createTab: (cwd) => ipcRenderer.invoke('tab:create', cwd),
+  createTab: (cwd, resume) => ipcRenderer.invoke('tab:create', cwd, resume),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
+  loadSession: () => ipcRenderer.invoke('session:load'),
+  saveSession: (state) => ipcRenderer.invoke('session:save', state),
+  saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),
   ptyInput: (tabId, data) => ipcRenderer.send('pty:input', tabId, data),
   ptyResize: (tabId, cols, rows) => ipcRenderer.send('pty:resize', tabId, cols, rows),
   submitPrompt: (tabId, text) => ipcRenderer.send('prompt:submit', tabId, text),

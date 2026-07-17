@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ActivityState, TabId, TabInfo, TabStatus } from '../../shared/types'
+import type {
+  ActivityState,
+  PersistedSession,
+  TabId,
+  TabInfo,
+  TabStatus
+} from '../../shared/types'
 import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
@@ -31,6 +37,13 @@ export default function App(): React.JSX.Element {
   ;(window as unknown as Record<string, unknown>).__activeTabId = activeId
   const statusesRef = useRef(statuses)
   statusesRef.current = statuses
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
+  const colorsRef = useRef(colors)
+  colorsRef.current = colors
+  // gate persistence until the initial restore finishes, so an early save can't
+  // clobber the saved session with an empty/partial tab list
+  const restoredRef = useRef(false)
 
   const focusBox = (tabId: TabId): void => {
     requestAnimationFrame(() => promptRefs.current.get(tabId)?.focus())
@@ -129,13 +142,83 @@ export default function App(): React.JSX.Element {
     if (cwd) await openTab(cwd)
   }, [openTab])
 
+  // Recreate the saved tabs (in order), resuming any that had a live claude
+  // session. Colors/titles/active tab are restored too.
+  const restoreSession = useCallback(async (saved: PersistedSession): Promise<void> => {
+    const created: TabInfo[] = []
+    const colorInit: Record<TabId, string> = {}
+    const statusInit: Record<TabId, TabStatus | null> = {}
+    for (const t of saved.tabs) {
+      const resume = t.claudeActive && t.sessionId ? t.sessionId : undefined
+      const tab = await window.claudeTerm.createTab(t.cwd, resume)
+      created.push({ ...tab, title: t.title || tab.title })
+      if (t.manualTitle) manualTitles.current.add(tab.tabId)
+      if (t.color) colorInit[tab.tabId] = t.color
+      statusInit[tab.tabId] = await window.claudeTerm.statusSnapshot(tab.tabId)
+    }
+    setTabs(created)
+    setColors((prev) => ({ ...prev, ...colorInit }))
+    setStatuses((prev) => ({ ...prev, ...statusInit }))
+    const active = created[saved.activeIndex] ?? created[0]
+    if (active) setActiveId(active.tabId)
+  }, [])
+
   const autoOpened = useRef(false)
   useEffect(() => {
     if (autoOpened.current) return
     autoOpened.current = true
-    void window.claudeTerm.initialCwd().then((cwd) => openTab(cwd ?? undefined))
     ;(window as unknown as Record<string, unknown>).__openTab = (cwd?: string) => openTab(cwd)
-  }, [openTab])
+    void (async () => {
+      // dev override wins; otherwise restore the saved session; otherwise home
+      const initial = await window.claudeTerm.initialCwd()
+      if (initial) {
+        await openTab(initial)
+      } else {
+        const saved = await window.claudeTerm.loadSession()
+        if (saved && saved.tabs.length > 0) await restoreSession(saved)
+        else await openTab()
+      }
+      restoredRef.current = true
+    })()
+  }, [openTab, restoreSession])
+
+  // Assemble the current session for persistence (reads refs so it's stable).
+  const buildPersisted = useCallback(
+    (): PersistedSession => ({
+      tabs: tabsRef.current.map((t) => {
+        const st = statusesRef.current[t.tabId]
+        return {
+          cwd: st?.cwd || t.cwd,
+          title: t.title,
+          manualTitle: manualTitles.current.has(t.tabId),
+          color: colorsRef.current[t.tabId],
+          sessionId: st?.sessionId ?? null,
+          claudeActive: !!st?.claudeActive
+        }
+      }),
+      activeIndex: Math.max(
+        0,
+        tabsRef.current.findIndex((t) => t.tabId === activeIdRef.current)
+      )
+    }),
+    []
+  )
+
+  // debounced save on any change to the persisted-relevant state
+  useEffect(() => {
+    if (!restoredRef.current) return
+    const id = setTimeout(() => void window.claudeTerm.saveSession(buildPersisted()), 400)
+    return () => clearTimeout(id)
+  }, [tabs, statuses, colors, activeId, buildPersisted])
+
+  // guarantee the final state is written on quit/reload (async save may not run)
+  useEffect(() => {
+    const flush = (): void => {
+      if (restoredRef.current) window.claudeTerm.saveSessionSync(buildPersisted())
+    }
+    window.addEventListener('beforeunload', flush)
+    return () => window.removeEventListener('beforeunload', flush)
+  }, [buildPersisted])
 
   const closeTab = useCallback(
     (tabId: TabId): void => {

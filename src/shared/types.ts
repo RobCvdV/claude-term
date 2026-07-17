@@ -66,6 +66,9 @@ export interface TabStatus {
   busySince: number | null
   sessionId: string | null
   exitCode: number | null
+  /** most recent known cwd (updated from the statusline payload while a claude
+   *  session runs); used to restore/resume the tab in the right folder. */
+  cwd: string
   payload: StatuslinePayload | null
   git: GitInfo | null
 }
@@ -82,4 +85,21 @@ export interface TabInfo {
   tabId: TabId
   cwd: string
   title: string
+}
+
+/** One tab as saved to disk between launches. */
+export interface PersistedTab {
+  cwd: string
+  title: string
+  /** the user renamed this tab, so don't let the shell's OSC title override it */
+  manualTitle: boolean
+  color?: string
+  /** the claude session id to --resume, if one was running when we last saved */
+  sessionId: string | null
+  claudeActive: boolean
+}
+
+export interface PersistedSession {
+  tabs: PersistedTab[]
+  activeIndex: number
 }

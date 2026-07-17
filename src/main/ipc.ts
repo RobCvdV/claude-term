@@ -1,8 +1,9 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
-import { basename } from 'path'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { basename, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
-import type { TabId, TabInfo } from '../shared/types'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
+import type { PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listCommands, searchFiles } from './completions'
@@ -39,13 +40,17 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
   const { ptys, status } = services
 
-  ipcMain.handle('tab:create', async (_e, cwd?: string): Promise<TabInfo> => {
-    const dir = cwd || homedir()
-    const tabId: TabId = randomUUID()
-    status.registerTab(tabId, dir)
-    await ptys.create(tabId, dir)
-    return { tabId, cwd: dir, title: basename(dir) || dir }
-  })
+  ipcMain.handle(
+    'tab:create',
+    async (_e, cwd?: string, resume?: string): Promise<TabInfo> => {
+      // a persisted cwd may no longer exist — fall back to home rather than fail
+      const dir = cwd && existsSync(cwd) ? cwd : homedir()
+      const tabId: TabId = randomUUID()
+      status.registerTab(tabId, dir)
+      await ptys.create(tabId, dir, resume)
+      return { tabId, cwd: dir, title: basename(dir) || dir }
+    }
+  )
 
   ipcMain.handle('tab:close', (_e, tabId: TabId) => {
     ptys.kill(tabId)
@@ -71,6 +76,30 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   // dev/scripting convenience: auto-open a tab in this folder at startup
   ipcMain.handle('app:initialCwd', () => process.env.CLAUDE_TERM_DEFAULT_CWD ?? null)
+
+  // tab/session persistence across launches
+  const sessionFile = join(app.getPath('userData'), 'session.json')
+  const readSession = (): PersistedSession | null => {
+    try {
+      return JSON.parse(readFileSync(sessionFile, 'utf8')) as PersistedSession
+    } catch {
+      return null
+    }
+  }
+  const writeSession = (state: PersistedSession): void => {
+    try {
+      writeFileSync(sessionFile, JSON.stringify(state, null, 2))
+    } catch {
+      /* best effort — a failed save just means no restore next launch */
+    }
+  }
+  ipcMain.handle('session:load', () => readSession())
+  ipcMain.handle('session:save', (_e, state: PersistedSession) => writeSession(state))
+  // synchronous variant for beforeunload, where async IPC may not finish
+  ipcMain.on('session:saveSync', (e, state: PersistedSession) => {
+    writeSession(state)
+    e.returnValue = true
+  })
 
   ipcMain.handle('completions:commands', (_e, tabId: TabId) => {
     const cwd = status.getCwd(tabId)

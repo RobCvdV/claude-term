@@ -60,7 +60,13 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
       join(zdotdir, '.zshrc'),
       `[[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"\n` +
         `# claude-term: wrap claude so sessions started here light up the UI\n` +
-        `claude() { "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"; }\n`
+        `claude() { "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"; }\n` +
+        `# claude-term: auto-resume a persisted session (CLAUDE_TERM_RESUME is set\n` +
+        `# per-tab only when restoring, so normal shells never trigger this)\n` +
+        `if [[ -n "$CLAUDE_TERM_RESUME" ]]; then\n` +
+        `  __ctr="$CLAUDE_TERM_RESUME"; unset CLAUDE_TERM_RESUME\n` +
+        `  claude --resume "$__ctr"; unset __ctr\n` +
+        `fi\n`
     )
     return { ZDOTDIR: zdotdir }
   }

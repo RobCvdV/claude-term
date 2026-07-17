@@ -92,6 +92,7 @@ export class StatusServer {
         busySince: null,
         sessionId: null,
         exitCode: null,
+        cwd,
         payload: null,
         git: null
       }
@@ -148,6 +149,7 @@ export class StatusServer {
     const dir = payload.workspace?.current_dir ?? payload.cwd
     if (dir && dir !== tab.cwd) {
       tab.cwd = dir
+      tab.status.cwd = dir
       tab.gitFetchedAt = 0
     }
     this.onUpdate(tab.status)
