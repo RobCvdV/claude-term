@@ -1,4 +1,7 @@
 import { execFile } from 'child_process'
+import { existsSync, readdirSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
 import { loginShellEnv, resolveClaudePath } from './shell-env'
 
 /** One live session as reported by `claude agents --json`. Background agents
@@ -46,4 +49,24 @@ export async function listLiveAgents(): Promise<LiveAgent[]> {
 export async function findLiveBackgroundAgent(sessionId: string): Promise<LiveAgent | null> {
   const agents = await listLiveAgents()
   return agents.find((a) => a.kind === 'background' && a.sessionId === sessionId) ?? null
+}
+
+/**
+ * Whether Claude Code has a resumable transcript for this session id. Claude
+ * stores transcripts at ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl; the
+ * cwd encoding isn't worth reproducing, so we scan the project dirs for the
+ * file. A persisted id can outlive its transcript (short-lived/aborted session,
+ * or Claude's retention cleanup), and `--resume` on a missing one errors "No
+ * conversation found" — callers use this to fall back to a fresh shell instead.
+ */
+export function transcriptExists(sessionId: string): boolean {
+  const projects = join(homedir(), '.claude', 'projects')
+  let dirs: string[]
+  try {
+    dirs = readdirSync(projects)
+  } catch {
+    return false
+  }
+  const file = `${sessionId}.jsonl`
+  return dirs.some((d) => existsSync(join(projects, d, file)))
 }

@@ -7,7 +7,7 @@ import type { PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listCommands, searchFiles } from './completions'
-import { findLiveBackgroundAgent } from './agents'
+import { findLiveBackgroundAgent, transcriptExists } from './agents'
 
 export interface AppServices {
   ptys: PtyManager
@@ -43,12 +43,20 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const dir = cwd && existsSync(cwd) ? cwd : homedir()
     const tabId: TabId = randomUUID()
     status.registerTab(tabId, dir)
-    // If the persisted session became a live daemon-managed background agent,
-    // `--resume` refuses it — reconnect with `claude attach <job id>` instead.
-    // (Only checked on restore, i.e. when `resume` is set.)
-    const bg = resume ? await findLiveBackgroundAgent(resume) : null
-    if (bg) await ptys.create(tabId, dir, undefined, bg.id ?? bg.sessionId)
-    else await ptys.create(tabId, dir, resume)
+    // Resolve how to restore a persisted session (only when `resume` is set):
+    //  - live daemon-managed background agent → `claude attach` (--resume
+    //    refuses a live bg session);
+    //  - resumable transcript on disk → `claude --resume`;
+    //  - neither (id outlived its transcript / was never written) → plain
+    //    shell, so we don't dump "No conversation found" into the tab.
+    if (resume) {
+      const bg = await findLiveBackgroundAgent(resume)
+      if (bg) await ptys.create(tabId, dir, undefined, bg.id ?? bg.sessionId)
+      else if (transcriptExists(resume)) await ptys.create(tabId, dir, resume)
+      else await ptys.create(tabId, dir)
+    } else {
+      await ptys.create(tabId, dir)
+    }
     return { tabId, cwd: dir, title: basename(dir) || dir }
   })
 
