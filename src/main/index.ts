@@ -8,6 +8,13 @@ import { loginShellEnv } from './shell-env'
 let mainWindow: BrowserWindow | null = null
 const services = createServices(() => mainWindow)
 
+// opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
+// unless the env var is set, so normal runs are unaffected. Must be set before
+// the app is ready.
+if (process.env['CLAUDE_TERM_DEBUG_PORT']) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env['CLAUDE_TERM_DEBUG_PORT'])
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,

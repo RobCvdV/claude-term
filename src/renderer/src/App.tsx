@@ -27,6 +27,8 @@ export default function App(): React.JSX.Element {
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
+  // exposed for scripted E2E testing (CDP) — harmless at runtime
+  ;(window as unknown as Record<string, unknown>).__activeTabId = activeId
   const statusesRef = useRef(statuses)
   statusesRef.current = statuses
 
