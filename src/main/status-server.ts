@@ -1,0 +1,235 @@
+import { createServer, Server } from 'http'
+import { randomBytes } from 'crypto'
+import { execFile } from 'child_process'
+import type {
+  ActivityState,
+  GitInfo,
+  HookEvent,
+  StatuslinePayload,
+  TabId,
+  TabStatus
+} from '../shared/types'
+
+const GIT_CACHE_MS = 5_000
+const GIT_TIMER_MS = 10_000
+
+interface TabState {
+  status: TabStatus
+  cwd: string
+  gitFetchedAt: number
+}
+
+/**
+ * One local HTTP server receives both feeds from inside each Claude Code
+ * session: the statusline JSON (via the forwarder script) and hook events
+ * (via "type":"http" hooks). It keeps the latest status per tab and derives
+ * a busy/idle activity state, so the renderer can re-render at any time.
+ */
+export class StatusServer {
+  readonly token = randomBytes(16).toString('hex')
+  private server: Server | null = null
+  private tabs = new Map<TabId, TabState>()
+  private gitTimer: NodeJS.Timeout | null = null
+  port = 0
+
+  /** Set by ipc.ts; called whenever a tab's status changes. */
+  onUpdate: (status: TabStatus) => void = () => {}
+
+  /** Called when the session shows a dialog that wants keyboard input NOW
+   *  (permission prompt, question picker) — not for idle notifications. */
+  onAttention: (tabId: TabId, hookEvent: string) => void = () => {}
+
+  async start(): Promise<void> {
+    this.server = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+      const tabId = url.searchParams.get('tab')
+      const token = url.searchParams.get('token')
+      if (req.method !== 'POST' || token !== this.token || !tabId) {
+        res.writeHead(403).end()
+        return
+      }
+      const chunks: Buffer[] = []
+      req.on('data', (c) => chunks.push(c))
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+        let body: unknown
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        } catch {
+          return
+        }
+        if (url.pathname === '/statusline') {
+          this.handleStatusline(tabId, body as StatuslinePayload)
+        } else if (url.pathname === '/hook') {
+          this.handleHook(tabId, body as HookEvent)
+        }
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      this.server!.once('error', reject)
+      this.server!.listen(0, '127.0.0.1', () => {
+        const addr = this.server!.address()
+        if (addr && typeof addr === 'object') this.port = addr.port
+        resolve()
+      })
+    })
+    this.gitTimer = setInterval(() => this.refreshAllGit(), GIT_TIMER_MS)
+  }
+
+  stop(): void {
+    if (this.gitTimer) clearInterval(this.gitTimer)
+    this.server?.close()
+  }
+
+  registerTab(tabId: TabId, cwd: string): void {
+    this.tabs.set(tabId, {
+      cwd,
+      gitFetchedAt: 0,
+      status: {
+        tabId,
+        activity: 'starting',
+        busySince: null,
+        sessionId: null,
+        exitCode: null,
+        payload: null,
+        git: null
+      }
+    })
+    void this.refreshGit(tabId)
+  }
+
+  removeTab(tabId: TabId): void {
+    this.tabs.delete(tabId)
+  }
+
+  snapshot(tabId: TabId): TabStatus | null {
+    return this.tabs.get(tabId)?.status ?? null
+  }
+
+  getCwd(tabId: TabId): string | null {
+    return this.tabs.get(tabId)?.cwd ?? null
+  }
+
+  anyBusy(): boolean {
+    for (const tab of this.tabs.values()) {
+      if (tab.status.activity === 'busy') return true
+    }
+    return false
+  }
+
+  markExited(tabId: TabId, exitCode: number): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.status.activity = 'exited'
+    tab.status.exitCode = exitCode
+    tab.status.busySince = null
+    this.onUpdate(tab.status)
+  }
+
+  markRestarted(tabId: TabId): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.status.activity = 'starting'
+    tab.status.exitCode = null
+    this.onUpdate(tab.status)
+  }
+
+  private handleStatusline(tabId: TabId, payload: StatuslinePayload): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.status.payload = payload
+    if (payload.session_id) tab.status.sessionId = payload.session_id
+    const dir = payload.workspace?.current_dir ?? payload.cwd
+    if (dir && dir !== tab.cwd) {
+      tab.cwd = dir
+      tab.gitFetchedAt = 0
+    }
+    this.onUpdate(tab.status)
+    void this.refreshGit(tabId)
+  }
+
+  private handleHook(tabId: TabId, evt: HookEvent): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    if (evt.session_id) tab.status.sessionId = evt.session_id
+    // Note: the generic `Notification` hook is intentionally NOT mapped to an
+    // activity state. It fires both for permission needs AND as a "waiting for
+    // your input" ping that arrives AFTER `Stop` — mapping it to
+    // needs-attention left tabs stuck yellow and blocked refocus-on-idle. Real
+    // dialogs come through PermissionRequest/Elicitation, which precede Stop.
+    const map: Record<string, ActivityState> = {
+      SessionStart: 'idle',
+      UserPromptSubmit: 'busy',
+      Stop: 'idle',
+      PermissionRequest: 'needs-attention',
+      Elicitation: 'needs-attention',
+      SessionEnd: 'ended'
+    }
+    const name = evt.hook_event_name ?? ''
+    if (name === 'PermissionRequest' || name === 'Elicitation') {
+      this.onAttention(tabId, name)
+    }
+    const next = map[name]
+    if (!next) return
+    tab.status.activity = next
+    tab.status.busySince = next === 'busy' ? Date.now() : null
+    this.onUpdate(tab.status)
+  }
+
+  private refreshAllGit(): void {
+    for (const tabId of this.tabs.keys()) void this.refreshGit(tabId)
+  }
+
+  private async refreshGit(tabId: TabId): Promise<void> {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    const now = Date.now()
+    if (now - tab.gitFetchedAt < GIT_CACHE_MS) return
+    tab.gitFetchedAt = now
+    const git = await gitInfo(tab.cwd)
+    const current = this.tabs.get(tabId)
+    if (!current) return
+    if (JSON.stringify(current.status.git) !== JSON.stringify(git)) {
+      current.status.git = git
+      this.onUpdate(current.status)
+    }
+  }
+}
+
+function runGit(cwd: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['--no-optional-locks', '-C', cwd, ...args],
+      { timeout: 4_000, encoding: 'utf8' },
+      (err, stdout) => resolve(err ? null : stdout.trim())
+    )
+  })
+}
+
+async function gitInfo(cwd: string): Promise<GitInfo | null> {
+  const branch = await runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (branch === null) return null
+  const [porcelain, upstream, remoteUrl] = await Promise.all([
+    runGit(cwd, ['status', '--porcelain']),
+    runGit(cwd, ['rev-parse', '--abbrev-ref', '@{upstream}']),
+    runGit(cwd, ['remote', 'get-url', 'origin'])
+  ])
+  const changed = porcelain ? porcelain.split('\n').filter(Boolean).length : 0
+  let unpushed = 0
+  if (upstream) {
+    const count = await runGit(cwd, ['rev-list', '--count', `${upstream}..HEAD`])
+    unpushed = count ? parseInt(count, 10) || 0 : 0
+  }
+  let behind = 0
+  if (branch !== 'main') {
+    for (const ref of ['main', 'origin/main']) {
+      const count = await runGit(cwd, ['rev-list', '--count', `HEAD..${ref}`])
+      if (count !== null) {
+        behind = parseInt(count, 10) || 0
+        break
+      }
+    }
+  }
+  return { branch, changed, unpushed, behind, remoteUrl: remoteUrl ?? '' }
+}
