@@ -1,4 +1,10 @@
-import * as monaco from 'monaco-editor'
+// Import the editor API namespace + all editor *features* (suggest widget,
+// word operations, bracket matching, clipboard, …) but NONE of Monaco's ~90
+// bundled languages or its TS/JSON/CSS/HTML language services — we only ever
+// register our own empty `claude-prompt` language, so those are dead weight.
+// (The full `monaco-editor` entry = editor.all + all of that.)
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+import 'monaco-editor/esm/vs/editor/editor.all.js'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import type { TabId } from '../../shared/types'
 
