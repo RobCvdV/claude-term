@@ -61,9 +61,15 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
       `[[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"\n` +
         `# claude-term: wrap claude so sessions started here light up the UI\n` +
         `claude() { "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"; }\n` +
-        `# claude-term: auto-resume a persisted session (CLAUDE_TERM_RESUME is set\n` +
-        `# per-tab only when restoring, so normal shells never trigger this)\n` +
-        `if [[ -n "$CLAUDE_TERM_RESUME" ]]; then\n` +
+        `# claude-term: auto-restore a persisted session on launch. Only one of\n` +
+        `# these vars is set, and only when restoring, so normal shells never fire.\n` +
+        `# ATTACH: the session became a daemon-managed background agent; it can't\n` +
+        `# be --resume'd while alive, so reconnect with 'claude attach'. This uses\n` +
+        `# the real binary (not our wrapper) — attach takes no --settings.\n` +
+        `if [[ -n "$CLAUDE_TERM_ATTACH" ]]; then\n` +
+        `  __cta="$CLAUDE_TERM_ATTACH"; unset CLAUDE_TERM_ATTACH CLAUDE_TERM_RESUME\n` +
+        `  "${realClaude}" attach "$__cta"; unset __cta\n` +
+        `elif [[ -n "$CLAUDE_TERM_RESUME" ]]; then\n` +
         `  __ctr="$CLAUDE_TERM_RESUME"; unset CLAUDE_TERM_RESUME\n` +
         `  claude --resume "$__ctr"; unset __ctr\n` +
         `fi\n`

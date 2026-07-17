@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { PersistedSession, SlashCommand, TabId, TabInfo, TabStatus } from '../shared/types'
 
 export interface ClaudeTermApi {
@@ -14,8 +14,9 @@ export interface ClaudeTermApi {
   saveSession(state: PersistedSession): Promise<void>
   saveSessionSync(state: PersistedSession): void
   ptyInput(tabId: TabId, data: string): void
+  pathForFile(file: File): string
   ptyResize(tabId: TabId, cols: number, rows: number): void
-  submitPrompt(tabId: TabId, text: string): void
+  submitPrompt(tabId: TabId, text: string, imageCount?: number): void
   onPtyData(cb: (tabId: TabId, data: string) => void): () => void
   onPtyExit(cb: (tabId: TabId, exitCode: number) => void): () => void
   onStatusUpdate(cb: (status: TabStatus) => void): () => void
@@ -45,8 +46,12 @@ const api: ClaudeTermApi = {
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),
   ptyInput: (tabId, data) => ipcRenderer.send('pty:input', tabId, data),
+  // sandboxed renderers can't see real filesystem paths on dropped File objects;
+  // webUtils bridges that gap (File.path was removed in Electron 32)
+  pathForFile: (file) => webUtils.getPathForFile(file),
   ptyResize: (tabId, cols, rows) => ipcRenderer.send('pty:resize', tabId, cols, rows),
-  submitPrompt: (tabId, text) => ipcRenderer.send('prompt:submit', tabId, text),
+  submitPrompt: (tabId, text, imageCount) =>
+    ipcRenderer.send('prompt:submit', tabId, text, imageCount),
   onPtyData: (cb) => subscribe('pty:data', cb),
   onPtyExit: (cb) => subscribe('pty:exit', cb),
   onStatusUpdate: (cb) => subscribe('status:update', cb),

@@ -7,6 +7,7 @@ import type { PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listCommands, searchFiles } from './completions'
+import { findLiveBackgroundAgent } from './agents'
 
 export interface AppServices {
   ptys: PtyManager
@@ -21,16 +22,13 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
   }
 
-  const ptys = new PtyManager(
-    () => ({ port: status.port, token: status.token }),
-    {
-      data: (tabId, data) => send('pty:data', tabId, data),
-      exit: (tabId, exitCode) => {
-        status.markExited(tabId, exitCode)
-        send('pty:exit', tabId, exitCode)
-      }
+  const ptys = new PtyManager(() => ({ port: status.port, token: status.token }), {
+    data: (tabId, data) => send('pty:data', tabId, data),
+    exit: (tabId, exitCode) => {
+      status.markExited(tabId, exitCode)
+      send('pty:exit', tabId, exitCode)
     }
-  )
+  })
 
   status.onUpdate = (tabStatus) => send('status:update', tabStatus)
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
@@ -40,17 +38,19 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
   const { ptys, status } = services
 
-  ipcMain.handle(
-    'tab:create',
-    async (_e, cwd?: string, resume?: string): Promise<TabInfo> => {
-      // a persisted cwd may no longer exist — fall back to home rather than fail
-      const dir = cwd && existsSync(cwd) ? cwd : homedir()
-      const tabId: TabId = randomUUID()
-      status.registerTab(tabId, dir)
-      await ptys.create(tabId, dir, resume)
-      return { tabId, cwd: dir, title: basename(dir) || dir }
-    }
-  )
+  ipcMain.handle('tab:create', async (_e, cwd?: string, resume?: string): Promise<TabInfo> => {
+    // a persisted cwd may no longer exist — fall back to home rather than fail
+    const dir = cwd && existsSync(cwd) ? cwd : homedir()
+    const tabId: TabId = randomUUID()
+    status.registerTab(tabId, dir)
+    // If the persisted session became a live daemon-managed background agent,
+    // `--resume` refuses it — reconnect with `claude attach <job id>` instead.
+    // (Only checked on restore, i.e. when `resume` is set.)
+    const bg = resume ? await findLiveBackgroundAgent(resume) : null
+    if (bg) await ptys.create(tabId, dir, undefined, bg.id ?? bg.sessionId)
+    else await ptys.create(tabId, dir, resume)
+    return { tabId, cwd: dir, title: basename(dir) || dir }
+  })
 
   ipcMain.handle('tab:close', (_e, tabId: TabId) => {
     ptys.kill(tabId)
@@ -115,5 +115,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.on('pty:resize', (_e, tabId: TabId, cols: number, rows: number) =>
     ptys.resize(tabId, cols, rows)
   )
-  ipcMain.on('prompt:submit', (_e, tabId: TabId, text: string) => ptys.injectPrompt(tabId, text))
+  ipcMain.on('prompt:submit', (_e, tabId: TabId, text: string, imageCount?: number) =>
+    ptys.injectPrompt(tabId, text, imageCount ?? 0)
+  )
 }

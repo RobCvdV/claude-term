@@ -10,9 +10,20 @@ const MAX_HEIGHT = 240
 interface Props {
   tabId: TabId
   disabled: boolean
+  // focus the editor as soon as it mounts (box just appeared for an active,
+  // dialog-free session). App still owns focus for tab switches / dialogs.
+  autoFocus: boolean
   onStepTab: (delta: number) => void
   onColor: (color: string) => void
   color?: string
+}
+
+// One dropped attachment: `mention` is what actually gets submitted to claude
+// (an @-path it can attach, or a quoted path it can read). Images are shown in
+// the box as a compact [imageN] chip instead of their full path.
+export interface Attachment {
+  mention: string
+  isImage: boolean
 }
 
 // app-local command: "/color blue" (or #rrggbb, or off) tints the tab border
@@ -24,10 +35,14 @@ function parseColor(text: string): string | null {
 
 export interface PromptBoxHandle {
   focus: () => void
+  insertAttachments: (items: Attachment[]) => void
 }
 
+// image chips shown in the box; expanded back to their real mention on submit
+const IMAGE_TOKEN_RE = /\[image\d+\]/g
+
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
-  { tabId, disabled, onStepTab, onColor, color },
+  { tabId, disabled, autoFocus, onStepTab, onColor, color },
   ref
 ): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -38,8 +53,75 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   stepTabRef.current = onStepTab
   const colorRef = useRef(onColor)
   colorRef.current = onColor
+  const autoFocusRef = useRef(autoFocus)
+  autoFocusRef.current = autoFocus
+  // [imageN] chip → the @-path/quoted-path actually submitted; a per-box counter
+  // keeps chip numbers stable as more images are dropped in one prompt
+  const imageMapRef = useRef(new Map<string, string>())
+  const imageCounterRef = useRef(0)
+  // swap every [imageN] chip in the text back to its real mention before submit
+  const expandImages = (text: string): string =>
+    text.replace(IMAGE_TOKEN_RE, (m) => imageMapRef.current.get(m) ?? m)
+  // how many image chips are in the prompt — the PTY layer waits longer before
+  // Enter so Claude Code can finish reading each image into an [Image #N] chip
+  const countImages = (text: string): number => (text.match(IMAGE_TOKEN_RE) ?? []).length
+  const resetImages = (): void => {
+    imageMapRef.current.clear()
+    imageCounterRef.current = 0
+  }
 
-  useImperativeHandle(ref, () => ({ focus: () => editorRef.current?.focus() }))
+  // shared insert routine: drop `text` at the cursor (replacing any selection),
+  // padded so it stays one deletable token
+  const insertTokenText = (text: string): void => {
+    const editor = editorRef.current
+    const model = editor?.getModel()
+    if (!editor || !model) return
+    const end = {
+      lineNumber: model.getLineCount(),
+      column: model.getLineMaxColumn(model.getLineCount())
+    }
+    const sel = editor.getSelection()
+    const range = sel ?? {
+      startLineNumber: end.lineNumber,
+      startColumn: end.column,
+      endLineNumber: end.lineNumber,
+      endColumn: end.column
+    }
+    const charBefore =
+      range.startColumn > 1
+        ? model.getValueInRange({
+            startLineNumber: range.startLineNumber,
+            startColumn: range.startColumn - 1,
+            endLineNumber: range.startLineNumber,
+            endColumn: range.startColumn
+          })
+        : ''
+    const charAfter = model.getValueInRange({
+      startLineNumber: range.endLineNumber,
+      startColumn: range.endColumn,
+      endLineNumber: range.endLineNumber,
+      endColumn: range.endColumn + 1
+    })
+    const padded =
+      (charBefore && !/\s/.test(charBefore) ? ' ' : '') + text + (/^\s/.test(charAfter) ? '' : ' ')
+    editor.executeEdits('file-drop', [{ range, text: padded, forceMoveMarkers: true }])
+    editor.focus()
+  }
+
+  useImperativeHandle(ref, () => ({
+    focus: () => editorRef.current?.focus(),
+    // insert dropped attachments at the cursor: images become compact [imageN]
+    // chips (mapped to their real path for submit), other files their @-mention.
+    insertAttachments: (items: Attachment[]) => {
+      const tokens = items.map((it) => {
+        if (!it.isImage) return it.mention
+        const label = `[image${++imageCounterRef.current}]`
+        imageMapRef.current.set(label, it.mention)
+        return label
+      })
+      insertTokenText(tokens.join(' '))
+    }
+  }))
 
   useEffect(() => {
     const host = hostRef.current
@@ -100,12 +182,18 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         editor.setValue('')
         return
       }
-      window.claudeTerm.submitPrompt(tabId, text)
+      window.claudeTerm.submitPrompt(tabId, expandImages(text), countImages(text))
       editor.setValue('')
+      resetImages()
       // slash commands usually open a TUI menu/dialog — hand focus to the
       // terminal so arrows/Enter drive it right away
       if (text.startsWith('/')) focusTerm(tabId)
     }
+
+    // box just appeared for an active, dialog-free session → focus it now. Done
+    // here (not via a ref call from App) so it lands after the editor exists,
+    // sidestepping the mount/rAF race that left the box unfocused.
+    if (autoFocusRef.current) editor.focus()
 
     // Enter must be intercepted at the keydown layer: addCommand(Enter) is
     // swallowed by Monaco's text-input (EditContext) pipeline, which inserts a
@@ -125,13 +213,44 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         e.preventDefault()
         e.stopPropagation()
         send()
+        return
+      }
+      // treat an [imageN] chip as one atom: backspace when the cursor sits just
+      // after it, delete when just before it (or inside, either key) removes the
+      // whole chip in one stroke instead of a character at a time
+      const backspace = e.keyCode === monaco.KeyCode.Backspace
+      const del = e.keyCode === monaco.KeyCode.Delete
+      if ((backspace || del) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        const sel = editor.getSelection()
+        const pos = editor.getPosition()
+        if (!sel || !sel.isEmpty() || !pos) return
+        const line = model.getLineContent(pos.lineNumber)
+        for (const m of line.matchAll(IMAGE_TOKEN_RE)) {
+          const start = (m.index ?? 0) + 1 // 1-based column of the chip's first char
+          const stop = start + m[0].length // column just past the chip
+          const inside = pos.column > start && pos.column < stop
+          const hit = inside || (backspace ? pos.column === stop : pos.column === start)
+          if (!hit) continue
+          e.preventDefault()
+          e.stopPropagation()
+          editor.executeEdits('image-chip-delete', [
+            {
+              range: {
+                startLineNumber: pos.lineNumber,
+                startColumn: start,
+                endLineNumber: pos.lineNumber,
+                endColumn: stop
+              },
+              text: '',
+              forceMoveMarkers: true
+            }
+          ])
+          imageMapRef.current.delete(m[0])
+          return
+        }
       }
     })
-    editor.addCommand(
-      monaco.KeyCode.Escape,
-      () => focusTerm(tabId),
-      '!suggestWidgetVisible'
-    )
+    editor.addCommand(monaco.KeyCode.Escape, () => focusTerm(tabId), '!suggestWidgetVisible')
     editor.addCommand(
       monaco.KeyMod.Shift | monaco.KeyCode.Tab,
       () => window.claudeTerm.ptyInput(tabId, '\x1b[Z'),
@@ -218,8 +337,9 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
             editor.setValue('')
             return
           }
-          window.claudeTerm.submitPrompt(tabId, text)
+          window.claudeTerm.submitPrompt(tabId, expandImages(text), countImages(text))
           editor.setValue('')
+          resetImages()
           if (text.startsWith('/')) focusTerm(tabId)
         }}
       >

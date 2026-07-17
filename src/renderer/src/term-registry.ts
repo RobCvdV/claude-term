@@ -78,6 +78,12 @@ export function createTerm(tabId: TabId): TermEntry {
 
   const entry: TermEntry = { term, fit, containerEl }
   entries.set(tabId, entry)
+  // exposed for scripted E2E testing (CDP) — harmless at runtime
+  const registry = ((window as unknown as Record<string, unknown>).__terms ??= {}) as Record<
+    TabId,
+    Terminal
+  >
+  registry[tabId] = term
   return entry
 }
 
@@ -103,4 +109,7 @@ export function disposeTerm(tabId: TabId): void {
   entry.term.dispose()
   entry.containerEl.remove()
   entries.delete(tabId)
+  delete ((window as unknown as Record<string, unknown>).__terms as Record<TabId, Terminal>)?.[
+    tabId
+  ]
 }

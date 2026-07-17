@@ -5,6 +5,14 @@ import icon from '../../resources/icon.png?asset'
 import { createServices, registerIpc } from './ipc'
 import { loginShellEnv } from './shell-env'
 
+// Redirect userData (session.json, zdotdir, forwarder) to an isolated dir when
+// asked — lets an E2E run restore a crafted session without touching the real
+// profile. Must happen before anything reads app.getPath('userData'). Inert
+// unless the env var is set, like CLAUDE_TERM_DEBUG_PORT / _DEFAULT_CWD.
+if (process.env['CLAUDE_TERM_USER_DATA_DIR']) {
+  app.setPath('userData', process.env['CLAUDE_TERM_USER_DATA_DIR'] as string)
+}
+
 let mainWindow: BrowserWindow | null = null
 const services = createServices(() => mainWindow)
 
@@ -68,17 +76,29 @@ app.whenReady().then(async () => {
 let quitConfirmed = false
 app.on('before-quit', (e) => {
   if (quitConfirmed || !mainWindow) return
-  if (!services.status.anyBusy()) {
+  const busy = services.status.anyBusy()
+  const activeCount = services.status.activeClaudeCount()
+  // Nothing running in a tab — quit silently. (Any sessions the user promoted
+  // to daemon-managed background agents keep running independently of the app
+  // and are re-attached on next launch; we deliberately don't kill those.)
+  if (activeCount === 0) {
     shutdown()
     return
   }
   e.preventDefault()
+  const detail = busy
+    ? 'A Claude Code session is still working. Quitting closes it; you can resume it next launch.'
+    : `${activeCount} Claude Code session${activeCount > 1 ? 's are' : ' is'} open. ` +
+      'Quitting closes them; you can resume them next launch.'
   const choice = dialog.showMessageBoxSync(mainWindow, {
-    type: 'warning',
+    type: busy ? 'warning' : 'question',
     buttons: ['Quit', 'Cancel'],
-    defaultId: 1,
+    // a busy session is worth guarding (default Cancel); an idle one is routine
+    // (default Quit, so Enter just quits) — either way the user chooses.
+    defaultId: busy ? 1 : 0,
     cancelId: 1,
-    message: 'A Claude Code session is still working. Quit anyway?'
+    message: busy ? 'A session is still working. Quit anyway?' : 'Quit claude-term?',
+    detail
   })
   if (choice === 0) {
     quitConfirmed = true

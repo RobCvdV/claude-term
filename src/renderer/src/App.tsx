@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type {
-  ActivityState,
-  PersistedSession,
-  TabId,
-  TabInfo,
-  TabStatus
-} from '../../shared/types'
+import type { ActivityState, PersistedSession, TabId, TabInfo, TabStatus } from '../../shared/types'
 import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
@@ -17,11 +11,45 @@ import {
   setTerminalTitleHandler
 } from './term-registry'
 
+// Turn a dropped NON-image file's path into the text submitted to claude: an
+// @-mention (@relative inside the cwd, @absolute otherwise) — the form Claude
+// Code parses to reference/attach the file. A path with whitespace can't ride
+// an @-mention (parsing stops at the space), so it falls back to a quoted path
+// Claude reads with its own tools.
+function promptTokenForPath(path: string, cwd?: string): string {
+  if (/\s/.test(path)) return `"${path}"`
+  const rel =
+    cwd && path.startsWith(cwd.replace(/\/+$/, '') + '/')
+      ? path.slice(cwd.replace(/\/+$/, '').length + 1)
+      : null
+  return `@${rel ?? path}`
+}
+
+// Images take a different route than @-mentions: Claude Code auto-detects an
+// absolute image path in pasted input and turns it into its own [Image #N]
+// attachment, reading the bytes itself. We mirror exactly what a native macOS
+// terminal drag inserts — the absolute path with shell-special chars (spaces
+// included) backslash-escaped — so that detector fires the same way.
+function imageMentionForPath(path: string): string {
+  return path.replace(/[^A-Za-z0-9_\-./]/g, (c) => `\\${c}`)
+}
+
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|tiff?|avif|ico)$/i
+function isImagePath(path: string): boolean {
+  return IMAGE_EXT_RE.test(path)
+}
+
+// plain-terminal drops mimic a normal terminal: type the shell-escaped path
+function shellEscape(path: string): string {
+  return /[^A-Za-z0-9_\-./]/.test(path) ? `'${path.replace(/'/g, `'\\''`)}'` : path
+}
+
 export default function App(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabInfo[]>([])
   const [activeId, setActiveId] = useState<TabId | null>(null)
   const [statuses, setStatuses] = useState<Record<TabId, TabStatus | null>>({})
   const [colors, setColors] = useState<Record<TabId, string>>({})
+  const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
 
@@ -114,17 +142,80 @@ export default function App(): React.JSX.Element {
     }
   }, [statuses])
 
-  // Esc in the terminal closes an overlay (/usage, /config, …) that fires no
-  // hook; forward it to the PTY and return focus to the box — only while a
-  // claude session is idle (so shell Esc, interrupts, and dialogs are untouched).
+  // Esc in the terminal dismisses a client-side overlay (/usage, /config, …) and
+  // should hand focus back to the box. We can't gate on 'idle': those commands
+  // fire UserPromptSubmit (→busy) but run no model turn, so no Stop ever arrives
+  // and the tab stays 'busy' — the old idle-only guard left focus stranded on
+  // the terminal. Only a real dialog (needs-attention) keeps focus there. The
+  // delay lets the overlay finish closing and lets a rapid double-Esc still land
+  // in the terminal before we take focus.
   useEffect(() => {
     setTerminalEscapeHandler((tabId) => {
       if (tabId !== activeIdRef.current) return
       const st = statusesRef.current[tabId]
-      if (!st?.claudeActive) return
-      if (st.activity === 'busy' || st.activity === 'needs-attention') return
-      promptRefs.current.get(tabId)?.focus()
+      if (!st?.claudeActive || st.activity === 'needs-attention') return
+      setTimeout(() => {
+        if (activeIdRef.current !== tabId) return
+        const cur = statusesRef.current[tabId]
+        if (!cur?.claudeActive || cur.activity === 'needs-attention') return
+        promptRefs.current.get(tabId)?.focus()
+      }, 120)
     })
+  }, [])
+
+  // File drag & drop, window-wide (capture phase beats Monaco's and xterm's own
+  // DnD handling, and preventDefault stops Chromium navigating to file:// URLs).
+  // With a claude session: insert prompt tokens into the box. Plain terminal:
+  // type the shell-escaped path, like dropping onto a normal terminal.
+  useEffect(() => {
+    const hasFiles = (e: DragEvent): boolean =>
+      Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    const onDragOver = (e: DragEvent): void => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      const st = activeIdRef.current ? statusesRef.current[activeIdRef.current] : null
+      setDropTarget(st?.claudeActive ? 'prompt' : 'terminal')
+    }
+    const onDragLeave = (e: DragEvent): void => {
+      // relatedTarget is null when the drag exits the window
+      if (!e.relatedTarget) setDropTarget(null)
+    }
+    const onDrop = (e: DragEvent): void => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      setDropTarget(null)
+      const tabId = activeIdRef.current
+      if (!tabId) return
+      const paths = Array.from(e.dataTransfer?.files ?? [])
+        .map((f) => window.claudeTerm.pathForFile(f))
+        .filter(Boolean)
+      if (paths.length === 0) return
+      const st = statusesRef.current[tabId]
+      if (st?.claudeActive) {
+        const items = paths.map((p) => {
+          const isImage = isImagePath(p)
+          return {
+            mention: isImage ? imageMentionForPath(p) : promptTokenForPath(p, st.cwd),
+            isImage
+          }
+        })
+        promptRefs.current.get(tabId)?.insertAttachments(items)
+      } else {
+        window.claudeTerm.ptyInput(tabId, paths.map(shellEscape).join(' '))
+        focusTerm(tabId)
+      }
+    }
+    window.addEventListener('dragover', onDragOver, true)
+    window.addEventListener('dragleave', onDragLeave, true)
+    window.addEventListener('drop', onDrop, true)
+    return () => {
+      window.removeEventListener('dragover', onDragOver, true)
+      window.removeEventListener('dragleave', onDragLeave, true)
+      window.removeEventListener('drop', onDrop, true)
+    }
   }, [])
 
   const openTab = useCallback(async (cwd?: string): Promise<void> => {
@@ -277,13 +368,16 @@ export default function App(): React.JSX.Element {
   }, [])
 
   // step to the prev/next tab, wrapping around
-  const stepTab = useCallback((delta: number): void => {
-    setActiveId((current) => {
-      if (tabs.length === 0) return current
-      const idx = tabs.findIndex((t) => t.tabId === current)
-      return tabs[(idx + delta + tabs.length) % tabs.length]?.tabId ?? current
-    })
-  }, [tabs])
+  const stepTab = useCallback(
+    (delta: number): void => {
+      setActiveId((current) => {
+        if (tabs.length === 0) return current
+        const idx = tabs.findIndex((t) => t.tabId === current)
+        return tabs[(idx + delta + tabs.length) % tabs.length]?.tabId ?? current
+      })
+    },
+    [tabs]
+  )
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -322,6 +416,11 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="app">
+      {dropTarget && (
+        <div className="drop-overlay">
+          {dropTarget === 'prompt' ? 'Drop to add file(s) to the prompt' : 'Drop to type path(s)'}
+        </div>
+      )}
       <TabBar
         tabs={tabs}
         activeId={activeId}
@@ -360,6 +459,8 @@ export default function App(): React.JSX.Element {
               }}
               tabId={activeId}
               disabled={false}
+              // focus on mount unless a dialog is waiting (that wants the terminal)
+              autoFocus={activeStatus?.activity !== 'needs-attention'}
               onStepTab={stepTab}
               onColor={(color) => setTabColor(activeId, color)}
               color={colors[activeId]}

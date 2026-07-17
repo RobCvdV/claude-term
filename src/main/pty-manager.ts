@@ -1,12 +1,18 @@
 import * as pty from 'node-pty'
 import { basename } from 'path'
 import type { TabId } from '../shared/types'
-import { loginShellEnv, resolveShell } from './shell-env'
+import { loginShellEnv, resolveClaudePath, resolveShell } from './shell-env'
 import { buildSettingsOverlay, setupClaudeLauncher } from './settings-overlay'
 
 /** Delay between the bracketed-paste close and the submitting \r, so the TUI
  *  ingests the paste as prompt text before Enter arrives. */
 const SUBMIT_DELAY_MS = 50
+
+/** Claude Code reads each pasted image path from disk *asynchronously* to build
+ *  its [Image #N] chip; an Enter that arrives mid-read is dropped and the prompt
+ *  never sends. Give image prompts a base grace period plus per-image slack. */
+const IMAGE_SUBMIT_BASE_MS = 350
+const IMAGE_SUBMIT_PER_IMAGE_MS = 300
 
 /** For non-zsh shells we can't hook rc startup, so inject the resume command
  *  into the PTY once the shell has had time to become interactive. */
@@ -54,7 +60,15 @@ export class PtyManager {
    * session's hooks/statusline feed this app and toggle the Claude UI. The
    * overlay JSON travels in CLAUDE_TERM_SETTINGS so the wrapper can add it.
    */
-  async create(tabId: TabId, cwd: string, resume?: string): Promise<void> {
+  /**
+   * @param resume  session id to `claude --resume` (ordinary conversations)
+   * @param attach  background-agent *job id* to `claude attach` instead. A
+   *   session promoted to a daemon-managed background agent can't be resumed
+   *   while the daemon keeps it alive (`--resume` errors "running as a
+   *   background agent"); it must be attached. ipc.ts decides which to pass by
+   *   consulting the live agent list. `resume` and `attach` are exclusive.
+   */
+  async create(tabId: TabId, cwd: string, resume?: string, attach?: string): Promise<void> {
     const [env, shell] = await Promise.all([loginShellEnv(), resolveShell()])
     const launcherEnv = await setupClaudeLauncher(shell)
     const { port, token } = this.getServerInfo()
@@ -74,8 +88,10 @@ export class PtyManager {
       CLAUDE_TERM_SETTINGS: overlay
     }
     for (const key of NESTED_CLAUDE_ENV) delete spawnEnv[key]
-    // zsh resumes via our .zshrc (no race); other shells get PTY injection below
-    if (resume && isZsh) spawnEnv.CLAUDE_TERM_RESUME = resume
+    // zsh resumes/attaches via our .zshrc (no race); other shells get PTY
+    // injection below. attach takes precedence over resume (mutually exclusive).
+    if (attach && isZsh) spawnEnv.CLAUDE_TERM_ATTACH = attach
+    else if (resume && isZsh) spawnEnv.CLAUDE_TERM_RESUME = resume
 
     const proc = pty.spawn(shell, ['-il'], {
       name: 'xterm-256color',
@@ -93,10 +109,16 @@ export class PtyManager {
       this.emit.exit(tabId, exitCode)
     })
 
-    if (resume && !isZsh) {
+    if ((attach || resume) && !isZsh) {
+      // attach bypasses our `claude` wrapper (which appends --settings): the
+      // running agent already has its own settings, and `claude attach` rejects
+      // extra flags. Resolve the real binary so the shim's PATH shadowing of
+      // `claude` doesn't turn `claude attach` into `claude --settings … attach`.
+      const realClaude = attach ? await resolveClaudePath() : null
+      const cmd = attach ? `"${realClaude}" attach ${attach}` : `claude --resume ${resume}`
       setTimeout(() => {
         const current = this.tabs.get(tabId)
-        if (current && !current.exited) current.proc.write(`claude --resume ${resume}\r`)
+        if (current && !current.exited) current.proc.write(`${cmd}\r`)
       }, RESUME_INJECT_MS)
     }
   }
@@ -114,15 +136,21 @@ export class PtyManager {
     if (tab && !tab.exited) tab.proc.write(data)
   }
 
-  /** Inject a (possibly multiline) prompt: bracketed paste, then submit. */
-  injectPrompt(tabId: TabId, text: string): void {
+  /** Inject a (possibly multiline) prompt: bracketed paste, then submit. When
+   *  the prompt carries images, wait longer before Enter so Claude Code finishes
+   *  reading them into [Image #N] chips (see IMAGE_SUBMIT_* above). */
+  injectPrompt(tabId: TabId, text: string, imageCount = 0): void {
     const tab = this.tabs.get(tabId)
     if (!tab || tab.exited || !text) return
     tab.proc.write(`\x1b[200~${text}\x1b[201~`)
+    const delay =
+      imageCount > 0
+        ? IMAGE_SUBMIT_BASE_MS + imageCount * IMAGE_SUBMIT_PER_IMAGE_MS
+        : SUBMIT_DELAY_MS
     setTimeout(() => {
       const current = this.tabs.get(tabId)
       if (current && !current.exited) current.proc.write('\r')
-    }, SUBMIT_DELAY_MS)
+    }, delay)
   }
 
   resize(tabId: TabId, cols: number, rows: number): void {
