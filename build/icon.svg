@@ -1,0 +1,54 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#33333d"/>
+      <stop offset="0.08" stop-color="#26262e"/>
+      <stop offset="1" stop-color="#17171c"/>
+    </linearGradient>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a5a66"/>
+      <stop offset="0.15" stop-color="#3a3a44"/>
+      <stop offset="1" stop-color="#0e0e12"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- window body -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bezel)"/>
+    <rect x="106" y="106" width="812" height="812" rx="180" fill="url(#bg)"/>
+  </g>
+
+  <!-- traffic lights -->
+  <g opacity="0.9">
+    <circle cx="212" cy="218" r="26" fill="#ff5f57"/>
+    <circle cx="292" cy="218" r="26" fill="#febc2e"/>
+    <circle cx="372" cy="218" r="26" fill="#28c840"/>
+  </g>
+  <!-- title bar divider -->
+  <line x1="118" y1="304" x2="906" y2="304" stroke="#ffffff" stroke-opacity="0.07" stroke-width="4"/>
+
+  <!-- prompt chevron -->
+  <path d="M 210 500 L 320 610 L 210 720" fill="none" stroke="#b8bcc8" stroke-width="52"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Claude starburst -->
+  <g transform="translate(568 610)" stroke="#d97757" stroke-width="40" stroke-linecap="round">
+    <line x1="0" y1="0" x2="178" y2="0" transform="rotate(0)"/>
+    <line x1="0" y1="0" x2="106" y2="0" transform="rotate(33)"/>
+    <line x1="0" y1="0" x2="176" y2="0" transform="rotate(63)"/>
+    <line x1="0" y1="0" x2="104" y2="0" transform="rotate(95)"/>
+    <line x1="0" y1="0" x2="180" y2="0" transform="rotate(128)"/>
+    <line x1="0" y1="0" x2="108" y2="0" transform="rotate(160)"/>
+    <line x1="0" y1="0" x2="176" y2="0" transform="rotate(190)"/>
+    <line x1="0" y1="0" x2="106" y2="0" transform="rotate(222)"/>
+    <line x1="0" y1="0" x2="178" y2="0" transform="rotate(252)"/>
+    <line x1="0" y1="0" x2="104" y2="0" transform="rotate(285)"/>
+    <line x1="0" y1="0" x2="174" y2="0" transform="rotate(318)"/>
+  </g>
+
+  <!-- block cursor -->
+  <rect x="806" y="548" width="64" height="124" rx="10" fill="#d97757" opacity="0.85"/>
+</svg>
