@@ -5,6 +5,7 @@ interface Props {
   tabs: TabInfo[]
   activeId: TabId | null
   statuses: Record<TabId, TabStatus | null>
+  colors: Record<TabId, string>
   onSelect: (tabId: TabId) => void
   onClose: (tabId: TabId) => void
   onNewTab: () => void
@@ -23,7 +24,7 @@ function dotClass(status: TabStatus | null | undefined): string {
   return map[status.activity] ?? 'dot idle'
 }
 
-export function TabBar({ tabs, activeId, statuses, onSelect, onClose, onNewTab, onRename }: Props): React.JSX.Element {
+export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, onNewTab, onRename }: Props): React.JSX.Element {
   const [editingId, setEditingId] = useState<TabId | null>(null)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -44,6 +45,7 @@ export function TabBar({ tabs, activeId, statuses, onSelect, onClose, onNewTab, 
         <div
           key={tab.tabId}
           className={`tab ${tab.tabId === activeId ? 'active' : ''}`}
+          style={colors[tab.tabId] ? { boxShadow: `inset 0 -2px 0 ${colors[tab.tabId]}` } : undefined}
           onMouseDown={(e) => {
             if (e.button === 0 && editingId !== tab.tabId) onSelect(tab.tabId)
           }}

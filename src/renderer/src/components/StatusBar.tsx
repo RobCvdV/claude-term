@@ -3,6 +3,7 @@ import type { TabStatus } from '../../../shared/types'
 
 interface Props {
   status: TabStatus | null
+  color?: string
 }
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
@@ -36,7 +37,7 @@ function fmtElapsed(sinceMs: number, now: number): string {
   return m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`
 }
 
-export function StatusBar({ status }: Props): React.JSX.Element {
+export function StatusBar({ status, color }: Props): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -65,11 +66,14 @@ export function StatusBar({ status }: Props): React.JSX.Element {
       )
     }
     const bb = /bitbucket\.org[:/]([^/]+)\/([^/.]+)/.exec(git.remoteUrl)
-    branchEl = bb ? (
-      <ExternalLink
-        url={`https://bitbucket.org/${bb[1]}/${bb[2]}/branch/${encodeURIComponent(git.branch)}`}
-        className="branch-link"
-      >
+    const gh = /github\.com[:/]([^/]+)\/([^/.]+)/.exec(git.remoteUrl)
+    const branchUrl = bb
+      ? `https://bitbucket.org/${bb[1]}/${bb[2]}/branch/${encodeURIComponent(git.branch)}`
+      : gh
+        ? `https://github.com/${gh[1]}/${gh[2]}/tree/${encodeURIComponent(git.branch)}`
+        : null
+    branchEl = branchUrl ? (
+      <ExternalLink url={branchUrl} className="branch-link">
         {inner}
       </ExternalLink>
     ) : (
@@ -105,7 +109,7 @@ export function StatusBar({ status }: Props): React.JSX.Element {
   const rl7 = payload?.rate_limits?.seven_day
 
   return (
-    <div className="status-bar">
+    <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
       {activityEl}
       {folder && <span className="folder">{folder}</span>}
       {branchEl}

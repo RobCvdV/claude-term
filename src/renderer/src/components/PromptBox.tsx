@@ -10,6 +10,16 @@ const MAX_HEIGHT = 240
 interface Props {
   tabId: TabId
   disabled: boolean
+  onStepTab: (delta: number) => void
+  onColor: (color: string) => void
+  color?: string
+}
+
+// app-local command: "/color blue" (or #rrggbb, or off) tints the tab border
+// without ever reaching claude. Returns the color arg, or null if not a match.
+const COLOR_RE = /^\/color\s+(\S+)\s*$/i
+function parseColor(text: string): string | null {
+  return text.match(COLOR_RE)?.[1]?.toLowerCase() ?? null
 }
 
 export interface PromptBoxHandle {
@@ -17,12 +27,17 @@ export interface PromptBoxHandle {
 }
 
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
-  { tabId, disabled },
+  { tabId, disabled, onStepTab, onColor, color },
   ref
 ): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
   const [empty, setEmpty] = useState(true)
+  // keep the latest handlers for the addCommand/closure below (bound once)
+  const stepTabRef = useRef(onStepTab)
+  stepTabRef.current = onStepTab
+  const colorRef = useRef(onColor)
+  colorRef.current = onColor
 
   useImperativeHandle(ref, () => ({ focus: () => editorRef.current?.focus() }))
 
@@ -79,6 +94,12 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     const send = (): void => {
       const text = editor.getValue().replace(/\n+$/, '')
       if (!text || editor.getOption(monaco.editor.EditorOption.readOnly)) return
+      const color = parseColor(text)
+      if (color) {
+        colorRef.current(color)
+        editor.setValue('')
+        return
+      }
       window.claudeTerm.submitPrompt(tabId, text)
       editor.setValue('')
       // slash commands usually open a TUI menu/dialog — hand focus to the
@@ -115,6 +136,15 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       monaco.KeyMod.Shift | monaco.KeyCode.Tab,
       () => window.claudeTerm.ptyInput(tabId, '\x1b[Z'),
       '!suggestWidgetVisible'
+    )
+    // ⌘[ / ⌘] step tabs even from the box (Monaco owns these for out/indent,
+    // so the window-level handler never sees them — override here). ⌘←/⌘→ are
+    // left to Monaco for line-start/end.
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.BracketLeft, () =>
+      stepTabRef.current(-1)
+    )
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.BracketRight, () =>
+      stepTabRef.current(1)
     )
 
     // Monaco never auto-triggers suggest on deletions (its quick-suggest path
@@ -157,8 +187,14 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   }, [disabled])
 
   return (
-    <div className={`prompt-box ${disabled ? 'disabled' : ''}`}>
-      <div className="editor-wrap">
+    <div
+      className={`prompt-box ${disabled ? 'disabled' : ''}`}
+      style={color ? { borderTopColor: color } : undefined}
+    >
+      <div
+        className="editor-wrap"
+        style={color ? ({ '--session-color': color } as React.CSSProperties) : undefined}
+      >
         <div className="editor-host" ref={hostRef} />
         {empty && (
           <div className="editor-placeholder">
@@ -176,6 +212,12 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           if (!editor) return
           const text = editor.getValue().replace(/\n+$/, '')
           if (!text) return
+          const color = parseColor(text)
+          if (color) {
+            onColor(color)
+            editor.setValue('')
+            return
+          }
           window.claudeTerm.submitPrompt(tabId, text)
           editor.setValue('')
           if (text.startsWith('/')) focusTerm(tabId)

@@ -15,6 +15,7 @@ export default function App(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabInfo[]>([])
   const [activeId, setActiveId] = useState<TabId | null>(null)
   const [statuses, setStatuses] = useState<Record<TabId, TabStatus | null>>({})
+  const [colors, setColors] = useState<Record<TabId, string>>({})
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
 
@@ -42,10 +43,13 @@ export default function App(): React.JSX.Element {
   }, [])
 
   // plain terminals: adopt the shell's OSC title unless the user renamed the tab.
+  // Strip any leading status emoji (e.g. "🟢 claude-term · main") — our own tab
+  // dot already conveys activity, so the emoji would just be a redundant dot.
   useEffect(() => {
     setTerminalTitleHandler((tabId, title) => {
       if (manualTitles.current.has(tabId)) return
-      setTabs((prev) => prev.map((t) => (t.tabId === tabId ? { ...t, title } : t)))
+      const clean = title.replace(/^[\p{Extended_Pictographic}️‍\s]+/u, '').trim()
+      setTabs((prev) => prev.map((t) => (t.tabId === tabId ? { ...t, title: clean || title } : t)))
     })
   }, [])
 
@@ -156,6 +160,11 @@ export default function App(): React.JSX.Element {
         delete rest[tabId]
         return rest
       })
+      setColors((prev) => {
+        const rest = { ...prev }
+        delete rest[tabId]
+        return rest
+      })
       promptRefs.current.delete(tabId)
       manualTitles.current.delete(tabId)
     },
@@ -170,6 +179,26 @@ export default function App(): React.JSX.Element {
   const restartTab = useCallback((tabId: TabId): void => {
     void window.claudeTerm.restartTab(tabId)
   }, [])
+
+  // /color <name|#hex|off> from the prompt box tints this tab's accent border.
+  const setTabColor = useCallback((tabId: TabId, color: string): void => {
+    const off = ['off', 'none', 'clear', 'reset', 'default'].includes(color)
+    setColors((prev) => {
+      const next = { ...prev }
+      if (off) delete next[tabId]
+      else next[tabId] = color
+      return next
+    })
+  }, [])
+
+  // step to the prev/next tab, wrapping around
+  const stepTab = useCallback((delta: number): void => {
+    setActiveId((current) => {
+      if (tabs.length === 0) return current
+      const idx = tabs.findIndex((t) => t.tabId === current)
+      return tabs[(idx + delta + tabs.length) % tabs.length]?.tabId ?? current
+    })
+  }, [tabs])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -186,6 +215,11 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'k') {
         e.preventDefault()
         if (activeId) promptRefs.current.get(activeId)?.focus()
+      } else if (e.key === '[' || e.key === ']') {
+        // ⌘[ / ⌘] walk through tabs (wraps around); ⌘←/⌘→ stay line-start/end
+        if (tabs.length === 0) return
+        e.preventDefault()
+        stepTab(e.key === ']' ? 1 : -1)
       } else if (e.key >= '1' && e.key <= '9') {
         const tab = tabs[Number(e.key) - 1]
         if (tab) {
@@ -196,7 +230,7 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [tabs, activeId, newTab, openFolder, closeTab])
+  }, [tabs, activeId, newTab, openFolder, closeTab, stepTab])
 
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
   const showClaudeUi = !!activeStatus?.claudeActive
@@ -207,6 +241,7 @@ export default function App(): React.JSX.Element {
         tabs={tabs}
         activeId={activeId}
         statuses={statuses}
+        colors={colors}
         onSelect={setActiveId}
         onClose={closeTab}
         onNewTab={newTab}
@@ -229,7 +264,9 @@ export default function App(): React.JSX.Element {
               onClose={() => closeTab(tab.tabId)}
             />
           ))}
-          {showClaudeUi && activeStatus && <StatusBar status={activeStatus} />}
+          {showClaudeUi && activeStatus && (
+            <StatusBar status={activeStatus} color={activeId ? colors[activeId] : undefined} />
+          )}
           {showClaudeUi && activeId && (
             <PromptBox
               key={activeId}
@@ -238,6 +275,9 @@ export default function App(): React.JSX.Element {
               }}
               tabId={activeId}
               disabled={false}
+              onStepTab={stepTab}
+              onColor={(color) => setTabColor(activeId, color)}
+              color={colors[activeId]}
             />
           )}
         </>
