@@ -50,18 +50,38 @@ jobs:
         run: npm ci
 
       # Build the renderer/main/preload, then package the mac app and publish it
-      # to a GitHub Release tagged v<version>. CSC_IDENTITY_AUTO_DISCOVERY=false
-      # builds unsigned (no signing certs in CI) — add APPLE_* secrets later to
-      # sign/notarize.
+      # to a GitHub Release tagged v<version>. Signs + notarizes when the signing
+      # secrets are configured; otherwise builds unsigned (never hard-fails), so
+      # releases work before the certs are set up.
+      #
+      # Required repo secrets for signing:
+      #   MAC_CERTS                    base64 of the Developer ID Application .p12
+      #   MAC_CERTS_PASSWORD           the .p12 export password
+      #   APPLE_ID                     Apple account email (for notarization)
+      #   APPLE_APP_SPECIFIC_PASSWORD  app-specific password from appleid.apple.com
+      #   APPLE_TEAM_ID                10-char Apple Developer team id
       - name: Build and publish
         if: steps.version.outputs.new_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ steps.version.outputs.new_version }}
         run: |
           npm run build
-          npx electron-builder --mac --publish always \
-            -c.extraMetadata.version=${{ steps.version.outputs.new_version }}
+          if [ -n "$CSC_LINK" ]; then
+            echo "Developer ID certificate present — signing + notarizing."
+            npx electron-builder --mac --publish always \
+              -c.mac.notarize=true \
+              -c.extraMetadata.version="$VERSION"
+          else
+            echo "::warning::No MAC_CERTS secret set — building UNSIGNED. Add the signing secrets to enable signing + notarization."
+            CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --publish always \
+              -c.extraMetadata.version="$VERSION"
+          fi
 
       - name: Summary
         if: steps.version.outputs.new_version
