@@ -9,6 +9,7 @@
   --bg-raised: #232428;
   --bg-input: #2a2b30;
   --border: #35363c;
+  --border-active: #e6e6ea;
   --fg: #d4d4d8;
   --fg-dim: #8b8d94;
   --accent: #d97757;
@@ -64,6 +65,8 @@ body {
   padding: 0 10px;
   max-width: 220px;
   border-right: 1px solid var(--border);
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
   cursor: default;
   color: var(--fg-dim);
 }
@@ -73,10 +76,28 @@ body {
   color: var(--fg);
 }
 
+.tab-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  min-width: 0;
+}
+
 .tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.25;
+}
+
+.tab-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--fg-dim);
 }
 
 .tab input {

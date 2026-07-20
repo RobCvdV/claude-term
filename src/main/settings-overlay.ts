@@ -9,7 +9,12 @@ const HOOK_EVENTS = [
   'Stop',
   'SessionEnd',
   'PermissionRequest',
-  'Elicitation'
+  'Elicitation',
+  // Fires when a tool finishes — in particular right after the user answers a
+  // permission prompt and the approved tool runs. Used to hand focus back to
+  // the prompt box the instant a dialog is answered (not only when the whole
+  // turn ends). See status-server handleHook + App.tsx refocus logic.
+  'PostToolUse'
 ]
 
 let forwarderPath: string | null = null

@@ -213,6 +213,11 @@ export class StatusServer {
     }
     const map: Record<string, ActivityState> = {
       UserPromptSubmit: 'busy',
+      // A tool finishing means the turn is running again — importantly, this is
+      // the first signal after the user answers a permission prompt (the
+      // approved tool runs). It moves the tab off 'needs-attention' so the
+      // renderer can return focus to the prompt box immediately.
+      PostToolUse: 'busy',
       Stop: 'idle',
       PermissionRequest: 'needs-attention',
       Elicitation: 'needs-attention'
@@ -223,8 +228,14 @@ export class StatusServer {
     const next = map[name]
     if (!next) return
     tab.status.claudeActive = true
+    // Keep the elapsed-timer origin stable across mid-turn tool completions;
+    // only (re)start it when entering busy from a non-busy state.
+    if (next === 'busy') {
+      if (tab.status.activity !== 'busy') tab.status.busySince = Date.now()
+    } else {
+      tab.status.busySince = null
+    }
     tab.status.activity = next
-    tab.status.busySince = next === 'busy' ? Date.now() : null
     this.onUpdate(tab.status)
   }
 

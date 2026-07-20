@@ -24,6 +24,50 @@ function dotClass(status: TabStatus | null | undefined): string {
   return map[status.activity] ?? 'dot idle'
 }
 
+const PREFIX_MAP: Record<string, string> = {
+  bugfix: 'bug',
+  feature: 'feat',
+  chore: 'chore'
+}
+
+/** bugfix/feature/chore → bug/feat/chore; returns null for any other prefix. */
+function shortenBranchPrefix(branch: string): { short: string; rest: string } | null {
+  const slash = branch.indexOf('/')
+  if (slash === -1) return null
+  const short = PREFIX_MAP[branch.slice(0, slash)]
+  if (!short) return null
+  return { short, rest: branch.slice(slash + 1) }
+}
+
+/** Derive the small subtitle shown under a tab title from its git branch. */
+function tabSubtitle(title: string, status: TabStatus | null | undefined): string {
+  const branch = status?.git?.branch?.trim()
+  if (!branch) return ''
+  const parts = shortenBranchPrefix(branch)
+  // Personal project / unrecognised prefix → show the full branch name.
+  if (!parts) return branch
+  const ticket = branch.match(/[A-Z]{2,}-\d+/)
+  // Ticket already in the title → drop it from the subtitle, keep the rest.
+  if (ticket && title.includes(ticket[0])) {
+    const rest = parts.rest
+      .replace(ticket[0], '')
+      .replace(/^[-/]+/, '')
+      .replace(/[-/]+$/, '')
+    return rest ? `${parts.short}/${rest}` : parts.short
+  }
+  // No ticket in the title → full branch with the shortened prefix.
+  return `${parts.short}/${parts.rest}`
+}
+
+/** Border/highlight for a tab: L/T/R lines when active, bottom line otherwise. */
+function tabShadow(color: string | undefined, isActive: boolean): string | undefined {
+  if (isActive) {
+    const line = color || 'var(--border-active)'
+    return `inset 2px 0 0 ${line}, inset -2px 0 0 ${line}, inset 0 2px 0 ${line}`
+  }
+  return color ? `inset 0 -2px 0 ${color}` : undefined
+}
+
 export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, onNewTab, onRename }: Props): React.JSX.Element {
   const [editingId, setEditingId] = useState<TabId | null>(null)
   const [draft, setDraft] = useState('')
@@ -41,11 +85,15 @@ export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, on
   return (
     <div className="tab-bar">
       <div className="tab-drag-region" />
-      {tabs.map((tab) => (
+      {tabs.map((tab) => {
+        const isActive = tab.tabId === activeId
+        const subtitle = tabSubtitle(tab.title, statuses[tab.tabId])
+        const boxShadow = tabShadow(colors[tab.tabId], isActive)
+        return (
         <div
           key={tab.tabId}
-          className={`tab ${tab.tabId === activeId ? 'active' : ''}`}
-          style={colors[tab.tabId] ? { boxShadow: `inset 0 -2px 0 ${colors[tab.tabId]}` } : undefined}
+          className={`tab ${isActive ? 'active' : ''}`}
+          style={boxShadow ? { boxShadow } : undefined}
           onMouseDown={(e) => {
             if (e.button === 0 && editingId !== tab.tabId) onSelect(tab.tabId)
           }}
@@ -68,7 +116,10 @@ export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, on
               }}
             />
           ) : (
-            <span className="tab-title">{tab.title}</span>
+            <span className="tab-labels">
+              <span className="tab-title">{tab.title}</span>
+              {subtitle && <span className="tab-subtitle">{subtitle}</span>}
+            </span>
           )}
           <button
             className="tab-close"
@@ -80,7 +131,8 @@ export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, on
             ×
           </button>
         </div>
-      ))}
+        )
+      })}
       <button className="new-tab" onClick={onNewTab} title="New session (⌘T)">
         +
       </button>

@@ -130,12 +130,17 @@ export default function App(): React.JSX.Element {
         }
       }
 
-      // a claude turn finished (transition into idle) → return focus to the box
+      // Return focus to the prompt box either when the turn finishes (busy →
+      // idle) OR the instant a dialog is answered and work resumes
+      // (needs-attention → busy). The terminal only holds focus while a dialog
+      // is actually waiting, so the box is focused the rest of the time.
       const cur = status.activity
       const prev = prevActivityRef.current[tabId]
       if (cur !== prev) {
         prevActivityRef.current[tabId] = cur
-        if (status.claudeActive && cur === 'idle' && prev && prev !== 'idle' && isActive) {
+        const turnFinished = cur === 'idle' && prev && prev !== 'idle'
+        const dialogAnswered = prev === 'needs-attention' && cur === 'busy'
+        if (status.claudeActive && isActive && (turnFinished || dialogAnswered)) {
           promptRefs.current.get(tabId)?.focus()
         }
       }
