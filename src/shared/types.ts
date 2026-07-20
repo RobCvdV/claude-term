@@ -103,3 +103,35 @@ export interface PersistedSession {
   tabs: PersistedTab[]
   activeIndex: number
 }
+
+/** Engaged time on one ticket/project within a day or a whole range. */
+export interface ActivityBucket {
+  /** stable grouping key: the ticket id, else "project:branch" */
+  key: string
+  /** the MTX-style ticket id if the branch had one, else null */
+  ticket: string | null
+  /** what to show as the row label (ticket id, or the branch/folder name) */
+  label: string
+  /** repo folder name the work happened in */
+  project: string
+  /** wall-clock engaged hours (idle gaps capped out), 2-decimal float */
+  hours: number
+}
+
+export interface ActivityDay {
+  /** local calendar date, YYYY-MM-DD */
+  date: string
+  totalHours: number
+  buckets: ActivityBucket[]
+}
+
+/** Aggregated activity for the requested trailing window. */
+export interface ActivityReport {
+  /** number of days the window spans (1 = today, 7, 30) */
+  rangeDays: number
+  totalHours: number
+  /** most recent day first */
+  days: ActivityDay[]
+  /** per-ticket totals across the whole window, biggest first */
+  totals: ActivityBucket[]
+}

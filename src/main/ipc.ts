@@ -8,6 +8,7 @@ import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listCommands, searchFiles } from './completions'
 import { findLiveBackgroundAgent, transcriptExists } from './agents'
+import { buildActivityReport } from './activity-log'
 
 export interface AppServices {
   ptys: PtyManager
@@ -93,6 +94,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   })
 
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))
+
+  // Activity-hours overview: aggregate the global heartbeat log (written by
+  // ~/.claude/hooks/log-activity.sh) into engaged hours per ticket per day.
+  ipcMain.handle('activity:report', (_e, rangeDays: number) => buildActivityReport(rangeDays))
 
   // dev/scripting convenience: auto-open a tab in this folder at startup
   ipcMain.handle('app:initialCwd', () => process.env.CLAUDE_TERM_DEFAULT_CWD ?? null)

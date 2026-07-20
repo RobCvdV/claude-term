@@ -4,6 +4,7 @@ import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
+import { ActivityOverview } from './components/ActivityOverview'
 import {
   disposeTerm,
   focusTerm,
@@ -50,6 +51,7 @@ export default function App(): React.JSX.Element {
   const [statuses, setStatuses] = useState<Record<TabId, TabStatus | null>>({})
   const [colors, setColors] = useState<Record<TabId, string>>({})
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
+  const [showActivity, setShowActivity] = useState(false)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
 
@@ -435,7 +437,9 @@ export default function App(): React.JSX.Element {
         onClose={closeTab}
         onNewTab={newTab}
         onRename={renameTab}
+        onOpenActivity={() => setShowActivity(true)}
       />
+      {showActivity && <ActivityOverview onClose={() => setShowActivity(false)} />}
       {tabs.length === 0 ? (
         <div className="empty-state">
           <p>No terminals open.</p>
