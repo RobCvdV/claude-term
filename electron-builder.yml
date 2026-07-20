@@ -44,4 +44,7 @@ publish:
   provider: github
   owner: RobCvdV
   repo: claude-term
-  releaseType: release
+  # Publish as a draft (GitHub only mints the tag when a draft is published, so
+  # electron-builder never 422s on a missing tag, and a failed build leaves no
+  # orphan tag). The workflow flips the draft to a public release at the end.
+  releaseType: draft
