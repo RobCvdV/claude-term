@@ -123,6 +123,19 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
     else day.set(b.key, { b, sec })
   }
 
+  // Whole-workday span per day: min/max beat ts across ALL beats (ticket or
+  // not), so the suggested day length reflects the real day, not just tickets.
+  const span = new Map<string, { first: number; last: number }>()
+  for (const beat of beats) {
+    const date = localDate(beat.ts)
+    const cur = span.get(date)
+    if (!cur) span.set(date, { first: beat.ts, last: beat.ts })
+    else {
+      if (beat.ts < cur.first) cur.first = beat.ts
+      if (beat.ts > cur.last) cur.last = beat.ts
+    }
+  }
+
   for (const evs of bySession.values()) {
     evs.sort((a, z) => a.ts - z.ts)
     for (let i = 1; i < evs.length; i++) {
@@ -146,7 +159,13 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
       .filter((x) => x.hours > 0)
       .sort((a, z) => z.hours - a.hours)
     const totalHours = round2(buckets.reduce((s, x) => s + x.hours, 0))
-    return { date, totalHours, buckets }
+    const s = span.get(date)
+    const first = s?.first ?? 0
+    const last = s?.last ?? 0
+    const spanSec = last > first ? last - first : 0
+    // round the span UP to the next 30 min; no span → default 8h workday
+    const suggestedHours = spanSec > 0 ? Math.ceil(spanSec / 1800) * 0.5 : 8
+    return { date, totalHours, buckets, firstTs: first, lastTs: last, suggestedHours }
   })
 
   // Totals across the whole window, per bucket key.

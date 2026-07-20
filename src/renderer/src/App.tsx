@@ -421,6 +421,15 @@ export default function App(): React.JSX.Element {
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
   const showClaudeUi = !!activeStatus?.claudeActive
 
+  // Fill the active tab's prompt (only if empty) — used by the worklog panel to
+  // tee up "Log my hours" after preparing a dispatch.
+  const fillPromptIfEmpty = useCallback(
+    (text: string): void => {
+      if (activeId) promptRefs.current.get(activeId)?.fillIfEmpty(text)
+    },
+    [activeId]
+  )
+
   return (
     <div className="app">
       {dropTarget && (
@@ -439,7 +448,12 @@ export default function App(): React.JSX.Element {
         onRename={renameTab}
         onOpenActivity={() => setShowActivity(true)}
       />
-      {showActivity && <ActivityOverview onClose={() => setShowActivity(false)} />}
+      {showActivity && (
+        <ActivityOverview
+          onClose={() => setShowActivity(false)}
+          onFillPrompt={fillPromptIfEmpty}
+        />
+      )}
       {tabs.length === 0 ? (
         <div className="empty-state">
           <p>No terminals open.</p>
