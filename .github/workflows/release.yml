@@ -83,6 +83,15 @@ jobs:
               -c.extraMetadata.version="$VERSION"
           fi
 
+      # electron-builder uploaded everything to a DRAFT release; flip it public
+      # now that the build/sign/notarize/upload all succeeded. This is what
+      # actually creates the git tag (v<version>) on this commit.
+      - name: Publish the release
+        if: steps.version.outputs.new_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "v${{ steps.version.outputs.new_version }}" --draft=false --latest
+
       - name: Summary
         if: steps.version.outputs.new_version
         run: echo "Released v${{ steps.version.outputs.new_version }} to GitHub Releases." >> "$GITHUB_STEP_SUMMARY"
