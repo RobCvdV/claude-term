@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { createServices, registerIpc } from './ipc'
+import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
 
@@ -68,6 +69,10 @@ app.whenReady().then(async () => {
   await services.status.start()
   registerIpc(services, () => mainWindow)
   createWindow()
+
+  // First-run: offer to install the global activity-logging hook (feeds the
+  // 🕐 Activity hours view). Idempotent + merge-only; never blocks startup.
+  void ensureActivityHook(() => mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
