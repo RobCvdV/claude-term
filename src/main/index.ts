@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { createServices, registerIpc } from './ipc'
 import { loginShellEnv } from './shell-env'
+import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
 
 // Redirect userData (session.json, zdotdir, forwarder) to an isolated dir when
 // asked — lets an E2E run restore a crafted session without touching the real
@@ -76,44 +77,84 @@ app.whenReady().then(async () => {
 let quitConfirmed = false
 app.on('before-quit', (e) => {
   if (quitConfirmed || !mainWindow) return
-  const activeCount = services.status.activeClaudeCount()
-  // Nothing running in a tab — quit silently. (Any sessions the user promoted
-  // to daemon-managed background agents keep running independently of the app
-  // and are re-attached on next launch; we deliberately don't kill those.)
-  if (activeCount === 0) {
+  // Fast path: no Claude session ever ran this session → nothing to guard.
+  if (
+    services.status.activeClaudeCount() === 0 &&
+    services.status.seenSessionIds().length === 0
+  ) {
     shutdown()
     return
   }
+  // Otherwise defer: we may need to look up daemon background agents (async).
   e.preventDefault()
-  // A closed session isn't lost — its conversation resumes on next launch. The
-  // only cost of quitting mid-turn is the *unfinished* turn. There's no way to
-  // keep a session running after the app closes (Claude Code doesn't expose
-  // promoting a live interactive session to a background agent), so the honest
-  // choice is stop-now vs stay-open-to-let-it-finish.
+  void confirmQuit()
+})
+
+function finishQuit(stopAgents: LiveAgent[] = []): void {
+  quitConfirmed = true
+  shutdown()
+  if (stopAgents.length === 0) {
+    app.quit()
+    return
+  }
+  // Stop our daemon background agents (best-effort) before we go.
+  void Promise.all(stopAgents.map((a) => stopBackgroundAgent(a.id ?? a.sessionId))).finally(() =>
+    app.quit()
+  )
+}
+
+async function confirmQuit(): Promise<void> {
+  const win = mainWindow
+  if (!win) return finishQuit()
+
+  // Background agents dispatched from our tabs keep running after we quit (they
+  // live under the Claude daemon, not our PTYs). Offer to stop them or leave
+  // them (they re-attach on next launch).
+  let ownAgents: LiveAgent[] = []
+  try {
+    ownAgents = await findOwnBackgroundAgents(services.status.seenSessionIds())
+  } catch {
+    /* best effort — treat as none */
+  }
+  if (!mainWindow) return
+
+  if (ownAgents.length > 0) {
+    const n = ownAgents.length
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Cancel', 'Kill everything', 'Quit, leave running'],
+      defaultId: 2,
+      cancelId: 0,
+      message: `${n} background agent${n > 1 ? 's are' : ' is'} running independently of claude-term.`,
+      detail:
+        '“Kill everything” stops them now (their conversations are kept — resume later). ' +
+        '“Quit, leave running” lets them keep working; they re-attach next launch.'
+    })
+    if (choice === 0) return // Cancel: stay open, keep everything running
+    finishQuit(choice === 1 ? ownAgents : [])
+    return
+  }
+
+  // No daemon agents — just the tabs' own sessions, which stop on quit but
+  // resume from transcript next launch. Confirm (busy sessions guarded harder).
+  const activeCount = services.status.activeClaudeCount()
+  if (activeCount === 0) return finishQuit()
   const busyN = services.status.busyCount()
   const busy = busyN > 0
-  const message = busy
-    ? `${busyN} Claude session${busyN > 1 ? 's are' : ' is'} still working. Quit anyway?`
-    : 'Quit claude-term?'
-  const detail = busy
-    ? "Quitting stops the current turn — that unfinished work is lost, but the conversation resumes next launch. Choose “Keep working” to leave the app open until it's done."
-    : `${activeCount} Claude session${activeCount > 1 ? 's' : ''} will close and resume next launch.`
-  const choice = dialog.showMessageBoxSync(mainWindow, {
+  const choice = dialog.showMessageBoxSync(win, {
     type: busy ? 'warning' : 'question',
-    // a busy session is worth guarding (default = don't quit); an idle one is
-    // routine (default Quit, so Enter just quits) — either way the user chooses.
     buttons: busy ? ['Quit anyway', 'Keep working'] : ['Quit', 'Cancel'],
     defaultId: busy ? 1 : 0,
     cancelId: 1,
-    message,
-    detail
+    message: busy
+      ? `${busyN} Claude session${busyN > 1 ? 's are' : ' is'} still working. Quit anyway?`
+      : 'Quit claude-term?',
+    detail: busy
+      ? "Quitting stops the current turn — that unfinished work is lost, but the conversation resumes next launch. Choose “Keep working” to leave the app open until it's done."
+      : `${activeCount} Claude session${activeCount > 1 ? 's' : ''} will close and resume next launch.`
   })
-  if (choice === 0) {
-    quitConfirmed = true
-    shutdown()
-    app.quit()
-  }
-})
+  if (choice === 0) finishQuit()
+}
 
 function shutdown(): void {
   services.ptys.killAll()

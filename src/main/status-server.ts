@@ -30,6 +30,9 @@ export class StatusServer {
   private server: Server | null = null
   private tabs = new Map<TabId, TabState>()
   private gitTimer: NodeJS.Timeout | null = null
+  /** Every session id that has POSTed to us this run (tabs + any background
+   *  agents dispatched from a tab). Used at quit to find our daemon agents. */
+  private seenSessions = new Set<string>()
   port = 0
 
   /** Set by ipc.ts; called whenever a tab's status changes. */
@@ -119,6 +122,11 @@ export class StatusServer {
     return n
   }
 
+  /** Session ids seen this run — candidates for "our" daemon background agents. */
+  seenSessionIds(): string[] {
+    return [...this.seenSessions]
+  }
+
   /** How many tabs currently have a live Claude session (busy or idle). */
   activeClaudeCount(): number {
     let n = 0
@@ -156,6 +164,7 @@ export class StatusServer {
   private handleStatusline(tabId: TabId, payload: StatuslinePayload): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
+    if (payload.session_id) this.seenSessions.add(payload.session_id)
     tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
@@ -178,6 +187,7 @@ export class StatusServer {
   private handleHook(tabId: TabId, evt: HookEvent): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
+    if (evt.session_id) this.seenSessions.add(evt.session_id)
     // Note: the generic `Notification` hook is intentionally NOT mapped to an
     // activity state. It fires both for permission needs AND as a "waiting for
     // your input" ping that arrives AFTER `Stop` — mapping it to

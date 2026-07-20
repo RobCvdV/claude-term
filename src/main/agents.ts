@@ -52,6 +52,35 @@ export async function findLiveBackgroundAgent(sessionId: string): Promise<LiveAg
 }
 
 /**
+ * Live background agents that belong to this claude-term instance: daemon
+ * agents whose session id we've seen POST to our hook/statusline server this
+ * run (i.e. dispatched from inside one of our tabs). Excludes background agents
+ * the user started elsewhere, and the tabs' own interactive sessions (those are
+ * kind 'interactive' and die with the app anyway).
+ */
+export async function findOwnBackgroundAgents(seenSessionIds: Iterable<string>): Promise<LiveAgent[]> {
+  const seen = new Set(seenSessionIds)
+  const agents = await listLiveAgents()
+  return agents.filter((a) => a.kind === 'background' && seen.has(a.sessionId))
+}
+
+/**
+ * Stop a background agent via `claude stop <id>` (keeps its conversation; it can
+ * be re-attached later). Resolves true on success. Best-effort, bounded time.
+ */
+export async function stopBackgroundAgent(jobId: string): Promise<boolean> {
+  const [claude, env] = await Promise.all([resolveClaudePath(), loginShellEnv()])
+  return new Promise((resolve) => {
+    execFile(
+      claude,
+      ['stop', jobId],
+      { timeout: 8_000, encoding: 'utf8', env: env as NodeJS.ProcessEnv },
+      (err) => resolve(!err)
+    )
+  })
+}
+
+/**
  * Whether Claude Code has a resumable transcript for this session id. Claude
  * stores transcripts at ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl; the
  * cwd encoding isn't worth reproducing, so we scan the project dirs for the
