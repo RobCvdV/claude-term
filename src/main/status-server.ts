@@ -17,16 +17,6 @@ interface TabState {
   status: TabStatus
   cwd: string
   gitFetchedAt: number
-  /**
-   * The session id of the tab's *own* Claude session — the first one to start
-   * after the shell (re)launched. A background agent dispatched from inside the
-   * tab inherits our per-tab `--settings` overlay, so its hooks/statusline POST
-   * to this same tab; without this guard the sub-agent's id would overwrite the
-   * tab's session id (and its Start/End/activity would drive the tab's UI).
-   * We adopt the first session seen, then ignore events from any other id until
-   * the primary session ends or the tab restarts.
-   */
-  primarySessionId: string | null
 }
 
 /**
@@ -95,7 +85,6 @@ export class StatusServer {
     this.tabs.set(tabId, {
       cwd,
       gitFetchedAt: 0,
-      primarySessionId: null,
       status: {
         tabId,
         claudeActive: false,
@@ -145,7 +134,6 @@ export class StatusServer {
     tab.status.activity = 'exited'
     tab.status.exitCode = exitCode
     tab.status.busySince = null
-    tab.primarySessionId = null
     this.onUpdate(tab.status)
   }
 
@@ -156,21 +144,18 @@ export class StatusServer {
     tab.status.activity = 'idle'
     tab.status.exitCode = null
     tab.status.payload = null
-    tab.primarySessionId = null
     this.onUpdate(tab.status)
   }
 
-  /** True for events from a session that isn't the tab's own (i.e. a background
-   *  sub-agent that inherited this tab's --settings overlay). */
-  private isForeign(tab: TabState, sessionId?: string): boolean {
-    return !!sessionId && !!tab.primarySessionId && sessionId !== tab.primarySessionId
-  }
-
+  // The statusline reflects the tab's *foreground* Claude session (the one whose
+  // TUI is rendering), so its session_id is the one we persist for restore. Hooks
+  // are NOT used to set the session id: a background agent dispatched from inside
+  // the tab inherits our per-tab --settings overlay and fires hooks against this
+  // same tab, which used to clobber the id with the sub-agent's — but a bg agent
+  // doesn't render the tab's statusline, so sourcing the id here avoids that.
   private handleStatusline(tabId: TabId, payload: StatuslinePayload): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
-    if (this.isForeign(tab, payload.session_id)) return
-    if (payload.session_id) tab.primarySessionId ??= payload.session_id
     tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
@@ -184,17 +169,15 @@ export class StatusServer {
     void this.refreshGit(tabId)
   }
 
+  // Hooks drive only the activity state (busy/idle/needs-attention) and the
+  // claude-active gate — never the persisted session id (that comes from the
+  // statusline; see handleStatusline). Every hook is honored regardless of its
+  // session_id: a tab legitimately hosts several session ids over its life
+  // (a new session after /clear, compaction, or restart), and gating activity
+  // on a "first id wins" rule left the dot stuck busy on the tab's own turns.
   private handleHook(tabId: TabId, evt: HookEvent): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
-    // Ignore everything from a background sub-agent dispatched inside this tab:
-    // it shares our hook URL but must not drive the tab's session id / activity.
-    if (this.isForeign(tab, evt.session_id)) return
-    // first non-foreign session seen claims the tab, so a later sub-agent can't
-    if (evt.session_id) {
-      tab.primarySessionId ??= evt.session_id
-      tab.status.sessionId = evt.session_id
-    }
     // Note: the generic `Notification` hook is intentionally NOT mapped to an
     // activity state. It fires both for permission needs AND as a "waiting for
     // your input" ping that arrives AFTER `Stop` — mapping it to
@@ -215,8 +198,6 @@ export class StatusServer {
       tab.status.activity = 'idle'
       tab.status.busySince = null
       tab.status.payload = null
-      // let a fresh session started in the same shell re-adopt as primary
-      tab.primarySessionId = null
       this.onUpdate(tab.status)
       return
     }
