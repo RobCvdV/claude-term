@@ -92,6 +92,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "v${{ steps.version.outputs.new_version }}" --draft=false --latest
 
+      # electron-builder can race while creating the release and split a couple
+      # of assets into a duplicate DRAFT of the same tag. The real release is the
+      # one we just published; delete any leftover same-tag draft so the Releases
+      # page stays clean.
+      - name: Prune duplicate draft releases
+        if: steps.version.outputs.new_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="v${{ steps.version.outputs.new_version }}"
+          for id in $(gh api "repos/${{ github.repository }}/releases" \
+              --jq ".[] | select(.tag_name==\"$V\" and .draft==true) | .id"); do
+            echo "removing leftover draft release $id"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+          done
+
       - name: Summary
         if: steps.version.outputs.new_version
         run: echo "Released v${{ steps.version.outputs.new_version }} to GitHub Releases." >> "$GITHUB_STEP_SUMMARY"
