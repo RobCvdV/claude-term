@@ -14,6 +14,10 @@
 input=$(cat)
 log_file="$HOME/.claude/activity-hours.jsonl"
 
+# Fail-safe: every beat is built with jq, so without it there's nothing useful
+# to write — exit cleanly rather than spawn subshells and append a junk line.
+command -v jq >/dev/null 2>&1 || exit 0
+
 # One jq call extracts all three fields (@tsv escapes any tabs/newlines inside
 # them) — PostToolUse is hot, so avoid spawning jq three times per beat.
 IFS=$'\t' read -r event cwd session < <(
