@@ -103,3 +103,74 @@ export interface PersistedSession {
   tabs: PersistedTab[]
   activeIndex: number
 }
+
+/** Engaged time on one ticket/project within a day or a whole range. */
+export interface ActivityBucket {
+  /** stable grouping key: the ticket id, else "project:branch" */
+  key: string
+  /** the MTX-style ticket id if the branch had one, else null */
+  ticket: string | null
+  /** what to show as the row label (ticket id, or the branch/folder name) */
+  label: string
+  /** repo folder name the work happened in */
+  project: string
+  /** wall-clock engaged hours (idle gaps capped out), 2-decimal float */
+  hours: number
+}
+
+export interface ActivityDay {
+  /** local calendar date, YYYY-MM-DD */
+  date: string
+  totalHours: number
+  buckets: ActivityBucket[]
+  /** epoch seconds of the first / last beat seen this day (whole workday span,
+   *  including non-ticket work) — drives the suggested day length. 0 if none. */
+  firstTs: number
+  lastTs: number
+  /** first→last span rounded UP to the next 30 min, or 8h when there's no span.
+   *  The default (editable) total to dispatch across the day's tickets. */
+  suggestedHours: number
+}
+
+/** Single-word worklog category; the Jira worklog comment. */
+export type WorklogActivity = 'coding' | 'investigate' | 'testing' | 'reviewing'
+
+/** One prepared (not-yet-posted) Jira worklog line. */
+export interface WorklogPlanEntry {
+  /** local YYYY-MM-DD the work happened */
+  date: string
+  /** MTX-style Jira issue key */
+  issueKey: string
+  /** hours to log, a multiple of 0.5 */
+  hours: number
+  activity: WorklogActivity
+}
+
+/** The dispatch the user confirmed in the panel, handed to the assistant to
+ *  post via the Atlassian MCP. Written to ~/.claude/activity-worklog-plan.json. */
+export interface WorklogPlan {
+  generatedAt: number
+  entries: WorklogPlanEntry[]
+}
+
+/** A worklog the assistant already posted (idempotency + ✓ badges).
+ *  Stored in ~/.claude/activity-worklog-log.json under { logged: [...] }. */
+export interface LoggedWorklog {
+  date: string
+  issueKey: string
+  hours: number
+  activity: WorklogActivity
+  worklogId: string
+  at: number
+}
+
+/** Aggregated activity for the requested trailing window. */
+export interface ActivityReport {
+  /** number of days the window spans (1 = today, 7, 30) */
+  rangeDays: number
+  totalHours: number
+  /** most recent day first */
+  days: ActivityDay[]
+  /** per-ticket totals across the whole window, biggest first */
+  totals: ActivityBucket[]
+}

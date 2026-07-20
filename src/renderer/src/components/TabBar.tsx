@@ -10,6 +10,7 @@ interface Props {
   onClose: (tabId: TabId) => void
   onNewTab: () => void
   onRename: (tabId: TabId, title: string) => void
+  onOpenActivity: () => void
 }
 
 function dotClass(status: TabStatus | null | undefined): string {
@@ -68,7 +69,7 @@ function tabShadow(color: string | undefined, isActive: boolean): string | undef
   return color ? `inset 0 -2px 0 ${color}` : undefined
 }
 
-export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, onNewTab, onRename }: Props): React.JSX.Element {
+export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, onNewTab, onRename, onOpenActivity }: Props): React.JSX.Element {
   const [editingId, setEditingId] = useState<TabId | null>(null)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -135,6 +136,21 @@ export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, on
       })}
       <button className="new-tab" onClick={onNewTab} title="New session (⌘T)">
         +
+      </button>
+      <button className="clock-btn" onClick={onOpenActivity} title="Activity hours" aria-label="Activity hours">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
       </button>
     </div>
   )

@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { PersistedSession, SlashCommand, TabId, TabInfo, TabStatus } from '../shared/types'
+import type {
+  ActivityReport,
+  LoggedWorklog,
+  PersistedSession,
+  SlashCommand,
+  TabId,
+  TabInfo,
+  TabStatus,
+  WorklogPlan
+} from '../shared/types'
 
 export interface ClaudeTermApi {
   initialCwd(): Promise<string | null>
@@ -8,6 +17,9 @@ export interface ClaudeTermApi {
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
+  activityReport(rangeDays: number): Promise<ActivityReport>
+  saveWorklogPlan(plan: WorklogPlan): Promise<void>
+  worklogLogged(): Promise<LoggedWorklog[]>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
   loadSession(): Promise<PersistedSession | null>
@@ -40,6 +52,9 @@ const api: ClaudeTermApi = {
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
+  activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
+  saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
+  worklogLogged: () => ipcRenderer.invoke('worklog:logged'),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
   loadSession: () => ipcRenderer.invoke('session:load'),

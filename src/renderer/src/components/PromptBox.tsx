@@ -36,6 +36,8 @@ function parseColor(text: string): string | null {
 export interface PromptBoxHandle {
   focus: () => void
   insertAttachments: (items: Attachment[]) => void
+  /** set the prompt to `text` only when it's currently empty (no clobbering) */
+  fillIfEmpty: (text: string) => void
 }
 
 // image chips shown in the box; expanded back to their real mention on submit
@@ -120,6 +122,16 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         return label
       })
       insertTokenText(tokens.join(' '))
+    },
+    fillIfEmpty: (text: string) => {
+      const editor = editorRef.current
+      if (!editor || editor.getValue().trim() !== '') return
+      editor.setValue(text)
+      const model = editor.getModel()
+      if (model) {
+        const line = model.getLineCount()
+        editor.setPosition({ lineNumber: line, column: model.getLineMaxColumn(line) })
+      }
     }
   }))
 
