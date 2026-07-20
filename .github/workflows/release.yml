@@ -1,0 +1,68 @@
+name: Release
+
+# Build and publish to the GitHub Releases page on every push to main.
+# Versioning is fully automatic from conventional-commit messages — feat → minor,
+# fix → patch (BREAKING CHANGE → major) — so no version is ever edited in repo
+# files. The computed version is injected into the build via electron-builder's
+# extraMetadata; the tag + release are created by the publish step.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # create tags and releases
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags for version computation
+
+      # Compute the next semver from commits since the last tag. dry_run means
+      # this only calculates — the tag itself is created by the publish step,
+      # so a failed build never leaves an orphan tag. default_bump: false skips
+      # the release entirely when no feat/fix commit warrants one.
+      - name: Compute next version
+        id: version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: main
+          default_bump: false
+          fetch_all_tags: true
+          dry_run: true
+
+      - name: Set up Node
+        if: steps.version.outputs.new_version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.version.outputs.new_version
+        run: npm ci
+
+      # Build the renderer/main/preload, then package the mac app and publish it
+      # to a GitHub Release tagged v<version>. CSC_IDENTITY_AUTO_DISCOVERY=false
+      # builds unsigned (no signing certs in CI) — add APPLE_* secrets later to
+      # sign/notarize.
+      - name: Build and publish
+        if: steps.version.outputs.new_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          npm run build
+          npx electron-builder --mac --publish always \
+            -c.extraMetadata.version=${{ steps.version.outputs.new_version }}
+
+      - name: Summary
+        if: steps.version.outputs.new_version
+        run: echo "Released v${{ steps.version.outputs.new_version }} to GitHub Releases." >> "$GITHUB_STEP_SUMMARY"
