@@ -76,7 +76,6 @@ app.whenReady().then(async () => {
 let quitConfirmed = false
 app.on('before-quit', (e) => {
   if (quitConfirmed || !mainWindow) return
-  const busy = services.status.anyBusy()
   const activeCount = services.status.activeClaudeCount()
   // Nothing running in a tab — quit silently. (Any sessions the user promoted
   // to daemon-managed background agents keep running independently of the app
@@ -86,18 +85,27 @@ app.on('before-quit', (e) => {
     return
   }
   e.preventDefault()
+  // A closed session isn't lost — its conversation resumes on next launch. The
+  // only cost of quitting mid-turn is the *unfinished* turn. There's no way to
+  // keep a session running after the app closes (Claude Code doesn't expose
+  // promoting a live interactive session to a background agent), so the honest
+  // choice is stop-now vs stay-open-to-let-it-finish.
+  const busyN = services.status.busyCount()
+  const busy = busyN > 0
+  const message = busy
+    ? `${busyN} Claude session${busyN > 1 ? 's are' : ' is'} still working. Quit anyway?`
+    : 'Quit claude-term?'
   const detail = busy
-    ? 'A Claude Code session is still working. Quitting closes it; you can resume it next launch.'
-    : `${activeCount} Claude Code session${activeCount > 1 ? 's are' : ' is'} open. ` +
-      'Quitting closes them; you can resume them next launch.'
+    ? "Quitting stops the current turn — that unfinished work is lost, but the conversation resumes next launch. Choose “Keep working” to leave the app open until it's done."
+    : `${activeCount} Claude session${activeCount > 1 ? 's' : ''} will close and resume next launch.`
   const choice = dialog.showMessageBoxSync(mainWindow, {
     type: busy ? 'warning' : 'question',
-    buttons: ['Quit', 'Cancel'],
-    // a busy session is worth guarding (default Cancel); an idle one is routine
-    // (default Quit, so Enter just quits) — either way the user chooses.
+    // a busy session is worth guarding (default = don't quit); an idle one is
+    // routine (default Quit, so Enter just quits) — either way the user chooses.
+    buttons: busy ? ['Quit anyway', 'Keep working'] : ['Quit', 'Cancel'],
     defaultId: busy ? 1 : 0,
     cancelId: 1,
-    message: busy ? 'A session is still working. Quit anyway?' : 'Quit claude-term?',
+    message,
     detail
   })
   if (choice === 0) {

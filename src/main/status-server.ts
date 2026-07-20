@@ -112,11 +112,11 @@ export class StatusServer {
     return this.tabs.get(tabId)?.cwd ?? null
   }
 
-  anyBusy(): boolean {
-    for (const tab of this.tabs.values()) {
-      if (tab.status.activity === 'busy') return true
-    }
-    return false
+  /** How many tabs have a Claude session actively working right now. */
+  busyCount(): number {
+    let n = 0
+    for (const tab of this.tabs.values()) if (tab.status.activity === 'busy') n++
+    return n
   }
 
   /** How many tabs currently have a live Claude session (busy or idle). */
