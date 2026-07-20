@@ -145,6 +145,19 @@ export class StatusServer {
     this.onUpdate(tab.status)
   }
 
+  /** Optimistically mark a tab as hosting a live Claude session. Used when we
+   *  restore a tab via `claude --resume`/`attach`: an attached background agent
+   *  keeps its original --settings, so its statusline/hooks POST to a dead
+   *  endpoint and never reach us — without this the Claude UI (status bar +
+   *  prompt box) would stay hidden for that tab forever. A real statusline or
+   *  SessionEnd, if one ever arrives, still overrides this. */
+  markClaudeActive(tabId: TabId): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || tab.status.claudeActive) return
+    tab.status.claudeActive = true
+    this.onUpdate(tab.status)
+  }
+
   markRestarted(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return

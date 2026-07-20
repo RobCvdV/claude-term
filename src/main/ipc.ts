@@ -51,9 +51,21 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     //    shell, so we don't dump "No conversation found" into the tab.
     if (resume) {
       const bg = await findLiveBackgroundAgent(resume)
-      if (bg) await ptys.create(tabId, dir, undefined, bg.id ?? bg.sessionId)
-      else if (transcriptExists(resume)) await ptys.create(tabId, dir, resume)
-      else await ptys.create(tabId, dir)
+      if (bg) {
+        await ptys.create(tabId, dir, undefined, bg.id ?? bg.sessionId)
+        // An attached bg agent can't feed our status server (its --settings
+        // point at a dead endpoint), so surface the Claude UI optimistically —
+        // otherwise the prompt box never appears for this tab.
+        status.markClaudeActive(tabId)
+      } else if (transcriptExists(resume)) {
+        await ptys.create(tabId, dir, resume)
+        // Resume self-reports via statusline within ~1s, but seed the UI now so
+        // the prompt box doesn't flicker in (and shows even if the first
+        // statusline POST is missed).
+        status.markClaudeActive(tabId)
+      } else {
+        await ptys.create(tabId, dir)
+      }
     } else {
       await ptys.create(tabId, dir)
     }

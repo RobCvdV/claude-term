@@ -1,6 +1,6 @@
 {
   "name": "claude-term",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Terminal wrapper around the Claude Code CLI with tabs, a Monaco prompt box and a live status bar",
   "main": "./out/main/index.js",
   "author": "Rob Coenen",
