@@ -60,6 +60,22 @@ jobs:
       #   APPLE_ID                     Apple account email (for notarization)
       #   APPLE_APP_SPECIFIC_PASSWORD  app-specific password from appleid.apple.com
       #   APPLE_TEAM_ID                10-char Apple Developer team id
+      # Pre-create the draft release electron-builder uploads into. Without it,
+      # electron-builder's parallel asset uploads race to create the draft and
+      # can split the assets across TWO drafts of the same tag — the publish
+      # step then flips a coin on which becomes the public release (v1.1.0
+      # shipped blockmap-only that way, and the prune step destroyed the draft
+      # holding the real build). Creating a draft does NOT create the git tag,
+      # so a failed build still leaves no orphan tag.
+      - name: Pre-create draft release
+        if: steps.version.outputs.new_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="v${{ steps.version.outputs.new_version }}"
+          gh release view "$V" >/dev/null 2>&1 || \
+            gh release create "$V" --draft --title "$V" --target "$GITHUB_SHA" --notes ""
+
       - name: Build and publish
         if: steps.version.outputs.new_version
         env:
@@ -90,22 +106,36 @@ jobs:
         if: steps.version.outputs.new_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "v${{ steps.version.outputs.new_version }}" --draft=false --latest
+        run: |
+          V="v${{ steps.version.outputs.new_version }}"
+          # sanity: never publish a release without the DMG — a blockmap-only
+          # split draft must not become the public release
+          gh release view "$V" --json assets --jq '.assets[].name' | grep -q '\.dmg$' || {
+            echo "::error::draft $V has no .dmg asset — refusing to publish"
+            exit 1
+          }
+          gh release edit "$V" --draft=false --latest
 
-      # electron-builder can race while creating the release and split a couple
-      # of assets into a duplicate DRAFT of the same tag. The real release is the
-      # one we just published; delete any leftover same-tag draft so the Releases
-      # page stays clean.
+      # Belt for any remaining edge case: delete same-tag drafts ONLY when they
+      # carry nothing but blockmaps. Deleting a draft destroys its assets — an
+      # unconditional prune here is what wiped v1.1.0's real build. A draft
+      # holding real assets is left in place with a warning to merge manually.
       - name: Prune duplicate draft releases
         if: steps.version.outputs.new_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           V="v${{ steps.version.outputs.new_version }}"
-          for id in $(gh api "repos/${{ github.repository }}/releases" \
-              --jq ".[] | select(.tag_name==\"$V\" and .draft==true) | .id"); do
-            echo "removing leftover draft release $id"
-            gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+          gh api "repos/${{ github.repository }}/releases" \
+            --jq ".[] | select(.tag_name==\"$V\" and .draft==true) |
+                  [.id, ([.assets[].name | select(endswith(\".blockmap\") | not)] | length)] | @tsv" |
+          while IFS=$'\t' read -r id realAssets; do
+            if [ "$realAssets" -eq 0 ]; then
+              echo "removing blockmap-only draft release $id"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+            else
+              echo "::warning::same-tag draft $id still holds $realAssets real asset(s) — not deleting, merge manually"
+            fi
           done
 
       - name: Summary
