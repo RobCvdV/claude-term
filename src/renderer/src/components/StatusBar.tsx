@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { TabStatus } from '../../../shared/types'
+import { VolumeControl } from './VolumeControl'
 
 interface Props {
   status: TabStatus | null
@@ -7,6 +8,17 @@ interface Props {
 }
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
+
+/** Colour class for a rate-limit percentage: dim <40, white ≥40, orange ≥60,
+ *  red ≥80. `active=false` keeps it dim regardless (used to hold the weekly
+ *  window quiet until its last 2 days). */
+function limitClass(pct: number | undefined, active = true): string {
+  if (pct == null || !active) return 'dim'
+  if (pct >= 80) return 'rl-red'
+  if (pct >= 60) return 'rl-orange'
+  if (pct >= 40) return 'rl-white'
+  return 'dim'
+}
 
 function ExternalLink({ url, children, className }: { url: string; children: React.ReactNode; className?: string }): React.JSX.Element {
   return (
@@ -107,6 +119,16 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
 
   const rl5 = payload?.rate_limits?.five_hour
   const rl7 = payload?.rate_limits?.seven_day
+  // Colour the weekly window only in its last 2 days (before reset); stay dim
+  // otherwise so normal weekly burn doesn't read as alarming.
+  const rl7Near = rl7?.resets_at != null && rl7.resets_at - now / 1000 <= 2 * 24 * 3600
+
+  // Session cost is only meaningful when paying per token. We can't tell
+  // subscription-vs-API from the statusline payload, so fall back to: show cost
+  // only for non-Claude models (e.g. DeepSeek), which are always API-metered.
+  const modelTag = (payload?.model?.id || payload?.model?.display_name || '').toLowerCase()
+  const externalModel = modelTag.length > 0 && !modelTag.includes('claude')
+  const showCost = externalModel && payload?.cost?.total_cost_usd != null
 
   return (
     <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
@@ -120,6 +142,11 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
           {git.behind > 0 && <span className="stat-behind">↓{git.behind}</span>}
         </span>
       )}
+      {payload?.cost && (payload.cost.total_lines_added ?? 0) + (payload.cost.total_lines_removed ?? 0) > 0 && (
+        <span className="dim">
+          +{payload.cost.total_lines_added ?? 0}/−{payload.cost.total_lines_removed ?? 0}
+        </span>
+      )}
       {payload?.model?.display_name && (
         <span className="model">
           {payload.model.display_name}
@@ -127,21 +154,16 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
         </span>
       )}
       {usedPct != null && <span className={`ctx ${ctxClass}`}>{usedPct}%</span>}
-      {payload?.cost?.total_cost_usd != null && (
-        <span className="dim">${payload.cost.total_cost_usd.toFixed(2)}</span>
-      )}
-      {payload?.cost && (payload.cost.total_lines_added ?? 0) + (payload.cost.total_lines_removed ?? 0) > 0 && (
-        <span className="dim">
-          +{payload.cost.total_lines_added ?? 0}/−{payload.cost.total_lines_removed ?? 0}
-        </span>
+      {showCost && (
+        <span className="dim">${payload!.cost!.total_cost_usd!.toFixed(2)}</span>
       )}
       {rl5?.used_percentage != null && rl5.resets_at != null && (
-        <span className="dim" title="5-hour rate limit window">
+        <span className={limitClass(rl5.used_percentage)} title="5-hour rate limit window">
           5h {Math.round(rl5.used_percentage)}% ({fmtCountdown(rl5.resets_at, now)})
         </span>
       )}
       {rl7?.used_percentage != null && (
-        <span className="dim" title="7-day rate limit window">
+        <span className={limitClass(rl7.used_percentage, rl7Near)} title="7-day rate limit window">
           7d {Math.round(rl7.used_percentage)}%
         </span>
       )}
@@ -156,6 +178,7 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
           Jenkins
         </ExternalLink>
       )}
+      <VolumeControl />
       <span className="clock">
         {new Date(now).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
       </span>

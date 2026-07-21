@@ -335,6 +335,54 @@ body {
   color: var(--fg-dim);
 }
 
+/* rate-limit windows: dim by default, escalating with usage */
+.rl-white {
+  color: var(--fg);
+}
+.rl-orange {
+  color: var(--orange);
+}
+.rl-red {
+  color: var(--red);
+}
+
+/* notification volume control */
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fg-dim);
+}
+.volume.muted {
+  color: var(--red);
+}
+.volume button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+}
+.volume button:hover {
+  background: var(--bg-input);
+  color: var(--fg);
+}
+.volume .vol-step {
+  font-size: 13px;
+  line-height: 1;
+}
+.volume .vol-toggle {
+  gap: 4px;
+}
+.volume .vol-pct {
+  min-width: 34px;
+  text-align: right;
+}
+
 /* ---- prompt box ---- */
 .prompt-box {
   display: flex;

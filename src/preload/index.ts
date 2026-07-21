@@ -7,6 +7,8 @@ import type {
   TabId,
   TabInfo,
   TabStatus,
+  VolumeOp,
+  VolumeState,
   WorklogPlan
 } from '../shared/types'
 
@@ -20,6 +22,8 @@ export interface ClaudeTermApi {
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
   worklogLogged(): Promise<LoggedWorklog[]>
+  volumeGet(): Promise<VolumeState>
+  volumeSet(op: VolumeOp): Promise<VolumeState>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
   loadSession(): Promise<PersistedSession | null>
@@ -55,6 +59,8 @@ const api: ClaudeTermApi = {
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
   worklogLogged: () => ipcRenderer.invoke('worklog:logged'),
+  volumeGet: () => ipcRenderer.invoke('volume:get'),
+  volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
   loadSession: () => ipcRenderer.invoke('session:load'),
