@@ -368,9 +368,10 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       }
       // Tab in an empty box runs Claude Code's suggested next prompt where it
       // lives — the TUI input line: forward Tab (accept the suggestion) and,
-      // a beat later, Enter (submit it) to the PTY, watching the turn from the
-      // terminal. Only fires when the TUI is actually showing a suggestion;
-      // otherwise Tab keeps its default behavior.
+      // a beat later, Enter (submit it) to the PTY. The PTY doesn't need DOM
+      // focus, so the box keeps it — the terminal only takes focus if the turn
+      // needs input (App's needs-attention handling). Only fires when the TUI
+      // is actually showing a suggestion; otherwise Tab keeps its default.
       if (
         e.keyCode === monaco.KeyCode.Tab &&
         !e.shiftKey &&
@@ -384,7 +385,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       ) {
         e.preventDefault()
         e.stopPropagation()
-        focusTerm(tabId)
         window.claudeTerm.ptyInput(tabId, '\t')
         // let the TUI ingest the accepted text before the submitting Enter
         window.setTimeout(() => window.claudeTerm.ptyInput(tabId, '\r'), 150)
