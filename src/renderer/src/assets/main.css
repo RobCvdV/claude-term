@@ -438,7 +438,7 @@ body {
 .activity-panel {
   display: flex;
   flex-direction: column;
-  width: min(560px, 92vw);
+  width: min(860px, 92vw);
   max-height: 80vh;
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -547,7 +547,7 @@ body {
 .totals-label {
   display: flex;
   flex-direction: column;
-  width: 150px;
+  width: 320px;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -561,6 +561,23 @@ body {
 .day-project {
   color: var(--fg-dim);
   font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the ticket id never wraps or shrinks; the branch next to it gives way */
+.day-label .ticket,
+.wl-ticket .ticket {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* full branch name(s) shown next to a ticket id for context */
+.bucket-branch {
+  color: var(--fg-dim);
+  font-size: 10px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

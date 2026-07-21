@@ -58,7 +58,9 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
     activities[actKey(date, ticket)] ?? 'coding'
 
   /** Ticket buckets of a day, with their live-dispatched hours. */
-  const dispatchFor = (date: string): { ticket: string; project: string; actual: number; hours: number }[] => {
+  const dispatchFor = (
+    date: string
+  ): { ticket: string; branches: string[]; project: string; actual: number; hours: number }[] => {
     const day = report.days.find((d) => d.date === date)
     if (!day) return []
     const tickets = day.buckets.filter((b) => b.ticket)
@@ -67,6 +69,7 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
     const byId = new Map(split.map((s) => [s.id, s.hours]))
     return tickets.map((b) => ({
       ticket: b.ticket as string,
+      branches: b.branches,
       project: b.project,
       actual: b.hours,
       hours: byId.get(b.key) ?? 0
@@ -154,6 +157,11 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
                   <div className={`wl-row ${done ? 'done' : ''}`} key={row.ticket}>
                     <span className="wl-ticket">
                       <span className="ticket">{row.ticket}</span>
+                      {row.branches.length > 0 && (
+                        <span className="bucket-branch" title={row.branches.join('\n')}>
+                          {row.branches.join(', ')}
+                        </span>
+                      )}
                       <span className="wl-project">{row.project}</span>
                     </span>
                     <span className="wl-actual-h">{fmtHours(row.actual)}</span>

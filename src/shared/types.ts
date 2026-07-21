@@ -112,6 +112,8 @@ export interface ActivityBucket {
   ticket: string | null
   /** what to show as the row label (ticket id, or the branch/folder name) */
   label: string
+  /** distinct branch names the work happened on (a ticket can span repos) */
+  branches: string[]
   /** repo folder name the work happened in */
   project: string
   /** wall-clock engaged hours (idle gaps capped out), 2-decimal float */

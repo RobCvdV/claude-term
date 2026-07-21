@@ -142,6 +142,11 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
                     <div className="totals-row" key={t.key}>
                       <span className="totals-label">
                         {t.ticket ? <span className="ticket">{t.ticket}</span> : t.label}
+                        {t.ticket && t.branches.length > 0 && (
+                          <span className="bucket-branch" title={t.branches.join('\n')}>
+                            {t.branches.join(', ')}
+                          </span>
+                        )}
                         <span className="totals-project">{t.project}</span>
                       </span>
                       <span className="totals-bar">
@@ -167,6 +172,11 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
                       <div className="day-row" key={b.key}>
                         <span className="day-label">
                           {b.ticket ? <span className="ticket">{b.ticket}</span> : b.label}
+                          {b.ticket && b.branches.length > 0 && (
+                            <span className="bucket-branch" title={b.branches.join('\n')}>
+                              {b.branches.join(', ')}
+                            </span>
+                          )}
                           <span className="day-project">{b.project}</span>
                         </span>
                         <span className="day-hours">{fmtHours(b.hours)}</span>
