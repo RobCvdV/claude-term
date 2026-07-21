@@ -8,7 +8,6 @@ import { ActivityOverview } from './components/ActivityOverview'
 import {
   disposeTerm,
   focusTerm,
-  readInputSuggestion,
   setTerminalEscapeHandler,
   setTerminalTitleHandler
 } from './term-registry'
@@ -115,50 +114,6 @@ export default function App(): React.JSX.Element {
     return () => cancelAnimationFrame(raf)
   }, [activeId])
 
-  // Claude Code's suggested next prompt lands as grayed ghost text in the
-  // terminal input box only after the turn ends — and via a background request,
-  // so it can arrive a beat late. Poll the terminal buffer for a few seconds
-  // once a tab goes idle, then push whatever we scrape into that tab's box as a
-  // Monaco inline suggestion (Tab to accept). One timer per tab.
-  const suggestionTimers = useRef(new Map<TabId, number>())
-  const stopCapture = useCallback((tabId: TabId): void => {
-    const id = suggestionTimers.current.get(tabId)
-    if (id !== undefined) {
-      window.clearInterval(id)
-      suggestionTimers.current.delete(tabId)
-    }
-  }, [])
-  const startCapture = useCallback(
-    (tabId: TabId): void => {
-      console.debug('[suggest] startCapture', tabId)
-      stopCapture(tabId)
-      let tries = 0
-      const tick = (): void => {
-        tries++
-        const box = promptRefs.current.get(tabId)
-        const st = statusesRef.current[tabId]
-        // give up if the box is gone, a new turn began, or the session ended
-        if (!box || !st?.claudeActive || st.activity !== 'idle') {
-          console.debug('[suggest] abort', tabId, { box: !!box, activity: st?.activity })
-          stopCapture(tabId)
-          return
-        }
-        const text = readInputSuggestion(tabId)
-        console.debug('[suggest] tick', tabId, tries, JSON.stringify(text))
-        if (text) {
-          box.setSuggestion(text)
-          stopCapture(tabId)
-        } else if (tries >= 40) {
-          stopCapture(tabId) // ~20s: no suggestion this turn
-        }
-      }
-      suggestionTimers.current.set(tabId, window.setInterval(tick, 500))
-      tick()
-    },
-    [stopCapture]
-  )
-  useEffect(() => () => suggestionTimers.current.forEach((id) => window.clearInterval(id)), [])
-
   // React to claude session start/stop and turn completion on the active tab.
   const prevActivityRef = useRef<Record<TabId, ActivityState>>({})
   const prevClaudeRef = useRef<Record<TabId, boolean>>({})
@@ -175,11 +130,6 @@ export default function App(): React.JSX.Element {
           if (status.claudeActive) focusBox(tabId)
           else focusTerm(tabId)
         }
-        // session ended → drop any stale suggestion
-        if (!status.claudeActive) {
-          stopCapture(tabId)
-          promptRefs.current.get(tabId)?.setSuggestion(null)
-        }
       }
 
       // Return focus to the prompt box either when the turn finishes (busy →
@@ -195,17 +145,9 @@ export default function App(): React.JSX.Element {
         if (status.claudeActive && isActive && (turnFinished || dialogAnswered)) {
           promptRefs.current.get(tabId)?.focus()
         }
-        // a finished turn produces a fresh suggestion → scrape it in; a new turn
-        // starting makes the old one stale → withdraw it
-        if (status.claudeActive && turnFinished) {
-          startCapture(tabId)
-        } else if (cur === 'busy' && prev !== 'busy') {
-          stopCapture(tabId)
-          promptRefs.current.get(tabId)?.setSuggestion(null)
-        }
       }
     }
-  }, [statuses, startCapture, stopCapture])
+  }, [statuses])
 
   // Esc in the terminal dismisses a client-side overlay (/usage, /config, …) and
   // should hand focus back to the box. We can't gate on 'idle': those commands

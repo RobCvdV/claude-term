@@ -14,20 +14,6 @@ self.MonacoEnvironment = {
 
 export const PROMPT_LANG = 'claude-prompt'
 
-// Claude Code's own "suggested next prompt" (scraped from the terminal, see
-// term-registry.readInputSuggestion) mirrored per tab. The inline-completions
-// provider below turns it into Monaco ghost text — Tab/→ accepts, typing that
-// diverges from it dismisses. Keyed by tabId; language providers are global, so
-// this shared map is how the single provider knows each editor's suggestion.
-const inlineSuggestions = new Map<TabId, string>()
-
-export function setInlineSuggestion(tabId: TabId, text: string): void {
-  inlineSuggestions.set(tabId, text)
-}
-export function clearInlineSuggestion(tabId: TabId): void {
-  inlineSuggestions.delete(tabId)
-}
-
 let initialized = false
 
 export function setupMonaco(): typeof monaco {
@@ -124,50 +110,6 @@ export function setupMonaco(): typeof monaco {
       return { suggestions: [] }
     }
   })
-
-  // Ghost text for Claude Code's suggested next prompt. Only offered while the
-  // typed text is still a prefix of the suggestion (single line) — so it shows
-  // in an empty box and keeps offering the remainder as you type along it, and
-  // silently vanishes the moment you type something different. Tab/→ commits it
-  // via Monaco's built-in inline-suggest keybindings.
-  monaco.languages.registerInlineCompletionsProvider(PROMPT_LANG, {
-    provideInlineCompletions: (model, position) => {
-      const tabId = tabIdFromModel(model)
-      if (!tabId) return { items: [] }
-      const suggestion = inlineSuggestions.get(tabId)
-      if (!suggestion) return { items: [] }
-      // single-line prompts only: the suggestion Claude Code renders is one line
-      if (model.getLineCount() > 1) return { items: [] }
-      const typed = model.getValue()
-      if (typed.length >= suggestion.length || !suggestion.startsWith(typed)) return { items: [] }
-      return {
-        items: [
-          {
-            insertText: suggestion,
-            range: new monaco.Range(1, 1, position.lineNumber, position.column)
-          }
-        ]
-      }
-    },
-    disposeInlineCompletions: () => {}
-  })
-
-  // isolation test hook (CDP/DevTools): force a suggestion onto a tab's box to
-  // verify the Monaco ghost-text side independent of the terminal scrape.
-  ;(window as unknown as Record<string, unknown>).__setInlineSuggestion = (
-    tabId: TabId,
-    text: string
-  ): void => {
-    setInlineSuggestion(tabId, text)
-    const editors = (window as unknown as Record<string, unknown>).__promptEditors as
-      | Record<string, monaco.editor.IStandaloneCodeEditor>
-      | undefined
-    const editor = editors?.[tabId]
-    if (editor) {
-      editor.focus()
-      editor.trigger('test', 'editor.action.inlineSuggest.trigger', {})
-    }
-  }
 
   return monaco
 }

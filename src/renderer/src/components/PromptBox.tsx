@@ -1,14 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import type { TabId } from '../../../shared/types'
-import { agentsOverviewOpen, focusTerm } from '../term-registry'
-import {
-  setupMonaco,
-  modelUriForTab,
-  PROMPT_LANG,
-  setInlineSuggestion,
-  clearInlineSuggestion
-} from '../monaco-setup'
+import { agentsOverviewOpen, focusTerm, readInputSuggestion } from '../term-registry'
+import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -44,9 +38,6 @@ export interface PromptBoxHandle {
   insertAttachments: (items: Attachment[]) => void
   /** set the prompt to `text` only when it's currently empty (no clobbering) */
   fillIfEmpty: (text: string) => void
-  /** offer Claude Code's suggested next prompt as ghost text (Tab to accept);
-   *  pass null to withdraw it */
-  setSuggestion: (text: string | null) => void
 }
 
 // image chips shown in the box; expanded back to their real mention on submit
@@ -154,19 +145,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         const line = model.getLineCount()
         editor.setPosition({ lineNumber: line, column: model.getLineMaxColumn(line) })
       }
-    },
-    setSuggestion: (text: string | null) => {
-      const editor = editorRef.current
-      console.debug('[suggest] setSuggestion', tabId, JSON.stringify(text), 'editor:', !!editor)
-      if (!editor) return
-      if (text && text.trim()) {
-        setInlineSuggestion(tabId, text.trim())
-        // ask Monaco to (re)show the ghost text now, even without a keystroke
-        editor.trigger('claude-suggestion', 'editor.action.inlineSuggest.trigger', {})
-      } else {
-        clearInlineSuggestion(tabId)
-        editor.trigger('claude-suggestion', 'editor.action.inlineSuggest.hide', {})
-      }
     }
   }))
 
@@ -208,9 +186,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       guides: { indentation: false },
       unicodeHighlight: { ambiguousCharacters: false },
       suggest: { showWords: false, preview: false },
-      // Claude Code's suggested next prompt is mirrored in as ghost text; Tab/→
-      // accepts it (Monaco's built-in inline-suggest keybindings)
-      inlineSuggest: { enabled: true },
       tabCompletion: 'off',
       // the input sits at the bottom of the window inside an overflow:hidden
       // wrapper — render the suggest widget in a fixed overlay so it can open
@@ -253,8 +228,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       window.claudeTerm.submitPrompt(tabId, expandImages(text), countImages(text))
       editor.setValue('')
       resetImages()
-      // this suggestion is now spent — a fresh one arrives when the turn ends
-      clearInlineSuggestion(tabId)
       // slash commands usually open a TUI menu/dialog — hand focus to the
       // terminal so arrows/Enter drive it right away
       if (text.startsWith('/')) focusTerm(tabId)
@@ -393,6 +366,30 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         }
         return
       }
+      // Tab in an empty box runs Claude Code's suggested next prompt where it
+      // lives — the TUI input line: forward Tab (accept the suggestion) and,
+      // a beat later, Enter (submit it) to the PTY, watching the turn from the
+      // terminal. Only fires when the TUI is actually showing a suggestion;
+      // otherwise Tab keeps its default behavior.
+      if (
+        e.keyCode === monaco.KeyCode.Tab &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        editor.getValue() === '' &&
+        !editor.getOption(monaco.editor.EditorOption.readOnly) &&
+        !document.querySelector('.suggest-widget.visible') &&
+        readInputSuggestion(tabId)
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        focusTerm(tabId)
+        window.claudeTerm.ptyInput(tabId, '\t')
+        // let the TUI ingest the accepted text before the submitting Enter
+        window.setTimeout(() => window.claudeTerm.ptyInput(tabId, '\r'), 150)
+        return
+      }
       // ← in an empty box opens Claude Code's agents overview: forward the key
       // to the PTY and hand focus to the terminal to navigate it. The watcher
       // brings focus back here as soon as the view is left.
@@ -460,7 +457,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       retriggerSub.dispose()
       editor.dispose()
       model.dispose()
-      clearInlineSuggestion(tabId)
       editorRef.current = null
       delete registry[tabId]
     }
@@ -484,7 +480,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           <div className="editor-placeholder">
             {disabled
               ? 'session ended'
-              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Esc to terminal (⌘K here)'}
+              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘K here)'}
           </div>
         )}
       </div>
