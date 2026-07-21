@@ -48,6 +48,11 @@ const IMAGE_TOKEN_RE = /\[image\d+\]/g
 const promptHistories = new Map<TabId, string[]>()
 const HISTORY_MAX = 100
 
+// unsubmitted draft text, per tab. Same reason as promptHistories: the box
+// unmounts (and disposes its Monaco model) on every tab switch, so the draft
+// has to live outside the component to survive switching away and back.
+const promptDrafts = new Map<TabId, string>()
+
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   { tabId, disabled, autoFocus, onStepTab, onColor, color },
   ref
@@ -153,7 +158,9 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     if (!host) return
     const monaco = setupMonaco()
 
-    const model = monaco.editor.createModel('', PROMPT_LANG, modelUriForTab(tabId))
+    // restore any draft parked when we last switched away from this tab
+    const initialDraft = promptDrafts.get(tabId) ?? ''
+    const model = monaco.editor.createModel(initialDraft, PROMPT_LANG, modelUriForTab(tabId))
     const editor = monaco.editor.create(host, {
       model,
       theme: 'claude-term',
@@ -193,6 +200,13 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       fixedOverflowWidgets: true
     })
     editorRef.current = editor
+    // keep the placeholder in sync with a restored draft, and drop the cursor at
+    // its end so typing continues where it left off
+    setEmpty(initialDraft === '')
+    if (initialDraft) {
+      const line = model.getLineCount()
+      editor.setPosition({ lineNumber: line, column: model.getLineMaxColumn(line) })
+    }
     // exposed for scripted E2E testing (CDP) — harmless at runtime
     const registry = ((window as unknown as Record<string, unknown>).__promptEditors ??=
       {}) as Record<TabId, monacoNs.editor.IStandaloneCodeEditor>
@@ -450,6 +464,11 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     grow()
 
     return () => {
+      // park the unsubmitted draft (if any) so it's restored on remount; drop
+      // the entry when the box is empty so a stale draft can't resurrect
+      const draft = editor.getValue()
+      if (draft.trim() === '') promptDrafts.delete(tabId)
+      else promptDrafts.set(tabId, draft)
       if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
       agentsWatchRef.current = null
       contentSub.dispose()
