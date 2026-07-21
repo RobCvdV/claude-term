@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import type { TabId } from '../../../shared/types'
-import { focusTerm } from '../term-registry'
+import { agentsOverviewOpen, focusTerm, readInputSuggestion } from '../term-registry'
 import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
 
 const MIN_HEIGHT = 64
@@ -43,6 +43,11 @@ export interface PromptBoxHandle {
 // image chips shown in the box; expanded back to their real mention on submit
 const IMAGE_TOKEN_RE = /\[image\d+\]/g
 
+// terminal-style prompt history, per tab. Lives at module scope so it survives
+// the PromptBox remount on every tab switch (the box is keyed by active tab).
+const promptHistories = new Map<TabId, string[]>()
+const HISTORY_MAX = 100
+
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   { tabId, disabled, autoFocus, onStepTab, onColor, color },
   ref
@@ -57,6 +62,14 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   colorRef.current = onColor
   const autoFocusRef = useRef(autoFocus)
   autoFocusRef.current = autoFocus
+  // history travel: which entry is showing (null = editing the draft), and the
+  // parked draft text restored when travelling forward past the newest entry
+  const historyIndexRef = useRef<number | null>(null)
+  const draftRef = useRef('')
+  // interval watching for the agents overview (opened via ←) to be left
+  const agentsWatchRef = useRef<number | null>(null)
+  // send routine, hoisted out of the mount effect so the Send button shares it
+  const sendRef = useRef<() => void>(() => {})
   // [imageN] chip → the @-path/quoted-path actually submitted; a per-box counter
   // keeps chip numbers stable as more images are dropped in one prompt
   const imageMapRef = useRef(new Map<string, string>())
@@ -185,9 +198,27 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       {}) as Record<TabId, monacoNs.editor.IStandaloneCodeEditor>
     registry[tabId] = editor
 
+    const pushHistory = (text: string): void => {
+      const list = promptHistories.get(tabId) ?? []
+      if (list[list.length - 1] !== text) list.push(text)
+      if (list.length > HISTORY_MAX) list.splice(0, list.length - HISTORY_MAX)
+      promptHistories.set(tabId, list)
+    }
+
+    // set the whole prompt text and park the cursor at the very end (history recall)
+    const setValueCursorEnd = (text: string): void => {
+      editor.setValue(text)
+      const line = model.getLineCount()
+      editor.setPosition({ lineNumber: line, column: model.getLineMaxColumn(line) })
+      editor.revealLine(line)
+    }
+
     const send = (): void => {
       const text = editor.getValue().replace(/\n+$/, '')
       if (!text || editor.getOption(monaco.editor.EditorOption.readOnly)) return
+      pushHistory(text)
+      historyIndexRef.current = null
+      draftRef.current = ''
       const color = parseColor(text)
       if (color) {
         colorRef.current(color)
@@ -200,6 +231,35 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       // slash commands usually open a TUI menu/dialog — hand focus to the
       // terminal so arrows/Enter drive it right away
       if (text.startsWith('/')) focusTerm(tabId)
+    }
+    sendRef.current = send
+
+    // After ← hands focus to the terminal for the agents overview, poll the
+    // terminal buffer for the overview's footer hint: once it shows, wait for
+    // it to disappear — the view was left, by enter/esc/space-reply or any
+    // other way — and hand focus back to this box. If the footer never shows
+    // (no agents, the view didn't open), reclaim focus after ~1s.
+    const watchAgentsViewReturn = (): void => {
+      if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
+      let ticks = 0
+      let opened = false
+      agentsWatchRef.current = window.setInterval(() => {
+        ticks++
+        const stop = (refocus: boolean): void => {
+          if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
+          agentsWatchRef.current = null
+          if (refocus) editor.focus()
+        }
+        if (editor.hasTextFocus()) return stop(false) // focus already came back
+        const open = agentsOverviewOpen(tabId)
+        if (!opened) {
+          if (open)
+            opened = true // overview is up; now wait for it to close
+          else if (ticks >= 5) stop(true) // never opened — take focus back
+          return
+        }
+        if (!open) stop(true) // footer gone — the view was left
+      }, 200)
     }
 
     // box just appeared for an active, dialog-free session → focus it now. Done
@@ -261,6 +321,93 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           return
         }
       }
+      // terminal-style prompt history: ↑ on the top visual line recalls older
+      // prompts, ↓ on the bottom visual line walks forward again. The draft
+      // being typed is parked on the first ↑ and restored when travelling past
+      // the newest entry. Arrows anywhere else keep normal cursor movement,
+      // and a wrapped long line is traversed row by row before history kicks in.
+      const upKey = e.keyCode === monaco.KeyCode.UpArrow
+      const downKey = e.keyCode === monaco.KeyCode.DownArrow
+      if ((upKey || downKey) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (document.querySelector('.suggest-widget.visible')) return
+        const pos = editor.getPosition()
+        const sel = editor.getSelection()
+        if (!pos || (sel && !sel.isEmpty())) return
+        const history = promptHistories.get(tabId) ?? []
+        // same rendered row ⇔ same top offset (handles wrap: model line 1 can
+        // span several visual rows, only the outermost one triggers history)
+        const rowTop = (p: monacoNs.IPosition): number =>
+          editor.getScrolledVisiblePosition(p)?.top ?? NaN
+        if (upKey) {
+          const idx = historyIndexRef.current
+          const nextIdx = idx === null ? history.length - 1 : idx - 1
+          if (nextIdx < 0) return
+          if (pos.lineNumber !== 1 || rowTop(pos) !== rowTop({ lineNumber: 1, column: 1 })) return
+          e.preventDefault()
+          e.stopPropagation()
+          if (idx === null) draftRef.current = editor.getValue()
+          historyIndexRef.current = nextIdx
+          setValueCursorEnd(history[nextIdx])
+        } else {
+          if (historyIndexRef.current === null) return
+          const lastLine = model.getLineCount()
+          const end = { lineNumber: lastLine, column: model.getLineMaxColumn(lastLine) }
+          if (pos.lineNumber !== lastLine || rowTop(pos) !== rowTop(end)) return
+          e.preventDefault()
+          e.stopPropagation()
+          const nextIdx = historyIndexRef.current + 1
+          if (nextIdx >= history.length) {
+            historyIndexRef.current = null
+            setValueCursorEnd(draftRef.current)
+          } else {
+            historyIndexRef.current = nextIdx
+            setValueCursorEnd(history[nextIdx])
+          }
+        }
+        return
+      }
+      // Tab in an empty box runs Claude Code's suggested next prompt where it
+      // lives — the TUI input line: forward Tab (accept the suggestion) and,
+      // a beat later, Enter (submit it) to the PTY. The PTY doesn't need DOM
+      // focus, so the box keeps it — the terminal only takes focus if the turn
+      // needs input (App's needs-attention handling). Only fires when the TUI
+      // is actually showing a suggestion; otherwise Tab keeps its default.
+      if (
+        e.keyCode === monaco.KeyCode.Tab &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        editor.getValue() === '' &&
+        !editor.getOption(monaco.editor.EditorOption.readOnly) &&
+        !document.querySelector('.suggest-widget.visible') &&
+        readInputSuggestion(tabId)
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        window.claudeTerm.ptyInput(tabId, '\t')
+        // let the TUI ingest the accepted text before the submitting Enter
+        window.setTimeout(() => window.claudeTerm.ptyInput(tabId, '\r'), 150)
+        return
+      }
+      // ← in an empty box opens Claude Code's agents overview: forward the key
+      // to the PTY and hand focus to the terminal to navigate it. The watcher
+      // brings focus back here as soon as the view is left.
+      if (
+        e.keyCode === monaco.KeyCode.LeftArrow &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        editor.getValue() === '' &&
+        !editor.getOption(monaco.editor.EditorOption.readOnly)
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        window.claudeTerm.ptyInput(tabId, '\x1b[D')
+        focusTerm(tabId)
+        watchAgentsViewReturn()
+      }
     })
     editor.addCommand(monaco.KeyCode.Escape, () => focusTerm(tabId), '!suggestWidgetVisible')
     editor.addCommand(
@@ -303,6 +450,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     grow()
 
     return () => {
+      if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
+      agentsWatchRef.current = null
       contentSub.dispose()
       changeSub.dispose()
       retriggerSub.dispose()
@@ -331,30 +480,11 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           <div className="editor-placeholder">
             {disabled
               ? 'session ended'
-              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, Esc to terminal (⌘K here)'}
+              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘K here)'}
           </div>
         )}
       </div>
-      <button
-        className="send-btn"
-        disabled={disabled || empty}
-        onClick={() => {
-          const editor = editorRef.current
-          if (!editor) return
-          const text = editor.getValue().replace(/\n+$/, '')
-          if (!text) return
-          const color = parseColor(text)
-          if (color) {
-            onColor(color)
-            editor.setValue('')
-            return
-          }
-          window.claudeTerm.submitPrompt(tabId, expandImages(text), countImages(text))
-          editor.setValue('')
-          resetImages()
-          if (text.startsWith('/')) focusTerm(tabId)
-        }}
-      >
+      <button className="send-btn" disabled={disabled || empty} onClick={() => sendRef.current()}>
         Send
       </button>
     </div>

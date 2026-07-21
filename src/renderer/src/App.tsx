@@ -449,10 +449,7 @@ export default function App(): React.JSX.Element {
         onOpenActivity={() => setShowActivity(true)}
       />
       {showActivity && (
-        <ActivityOverview
-          onClose={() => setShowActivity(false)}
-          onFillPrompt={fillPromptIfEmpty}
-        />
+        <ActivityOverview onClose={() => setShowActivity(false)} onFillPrompt={fillPromptIfEmpty} />
       )}
       {tabs.length === 0 ? (
         <div className="empty-state">

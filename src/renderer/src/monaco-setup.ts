@@ -97,9 +97,7 @@ export function setupMonaco(): typeof monaco {
               filterText: `@${path}`,
               sortText: String(i).padStart(4, '0'),
               range,
-              command: isDir
-                ? { id: 'editor.action.triggerSuggest', title: 'descend' }
-                : undefined
+              command: isDir ? { id: 'editor.action.triggerSuggest', title: 'descend' } : undefined
             }
           }),
           // the backend returns only the top matches for this query — force a

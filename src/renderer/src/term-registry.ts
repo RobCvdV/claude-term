@@ -91,6 +91,162 @@ export function getTerm(tabId: TabId): TermEntry | undefined {
   return entries.get(tabId)
 }
 
+// Prompt-marker glyphs Claude Code uses at the start of its input line.
+const PROMPT_MARKERS = new Set(['>', '❯', '›'])
+
+/**
+ * A cell belongs to Claude Code's grayed-out suggestion (not typed text) when
+ * it's rendered dim/faint, or in a low-brightness gray — the styles a TUI uses
+ * for placeholder/ghost text. Kept as one predicate so it's the single knob to
+ * tune if a Claude Code version changes how it dims the suggestion.
+ */
+function isDimCell(cell: import('@xterm/xterm').IBufferCell): boolean {
+  if (cell.isDim()) return true
+  // xterm exposes the resolved color; treat a dark-gray foreground as dim.
+  if (cell.isFgPalette()) {
+    const c = cell.getFgColor()
+    // 8 = bright black (typical "dim gray"); 235-245 = dark grays in the 256 cube
+    return c === 8 || (c >= 235 && c <= 245)
+  }
+  if (cell.isFgRGB()) {
+    const rgb = cell.getFgColor()
+    const r = (rgb >> 16) & 0xff
+    const g = (rgb >> 8) & 0xff
+    const b = rgb & 0xff
+    const max = Math.max(r, g, b)
+    return max > 0 && max < 150 // darkish, not near-white — a gray/ghost tone
+  }
+  return false
+}
+
+interface SuggestionScan {
+  /** full text after the marker (spaces preserved), trimmed at the ends */
+  raw: string
+  /** a non-space, dim (suggestion-colored) char was seen after the marker */
+  hasDim: boolean
+  /** a non-space, normally-colored (user-typed) char was seen after the marker */
+  hasTyped: boolean
+}
+
+// Walk the input line from just after the prompt marker to the box's right
+// border, keeping the full text and flagging whether the printed (non-space)
+// chars are dim (a suggestion) or normally colored (text the user has typed).
+function scanRow(line: import('@xterm/xterm').IBufferLine, cols: number): SuggestionScan | null {
+  const cell = line.getCell(0)
+  if (!cell) return null
+  // find the prompt marker, allowing a leading box border "│" and padding
+  let markerCol = -1
+  for (let x = 0; x < Math.min(cols, 8); x++) {
+    const c = line.getCell(x, cell)
+    if (!c) continue
+    if (PROMPT_MARKERS.has(c.getChars())) {
+      markerCol = x
+      break
+    }
+  }
+  if (markerCol < 0) return null
+  let raw = ''
+  let hasDim = false
+  let hasTyped = false
+  for (let x = markerCol + 1; x < cols; x++) {
+    const c = line.getCell(x, cell)
+    if (!c) continue
+    const ch = c.getChars()
+    if (ch === '│' || ch === '┃') break // right border of the input box
+    raw += ch
+    if (ch.trim()) {
+      if (isDimCell(c)) hasDim = true
+      else hasTyped = true
+    }
+  }
+  return { raw: raw.trim(), hasDim, hasTyped }
+}
+
+/**
+ * Scrape Claude Code's suggested next prompt (its grayed ghost text) out of the
+ * terminal's input box. Returns null when nothing suggestion-like is present.
+ * Read-only: reuses what Claude Code already rendered — no extra API call.
+ */
+export function readInputSuggestion(tabId: TabId): string | null {
+  const term = entries.get(tabId)?.term
+  if (!term) return null
+  const buf = term.buffer.active
+  // the input box sits at the bottom of the viewport; scan the last rows up for
+  // the bottom-most prompt-marker line — that's the live input line
+  const bottom = buf.baseY + term.rows - 1
+  for (let y = bottom; y >= Math.max(0, bottom - 14); y--) {
+    const line = buf.getLine(y)
+    if (!line) continue
+    const scan = scanRow(line, term.cols)
+    if (!scan) continue
+    // the user is typing (or has text) → no suggestion to mirror
+    if (scan.hasTyped) return null
+    // an all-dim (or empty-but-dim) input line is a pure suggestion
+    return scan.hasDim && scan.raw ? scan.raw : null
+  }
+  return null
+}
+
+// test hook (CDP/DevTools): what the scraper extracts for a tab right now.
+;(window as unknown as Record<string, unknown>).__readInputSuggestion = readInputSuggestion
+
+// The agents overview's footer hint line — the one part of that view that is
+// reliably distinguishable from the normal prompt view (both render an input
+// row between plain "────" separators, so the input row itself can't be used).
+const AGENTS_FOOTER_RE = /enter to return|space to reply|ctrl\+x to delete/
+
+/**
+ * Is Claude Code's agents overview (opened with ← on an empty prompt) showing
+ * in this tab's terminal? Detected by its footer hint in the bottom rows.
+ */
+export function agentsOverviewOpen(tabId: TabId): boolean {
+  const term = entries.get(tabId)?.term
+  if (!term) return false
+  const buf = term.buffer.active
+  const bottom = buf.baseY + term.rows - 1
+  for (let y = bottom; y >= Math.max(0, bottom - 14); y--) {
+    const text = buf.getLine(y)?.translateToString(true) ?? ''
+    if (AGENTS_FOOTER_RE.test(text)) return true
+  }
+  return false
+}
+
+// test hook (CDP/DevTools): is the agents overview showing in a tab's terminal?
+;(window as unknown as Record<string, unknown>).__agentsOverviewOpen = agentsOverviewOpen
+
+// Debug helper for tuning the dim-detection against a live TUI: dumps the bottom
+// rows with per-cell fg info so the isDimCell predicate can be calibrated.
+// Exposed on window for CDP/E2E; harmless at runtime.
+;(window as unknown as Record<string, unknown>).__readSuggestionDebug = (tabId: TabId) => {
+  const term = entries.get(tabId)?.term
+  if (!term) return null
+  const buf = term.buffer.active
+  const bottom = buf.baseY + term.rows - 1
+  const rows: unknown[] = []
+  const cell = buf.getLine(bottom)?.getCell(0)
+  for (let y = bottom; y >= Math.max(0, bottom - 14); y--) {
+    const line = buf.getLine(y)
+    if (!line || !cell) continue
+    const cells: unknown[] = []
+    for (let x = 0; x < term.cols; x++) {
+      const c = line.getCell(x, cell)
+      if (!c) continue
+      const ch = c.getChars()
+      if (!ch.trim()) continue
+      cells.push({
+        x,
+        ch,
+        dim: c.isDim(),
+        fgPalette: c.isFgPalette() ? c.getFgColor() : null,
+        fgRGB: c.isFgRGB() ? c.getFgColor().toString(16) : null,
+        fgDefault: c.isFgDefault()
+      })
+    }
+    rows.push({ y, text: line.translateToString(true), cells })
+  }
+  return rows
+}
+
 /** Safe to call only while the container is visible (xterm mis-measures when hidden). */
 export function fitTerm(tabId: TabId): void {
   const entry = entries.get(tabId)
