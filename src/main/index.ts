@@ -7,13 +7,41 @@ import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
 
-// Redirect userData (session.json, zdotdir, forwarder) to an isolated dir when
-// asked — lets an E2E run restore a crafted session without touching the real
-// profile. Must happen before anything reads app.getPath('userData'). Inert
-// unless the env var is set, like CLAUDE_TERM_DEBUG_PORT / _DEFAULT_CWD.
+// userData isolation (session.json, zdotdir, forwarder). Must happen before
+// anything reads app.getPath('userData').
+//
+// A dev (`npm run dev`) or CDP-instrumented run must NEVER share the packaged
+// app's profile: package name and productName are both "claude-term", so the
+// default userData is the same dir, and a test instance quitting would clobber
+// the real session.json tab list (happened 2026-07-21). Precedence:
+//   1. CLAUDE_TERM_USER_DATA_DIR — explicit override for E2E fixtures
+//   2. unpackaged (dev) run      → claude-term-dev
+//   3. packaged but CDP debug port requested → claude-term-debug
 if (process.env['CLAUDE_TERM_USER_DATA_DIR']) {
   app.setPath('userData', process.env['CLAUDE_TERM_USER_DATA_DIR'] as string)
+} else if (!app.isPackaged) {
+  app.setPath('userData', join(app.getPath('appData'), 'claude-term-dev'))
+} else if (
+  process.env['CLAUDE_TERM_DEBUG_PORT'] ||
+  process.argv.some((a) => a.startsWith('--remote-debugging-port'))
+) {
+  app.setPath('userData', join(app.getPath('appData'), 'claude-term-debug'))
 }
+
+// One instance per profile: a second instance sharing this userData dir would
+// race the first on session.json (and the two would cross-talk on ports).
+// Dev/debug/E2E runs use their own dirs (above), so they coexist with the
+// packaged app — this only stops true duplicates of the same profile.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+}
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+})
 
 let mainWindow: BrowserWindow | null = null
 const services = createServices(() => mainWindow)

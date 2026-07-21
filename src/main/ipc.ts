@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { basename, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type { PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
@@ -118,9 +118,33 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       return null
     }
   }
+  // Every distinct previous state is snapshotted before being overwritten, so
+  // a clobbered tab list (crashed instance, stray writer, future bug) is always
+  // recoverable from session-backups/ — restore = copy one over session.json.
+  const backupDir = join(app.getPath('userData'), 'session-backups')
+  const KEEP_BACKUPS = 20
+  const backupSession = (next: string): void => {
+    const prev = readFileSync(sessionFile, 'utf8')
+    if (prev === next) return
+    mkdirSync(backupDir, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    writeFileSync(join(backupDir, `session-${stamp}.json`), prev)
+    const old = readdirSync(backupDir)
+      .filter((f) => f.startsWith('session-') && f.endsWith('.json'))
+      .sort()
+    for (const f of old.slice(0, Math.max(0, old.length - KEEP_BACKUPS))) {
+      unlinkSync(join(backupDir, f))
+    }
+  }
   const writeSession = (state: PersistedSession): void => {
     try {
-      writeFileSync(sessionFile, JSON.stringify(state, null, 2))
+      const next = JSON.stringify(state, null, 2)
+      try {
+        backupSession(next)
+      } catch {
+        /* no previous file, or backup failed — still write the new state */
+      }
+      writeFileSync(sessionFile, next)
     } catch {
       /* best effort — a failed save just means no restore next launch */
     }
