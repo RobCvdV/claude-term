@@ -30,6 +30,7 @@ export interface ClaudeTermApi {
   listDocs(tabId: TabId): Promise<ProjectDocs>
   readDoc(tabId: TabId, path: string): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
+  writeDoc(tabId: TabId, path: string, content: string): Promise<boolean>
   loadSession(): Promise<PersistedSession | null>
   saveSession(state: PersistedSession): Promise<void>
   saveSessionSync(state: PersistedSession): void
@@ -70,6 +71,7 @@ const api: ClaudeTermApi = {
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
   readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
+  writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),
   loadSession: () => ipcRenderer.invoke('session:load'),
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),

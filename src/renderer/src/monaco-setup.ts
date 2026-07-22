@@ -5,6 +5,9 @@
 // (The full `monaco-editor` entry = editor.all + all of that.)
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import 'monaco-editor/esm/vs/editor/editor.all.js'
+// The one bundled language we opt into: markdown, for the docs editor's syntax
+// highlighting. (Self-registers the 'markdown' language on import.)
+import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import type { TabId } from '../../shared/types'
 
@@ -13,6 +16,7 @@ self.MonacoEnvironment = {
 }
 
 export const PROMPT_LANG = 'claude-prompt'
+export const MARKDOWN_LANG = 'markdown'
 
 let initialized = false
 

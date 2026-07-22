@@ -580,8 +580,13 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
-.docs-open {
+.docs-actions {
   margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.docs-btn {
   background: none;
   border: 1px solid var(--border);
   color: var(--fg-dim);
@@ -592,15 +597,35 @@ body {
   cursor: pointer;
 }
 
-.docs-open:hover {
+.docs-btn:hover:not(:disabled) {
   color: var(--fg);
   border-color: var(--fg-dim);
+}
+
+.docs-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.docs-save {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.docs-dirty {
+  color: var(--accent);
 }
 
 .docs-body {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+
+.docs-editor {
+  flex: 1;
+  min-width: 0;
 }
 
 .docs-rail {
