@@ -2,6 +2,18 @@ export type TabId = string
 
 export type ActivityState = 'starting' | 'busy' | 'idle' | 'needs-attention' | 'ended' | 'exited'
 
+/** Live notification-volume state (the audio-notifications plugin's scale knob,
+ *  0-100%). `available` is false when the plugin's volume system isn't installed
+ *  (no ~/.claude/audio_volume_scale and no vol.sh), so the UI hides the control. */
+export interface VolumeState {
+  pct: number
+  muted: boolean
+  available: boolean
+}
+
+/** A single volume mutation the renderer can request. */
+export type VolumeOp = 'up' | 'down' | 'toggle' | number
+
 /** Subset of the JSON Claude Code pipes to its statusLine command. */
 export interface StatuslinePayload {
   session_id?: string

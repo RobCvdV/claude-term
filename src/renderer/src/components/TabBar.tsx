@@ -98,7 +98,8 @@ export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, on
           onMouseDown={(e) => {
             if (e.button === 0 && editingId !== tab.tabId) onSelect(tab.tabId)
           }}
-          onDoubleClick={() => {
+          onContextMenu={(e) => {
+            e.preventDefault()
             setEditingId(tab.tabId)
             setDraft(tab.title)
           }}
