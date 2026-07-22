@@ -25,6 +25,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "monaco-editor": "^0.55.1",
     "node-pty": "^1.1.0"
   },

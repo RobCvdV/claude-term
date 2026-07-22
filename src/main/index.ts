@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, dialog } from 'electron'
+import { app, shell, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -6,6 +6,7 @@ import { createServices, registerIpc } from './ipc'
 import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
+import { setupUpdater, confirmAndInstall } from './updater'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
 // anything reads app.getPath('userData').
@@ -98,6 +99,13 @@ app.whenReady().then(async () => {
   registerIpc(services, () => mainWindow)
   createWindow()
 
+  // Background auto-update: check on launch + daily, download silently, and let
+  // the user install on their say-so (renderer pill → 'update:install'). The
+  // install quits + relaunches; the normal session restore reopens the tabs and
+  // resumes/reattaches their Claude sessions.
+  setupUpdater(() => mainWindow)
+  ipcMain.handle('update:install', () => confirmAndInstall(() => mainWindow, prepareUpdateQuit))
+
   // First-run: offer to install the global activity-logging hook (feeds the
   // 🕐 Activity hours view). Idempotent + merge-only; never blocks startup.
   void ensureActivityHook(() => mainWindow)
@@ -107,14 +115,20 @@ app.whenReady().then(async () => {
   })
 })
 
+// Set when quitting to install an update: the user already consented via the
+// update prompt, so skip the normal "quit?" / background-agent dialogs and let
+// the quit proceed straight into the installer.
+let updateQuit = false
+function prepareUpdateQuit(): void {
+  updateQuit = true
+  shutdown()
+}
+
 let quitConfirmed = false
 app.on('before-quit', (e) => {
-  if (quitConfirmed || !mainWindow) return
+  if (quitConfirmed || updateQuit || !mainWindow) return
   // Fast path: no Claude session ever ran this session → nothing to guard.
-  if (
-    services.status.activeClaudeCount() === 0 &&
-    services.status.seenSessionIds().length === 0
-  ) {
+  if (services.status.activeClaudeCount() === 0 && services.status.seenSessionIds().length === 0) {
     shutdown()
     return
   }
