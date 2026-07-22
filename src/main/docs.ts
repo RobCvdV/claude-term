@@ -1,5 +1,5 @@
 import { shell } from 'electron'
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { basename, join, resolve, sep } from 'path'
 import type { DocEntry, ProjectDocs } from '../shared/types'
@@ -203,4 +203,16 @@ export async function openDoc(cwd: string, path: string): Promise<boolean> {
   if (!allowed(cwd, path) || !existsSync(path)) return false
   const err = await shell.openPath(path)
   return err === ''
+}
+
+/** Overwrite an existing doc from the in-app editor. Only existing files inside
+ *  the plans dir or the project cwd may be written — never create new paths. */
+export function writeDoc(cwd: string, path: string, content: string): boolean {
+  if (!allowed(cwd, path) || !existsSync(path)) return false
+  try {
+    writeFileSync(path, content, 'utf8')
+    return true
+  } catch {
+    return false
+  }
 }

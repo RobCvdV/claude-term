@@ -9,7 +9,7 @@ import { StatusServer } from './status-server'
 import { listCommands, searchFiles } from './completions'
 import { findLiveBackgroundAgent, transcriptExists } from './agents'
 import { buildActivityReport } from './activity-log'
-import { listProjectDocs, openDoc, readDoc } from './docs'
+import { listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { getVolume, setVolume } from './volume'
 import type { VolumeOp, WorklogPlan } from '../shared/types'
@@ -177,6 +177,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('docs:open', (_e, tabId: TabId, path: string) => {
     const cwd = status.getCwd(tabId)
     return cwd ? openDoc(cwd, path) : false
+  })
+  ipcMain.handle('docs:write', (_e, tabId: TabId, path: string, content: string) => {
+    const cwd = status.getCwd(tabId)
+    return cwd ? writeDoc(cwd, path, content) : false
   })
 
   ipcMain.handle('completions:commands', (_e, tabId: TabId) => {

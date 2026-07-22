@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type * as monacoNs from 'monaco-editor'
 import type { DocEntry, DocGroup, ProjectDocs } from '../../../shared/types'
+import { MARKDOWN_LANG, setupMonaco } from '../monaco-setup'
 
 interface Props {
   tabId: string
@@ -140,6 +142,10 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
   // keyed to its path so a stale doc never shows while the next one loads
   const [loaded, setLoaded] = useState<{ path: string; text: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState<'view' | 'edit'>('view')
+  // the editor's working copy; null until editing starts for the current doc
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -166,17 +172,80 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
   }, [tabId, selected])
 
   const content = selected && loaded?.path === selected.path ? loaded.text : null
+  // what the view/editor shows: the unsaved draft when present, else disk content
+  const shown = draft ?? content
+  const dirty = draft != null && draft !== content
 
-  // Escape closes; the overlay is modal so it holds focus off the terminal.
+  const save = useCallback(async (): Promise<void> => {
+    if (!selected || draft == null) return
+    setSaving(true)
+    const ok = await window.claudeTerm.writeDoc(tabId, selected.path, draft)
+    setSaving(false)
+    // reconcile the baseline so `dirty` clears; editor is not recreated
+    if (ok) setLoaded({ path: selected.path, text: draft })
+  }, [tabId, selected, draft])
+
+  // Monaco's Cmd+S command is bound once per editor, so reach the latest `save`
+  // (which closes over the current draft) through a ref kept fresh in an effect.
+  const saveRef = useRef(save)
+  useEffect(() => {
+    saveRef.current = save
+  }, [save])
+
+  // Monaco editor lifecycle — mounted only while editing the current doc.
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const editorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
+  useEffect(() => {
+    if (mode !== 'edit' || !selected || content == null || !hostRef.current) return
+    const monaco = setupMonaco()
+    const uri = monaco.Uri.parse(`claude-doc://${selected.path}`)
+    const model =
+      monaco.editor.getModel(uri) ?? monaco.editor.createModel(draft ?? content, MARKDOWN_LANG, uri)
+    const editor = monaco.editor.create(hostRef.current, {
+      model,
+      theme: 'claude-term',
+      automaticLayout: true,
+      wordWrap: 'on',
+      minimap: { enabled: false },
+      fontSize: 13,
+      scrollBeyondLastLine: false,
+      renderWhitespace: 'none'
+    })
+    editorRef.current = editor
+    const sub = editor.onDidChangeModelContent(() => setDraft(editor.getValue()))
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
+    editor.focus()
+    return () => {
+      sub.dispose()
+      editor.dispose()
+      model.dispose()
+      editorRef.current = null
+    }
+    // recreate only when entering edit mode or switching docs — not on every
+    // content/draft change (those flow FROM the editor). `content` is read once
+    // here; the Edit toggle is disabled until it has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selected?.path])
+
+  const confirmDiscard = useCallback((): boolean => {
+    return !dirty || window.confirm('Discard unsaved changes?')
+  }, [dirty])
+
+  const requestClose = useCallback((): void => {
+    if (confirmDiscard()) onClose()
+  }, [confirmDiscard, onClose])
+
+  // Escape closes (guarded); the overlay is modal so it holds focus off the
+  // terminal. Bail while editing so Monaco's own Escape (close widgets) works.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && mode !== 'edit') requestClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [mode, requestClose])
 
-  const rendered = useMemo(() => (content ? renderMarkdown(content) : ''), [content])
+  const rendered = useMemo(() => (shown ? renderMarkdown(shown) : ''), [shown])
 
   const onPreviewClick = (e: React.MouseEvent): void => {
     const a = (e.target as HTMLElement).closest('a')
@@ -188,6 +257,14 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
 
   const empty = !docs || (!docs.plans.length && !docs.roadmap && !docs.docs.length)
 
+  const selectDoc = (e: DocEntry): void => {
+    if (e.path === selected?.path || !confirmDiscard()) return
+    // switching docs drops any draft and returns to view
+    setSelected(e)
+    setMode('view')
+    setDraft(null)
+  }
+
   const section = (label: string, entries: DocEntry[]): React.JSX.Element | null =>
     entries.length ? (
       <div className="docs-section" key={label}>
@@ -196,7 +273,7 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
           <button
             key={e.path}
             className={`docs-item ${selected?.path === e.path ? 'active' : ''}`}
-            onClick={() => setSelected(e)}
+            onClick={() => selectDoc(e)}
             title={e.path}
           >
             {e.title}
@@ -206,20 +283,49 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
     ) : null
 
   return (
-    <div className="activity-backdrop" onMouseDown={onClose}>
+    <div className="activity-backdrop" onMouseDown={requestClose}>
       <div className="docs-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="activity-head">
-          <span className="activity-title">{selected?.title ?? 'Docs'}</span>
+          <span className="activity-title">
+            {selected?.title ?? 'Docs'}
+            {dirty && (
+              <span className="docs-dirty" title="Unsaved changes">
+                {' '}
+                ●
+              </span>
+            )}
+          </span>
           {selected && (
-            <button
-              className="docs-open"
-              onClick={() => window.claudeTerm.openDoc(tabId, selected.path)}
-              title="Open in default app for editing"
-            >
-              Open ↗
-            </button>
+            <div className="docs-actions">
+              {dirty && (
+                <button
+                  className="docs-btn docs-save"
+                  onClick={() => void save()}
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              )}
+              <button
+                className="docs-btn"
+                onClick={() => setMode((m) => (m === 'edit' ? 'view' : 'edit'))}
+                disabled={content == null}
+                title={
+                  mode === 'edit' ? 'Preview the rendered markdown' : 'Edit the markdown source'
+                }
+              >
+                {mode === 'edit' ? 'View' : 'Edit'}
+              </button>
+              <button
+                className="docs-btn"
+                onClick={() => window.claudeTerm.openDoc(tabId, selected.path)}
+                title="Open in default app for editing"
+              >
+                Open ↗
+              </button>
+            </div>
           )}
-          <button className="activity-close" onClick={onClose} title="Close (Esc)">
+          <button className="activity-close" onClick={requestClose} title="Close (Esc)">
             ×
           </button>
         </div>
@@ -236,13 +342,17 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
                 {section('Roadmap', docs!.roadmap ? [docs!.roadmap] : [])}
                 {section('Docs', docs!.docs)}
               </div>
-              <div className="docs-preview" onClick={onPreviewClick}>
-                {content == null ? (
-                  <p className="activity-empty">Loading…</p>
-                ) : (
-                  <div dangerouslySetInnerHTML={{ __html: rendered }} />
-                )}
-              </div>
+              {mode === 'edit' ? (
+                <div className="docs-editor" ref={hostRef} />
+              ) : (
+                <div className="docs-preview" onClick={onPreviewClick}>
+                  {shown == null ? (
+                    <p className="activity-empty">Loading…</p>
+                  ) : (
+                    <div dangerouslySetInnerHTML={{ __html: rendered }} />
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
