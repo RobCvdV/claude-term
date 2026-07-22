@@ -31,9 +31,11 @@ mac:
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  # AppImage = portable single-file executable; deb = Debian/Ubuntu installer.
+  # snap is intentionally omitted — it needs snapcraft/LXD on the runner and
+  # fails unattended in CI, which would block the whole multi-platform release.
   target:
     - AppImage
-    - snap
     - deb
   maintainer: electronjs.org
   category: Utility
