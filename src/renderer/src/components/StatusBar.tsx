@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { TabStatus } from '../../../shared/types'
+import type { DocGroup, ProjectDocs, TabStatus } from '../../../shared/types'
 import { VolumeControl } from './VolumeControl'
 
 interface Props {
   status: TabStatus | null
   color?: string
+  /** open the docs overlay focused on the clicked section */
+  onOpenDocs: (group: DocGroup) => void
 }
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
@@ -20,7 +22,15 @@ function limitClass(pct: number | undefined, active = true): string {
   return 'dim'
 }
 
-function ExternalLink({ url, children, className }: { url: string; children: React.ReactNode; className?: string }): React.JSX.Element {
+function ExternalLink({
+  url,
+  children,
+  className
+}: {
+  url: string
+  children: React.ReactNode
+  className?: string
+}): React.JSX.Element {
   return (
     <a
       href={url}
@@ -49,7 +59,7 @@ function fmtElapsed(sinceMs: number, now: number): string {
   return m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`
 }
 
-export function StatusBar({ status, color }: Props): React.JSX.Element {
+export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -60,6 +70,23 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
   const git = status?.git
   const cwd = payload?.workspace?.current_dir ?? payload?.cwd
   const folder = cwd ? cwd.split('/').filter(Boolean).pop() : undefined
+
+  // plan/roadmap/docs available for this tab's project — drives the labels below.
+  // Re-fetched on activity changes too, so a plan or docs written mid-session
+  // (a turn ends → activity flips) show up without needing a tab switch.
+  const [docs, setDocs] = useState<ProjectDocs | null>(null)
+  const tabId = status?.tabId
+  const activityKey = status?.activity
+  useEffect(() => {
+    if (!tabId) return
+    let live = true
+    window.claudeTerm.listDocs(tabId).then((d) => {
+      if (live) setDocs(d)
+    })
+    return () => {
+      live = false
+    }
+  }, [tabId, cwd, activityKey])
 
   // branch display with MTX ticket highlight + Bitbucket link
   let branchEl: React.JSX.Element | null = null
@@ -94,7 +121,8 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
   }
 
   const usedPct = payload?.context_window?.used_percentage
-  const ctxClass = usedPct == null ? '' : usedPct >= 78 ? 'ctx-red' : usedPct >= 60 ? 'ctx-orange' : ''
+  const ctxClass =
+    usedPct == null ? '' : usedPct >= 78 ? 'ctx-red' : usedPct >= 60 ? 'ctx-orange' : ''
 
   const activity = status?.activity ?? 'starting'
   const activityEl =
@@ -154,9 +182,7 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
         </span>
       )}
       {usedPct != null && <span className={`ctx ${ctxClass}`}>{usedPct}%</span>}
-      {showCost && (
-        <span className="dim">${payload!.cost!.total_cost_usd!.toFixed(2)}</span>
-      )}
+      {showCost && <span className="dim">${payload!.cost!.total_cost_usd!.toFixed(2)}</span>}
       {rl5?.used_percentage != null && rl5.resets_at != null && (
         <span className={limitClass(rl5.used_percentage)} title="5-hour rate limit window">
           5h {Math.round(rl5.used_percentage)}% ({fmtCountdown(rl5.resets_at, now)})
@@ -168,6 +194,25 @@ export function StatusBar({ status, color }: Props): React.JSX.Element {
         </span>
       )}
       <span className="spacer" />
+      {docs && docs.plans.length > 0 && (
+        <button
+          className="doc-link"
+          onClick={() => onOpenDocs('plan')}
+          title="Plan-mode plans for this project"
+        >
+          plan
+        </button>
+      )}
+      {docs?.roadmap && (
+        <button className="doc-link" onClick={() => onOpenDocs('roadmap')} title="Project roadmap">
+          roadmap
+        </button>
+      )}
+      {docs && docs.docs.length > 0 && (
+        <button className="doc-link" onClick={() => onOpenDocs('docs')} title="Project docs">
+          docs {docs.docs.length}
+        </button>
+      )}
       {ticket && (
         <ExternalLink url={`https://mendrix.atlassian.net/browse/${ticket}`} className="ext-link">
           Jira

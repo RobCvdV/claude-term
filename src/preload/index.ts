@@ -3,6 +3,7 @@ import type {
   ActivityReport,
   LoggedWorklog,
   PersistedSession,
+  ProjectDocs,
   SlashCommand,
   TabId,
   TabInfo,
@@ -26,6 +27,9 @@ export interface ClaudeTermApi {
   volumeSet(op: VolumeOp): Promise<VolumeState>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
+  listDocs(tabId: TabId): Promise<ProjectDocs>
+  readDoc(tabId: TabId, path: string): Promise<string | null>
+  openDoc(tabId: TabId, path: string): Promise<boolean>
   loadSession(): Promise<PersistedSession | null>
   saveSession(state: PersistedSession): Promise<void>
   saveSessionSync(state: PersistedSession): void
@@ -63,6 +67,9 @@ const api: ClaudeTermApi = {
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
+  listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
+  readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
+  openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
   loadSession: () => ipcRenderer.invoke('session:load'),
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),
