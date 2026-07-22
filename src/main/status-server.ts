@@ -9,6 +9,7 @@ import type {
   TabId,
   TabStatus
 } from '../shared/types'
+import { sessionNameForBranch } from './session-name'
 
 const GIT_CACHE_MS = 5_000
 const GIT_TIMER_MS = 10_000
@@ -17,6 +18,11 @@ interface TabState {
   status: TabStatus
   cwd: string
   gitFetchedAt: number
+  /** Rename queued by a branch switch, waiting for the session to go idle so we
+   *  don't inject `/rename` mid-turn. Null once applied. */
+  pendingRename: string | null
+  /** The last name we injected via `/rename`, to avoid re-sending the same one. */
+  lastRenamedName: string | null
 }
 
 /**
@@ -41,6 +47,11 @@ export class StatusServer {
   /** Called when the session shows a dialog that wants keyboard input NOW
    *  (permission prompt, question picker) — not for idle notifications. */
   onAttention: (tabId: TabId, hookEvent: string) => void = () => {}
+
+  /** Set by ipc.ts; injects `/rename <name>` into the tab's live Claude session
+   *  when the git branch changes, so the Claude app's session name tracks the
+   *  branch (matching the launch-time `--name`). Only fired while idle. */
+  onRenameSession: (tabId: TabId, name: string) => void = () => {}
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
@@ -88,6 +99,8 @@ export class StatusServer {
     this.tabs.set(tabId, {
       cwd,
       gitFetchedAt: 0,
+      pendingRename: null,
+      lastRenamedName: null,
       status: {
         tabId,
         claudeActive: false,
@@ -250,6 +263,9 @@ export class StatusServer {
     }
     tab.status.activity = next
     this.onUpdate(tab.status)
+    // Turn just ended — a safe moment to apply a branch-switch rename that
+    // arrived mid-turn (see queueRename).
+    if (next === 'idle') this.flushPendingRename(tabId, tab)
   }
 
   private refreshAllGit(): void {
@@ -266,9 +282,42 @@ export class StatusServer {
     const current = this.tabs.get(tabId)
     if (!current) return
     if (JSON.stringify(current.status.git) !== JSON.stringify(git)) {
+      const prevBranch = current.status.git?.branch ?? null
       current.status.git = git
       this.onUpdate(current.status)
+      // A real branch switch (not the initial populate) on a live session:
+      // rename the Claude session to match. The launch-time `--name` already
+      // covered the branch the session started on, so prevBranch must be set.
+      if (prevBranch && git?.branch && git.branch !== prevBranch) {
+        this.queueRename(tabId, current, sessionNameForBranch(git.branch))
+      }
     }
+  }
+
+  /** Queue (or, if already idle, immediately apply) a `/rename` after a branch
+   *  switch. Injecting mid-turn would interleave with a running turn, so we hold
+   *  the name until the session next goes idle (see handleHook Stop → flush). */
+  private queueRename(tabId: TabId, tab: TabState, name: string | null): void {
+    if (!name || !tab.status.claudeActive || name === tab.lastRenamedName) return
+    if (tab.status.activity === 'idle') {
+      tab.pendingRename = null
+      tab.lastRenamedName = name
+      this.onRenameSession(tabId, name)
+    } else {
+      tab.pendingRename = name
+    }
+  }
+
+  /** Apply a rename queued while the session was busy, now that it's idle. */
+  private flushPendingRename(tabId: TabId, tab: TabState): void {
+    const name = tab.pendingRename
+    if (!name || !tab.status.claudeActive || name === tab.lastRenamedName) {
+      tab.pendingRename = null
+      return
+    }
+    tab.pendingRename = null
+    tab.lastRenamedName = name
+    this.onRenameSession(tabId, name)
   }
 }
 
