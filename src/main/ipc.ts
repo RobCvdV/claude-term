@@ -36,6 +36,8 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 
   status.onUpdate = (tabStatus) => send('status:update', tabStatus)
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
+  // A branch switch renames the live session (name has no spaces → no quoting).
+  status.onRenameSession = (tabId, name) => ptys.injectPrompt(tabId, `/rename ${name}`)
   return { ptys, status }
 }
 

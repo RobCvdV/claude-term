@@ -18,6 +18,7 @@ const HOOK_EVENTS = [
 ]
 
 let forwarderPath: string | null = null
+let sessionNamerPath: string | null = null
 
 /**
  * Packaged apps can't exec scripts from inside app.asar, so install the
@@ -36,6 +37,24 @@ export function installForwarder(): string {
 }
 
 /**
+ * Install the session-namer helper (see resources/session-name.sh) the same way
+ * as the forwarder. The `claude` launcher calls it to derive a `--name` from the
+ * tab's git branch, so sessions started here show up in the Claude app under the
+ * branch name (e.g. bug/MTX-12345-broken-stuff) instead of an auto summary.
+ */
+export function installSessionNamer(): string {
+  if (sessionNamerPath) return sessionNamerPath
+  const source = join(__dirname, '../../resources/session-name.sh')
+  const dir = app.getPath('userData')
+  mkdirSync(dir, { recursive: true })
+  const dest = join(dir, 'session-name.sh')
+  copyFileSync(source, dest)
+  chmodSync(dest, 0o755)
+  sessionNamerPath = dest
+  return dest
+}
+
+/**
  * Set up a private startup environment so that running `claude` in the tab's
  * shell transparently gets our `--settings` overlay (so its hooks + statusline
  * feed this app, which is how we detect a session starting/ending and show the
@@ -48,6 +67,7 @@ export function installForwarder(): string {
  */
 export async function setupClaudeLauncher(shell: string): Promise<Record<string, string>> {
   const realClaude = await resolveClaudePath()
+  const namer = installSessionNamer()
   const dir = app.getPath('userData')
 
   if (basename(shell).includes('zsh')) {
@@ -64,8 +84,16 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
     writeFileSync(
       join(zdotdir, '.zshrc'),
       `[[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"\n` +
-        `# claude-term: wrap claude so sessions started here light up the UI\n` +
-        `claude() { "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"; }\n` +
+        `# claude-term: wrap claude so sessions started here light up the UI and\n` +
+        `# carry the tab's branch name (via the session-namer) into the Claude app.\n` +
+        `claude() {\n` +
+        `  local __ctn; __ctn="$('${namer}' "$@")"\n` +
+        `  if [[ -n "$__ctn" ]]; then\n` +
+        `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --name "$__ctn" "$@"\n` +
+        `  else\n` +
+        `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"\n` +
+        `  fi\n` +
+        `}\n` +
         `# claude-term: auto-restore a persisted session on launch. Only one of\n` +
         `# these vars is set, and only when restoring, so normal shells never fire.\n` +
         `# ATTACH: the session became a daemon-managed background agent; it can't\n` +
@@ -86,7 +114,16 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
   const binDir = join(dir, 'bin')
   mkdirSync(binDir, { recursive: true })
   const shim = join(binDir, 'claude')
-  writeFileSync(shim, `#!/bin/bash\nexec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"\n`)
+  writeFileSync(
+    shim,
+    `#!/bin/bash\n` +
+      `__ctn="$('${namer}' "$@")"\n` +
+      `if [ -n "$__ctn" ]; then\n` +
+      `  exec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --name "$__ctn" "$@"\n` +
+      `else\n` +
+      `  exec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"\n` +
+      `fi\n`
+  )
   chmodSync(shim, 0o755)
   return { CLAUDE_TERM_BIN: binDir }
 }
