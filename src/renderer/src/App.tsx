@@ -61,6 +61,8 @@ export default function App(): React.JSX.Element {
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [docsGroup, setDocsGroup] = useState<DocGroup | null>(null)
+  // version of a downloaded update waiting to install (drives the header pill)
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
 
@@ -109,6 +111,11 @@ export default function App(): React.JSX.Element {
     return window.claudeTerm.onAttention((tabId) => {
       if (tabId === activeIdRef.current) focusTerm(tabId)
     })
+  }, [])
+
+  // an update finished downloading — surface the header pill
+  useEffect(() => {
+    return window.claudeTerm.onUpdateDownloaded((version) => setUpdateVersion(version))
   }, [])
 
   // plain terminals: adopt the shell's OSC title unless the user renamed the tab.
@@ -471,6 +478,8 @@ export default function App(): React.JSX.Element {
         onNewTab={newTab}
         onRename={renameTab}
         onOpenActivity={() => setShowActivity(true)}
+        updateVersion={updateVersion}
+        onInstallUpdate={() => void window.claudeTerm.installUpdate()}
       />
       {showActivity && (
         <ActivityOverview onClose={() => setShowActivity(false)} onFillPrompt={fillPromptIfEmpty} />

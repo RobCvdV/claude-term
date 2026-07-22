@@ -11,6 +11,9 @@ interface Props {
   onNewTab: () => void
   onRename: (tabId: TabId, title: string) => void
   onOpenActivity: () => void
+  /** version of a downloaded update, or null — shows the "update ready" pill */
+  updateVersion: string | null
+  onInstallUpdate: () => void
 }
 
 function dotClass(status: TabStatus | null | undefined): string {
@@ -69,7 +72,19 @@ function tabShadow(color: string | undefined, isActive: boolean): string | undef
   return color ? `inset 0 -2px 0 ${color}` : undefined
 }
 
-export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, onNewTab, onRename, onOpenActivity }: Props): React.JSX.Element {
+export function TabBar({
+  tabs,
+  activeId,
+  statuses,
+  colors,
+  onSelect,
+  onClose,
+  onNewTab,
+  onRename,
+  onOpenActivity,
+  updateVersion,
+  onInstallUpdate
+}: Props): React.JSX.Element {
   const [editingId, setEditingId] = useState<TabId | null>(null)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -91,54 +106,68 @@ export function TabBar({ tabs, activeId, statuses, colors, onSelect, onClose, on
         const subtitle = tabSubtitle(tab.title, statuses[tab.tabId])
         const boxShadow = tabShadow(colors[tab.tabId], isActive)
         return (
-        <div
-          key={tab.tabId}
-          className={`tab ${isActive ? 'active' : ''}`}
-          style={boxShadow ? { boxShadow } : undefined}
-          onMouseDown={(e) => {
-            if (e.button === 0 && editingId !== tab.tabId) onSelect(tab.tabId)
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setEditingId(tab.tabId)
-            setDraft(tab.title)
-          }}
-          title={tab.cwd}
-        >
-          <span className={dotClass(statuses[tab.tabId])} />
-          {editingId === tab.tabId ? (
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commit}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commit()
-                if (e.key === 'Escape') setEditingId(null)
-              }}
-            />
-          ) : (
-            <span className="tab-labels">
-              <span className="tab-title">{tab.title}</span>
-              {subtitle && <span className="tab-subtitle">{subtitle}</span>}
-            </span>
-          )}
-          <button
-            className="tab-close"
-            onClick={(e) => {
-              e.stopPropagation()
-              onClose(tab.tabId)
+          <div
+            key={tab.tabId}
+            className={`tab ${isActive ? 'active' : ''}`}
+            style={boxShadow ? { boxShadow } : undefined}
+            onMouseDown={(e) => {
+              if (e.button === 0 && editingId !== tab.tabId) onSelect(tab.tabId)
             }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setEditingId(tab.tabId)
+              setDraft(tab.title)
+            }}
+            title={tab.cwd}
           >
-            ×
-          </button>
-        </div>
+            <span className={dotClass(statuses[tab.tabId])} />
+            {editingId === tab.tabId ? (
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commit()
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+              />
+            ) : (
+              <span className="tab-labels">
+                <span className="tab-title">{tab.title}</span>
+                {subtitle && <span className="tab-subtitle">{subtitle}</span>}
+              </span>
+            )}
+            <button
+              className="tab-close"
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose(tab.tabId)
+              }}
+            >
+              ×
+            </button>
+          </div>
         )
       })}
       <button className="new-tab" onClick={onNewTab} title="New session (⌘T)">
         +
       </button>
-      <button className="clock-btn" onClick={onOpenActivity} title="Activity hours" aria-label="Activity hours">
+      {updateVersion && (
+        <button
+          className="update-pill"
+          onClick={onInstallUpdate}
+          title={`Update ${updateVersion} downloaded — click to restart & install`}
+        >
+          ⬆ Update {updateVersion}
+        </button>
+      )}
+      <button
+        className="clock-btn"
+        onClick={onOpenActivity}
+        title="Activity hours"
+        aria-label="Activity hours"
+      >
         <svg
           width="16"
           height="16"

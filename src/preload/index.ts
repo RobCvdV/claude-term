@@ -42,6 +42,10 @@ export interface ClaudeTermApi {
   onPtyExit(cb: (tabId: TabId, exitCode: number) => void): () => void
   onStatusUpdate(cb: (status: TabStatus) => void): () => void
   onAttention(cb: (tabId: TabId, hookEvent: string) => void): () => void
+  /** fires when an update has finished downloading and is ready to install */
+  onUpdateDownloaded(cb: (version: string) => void): () => void
+  /** ask to restart & install the downloaded update; returns true if starting */
+  installUpdate(): Promise<boolean>
 }
 
 function subscribe<Args extends unknown[]>(
@@ -85,7 +89,9 @@ const api: ClaudeTermApi = {
   onPtyData: (cb) => subscribe('pty:data', cb),
   onPtyExit: (cb) => subscribe('pty:exit', cb),
   onStatusUpdate: (cb) => subscribe('status:update', cb),
-  onAttention: (cb) => subscribe('tab:attention', cb)
+  onAttention: (cb) => subscribe('tab:attention', cb),
+  onUpdateDownloaded: (cb) => subscribe('update:downloaded', cb),
+  installUpdate: () => ipcRenderer.invoke('update:install')
 }
 
 contextBridge.exposeInMainWorld('claudeTerm', api)

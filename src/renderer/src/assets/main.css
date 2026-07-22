@@ -160,6 +160,30 @@ body {
   color: var(--fg);
 }
 
+/* "update ready" pill — margin-left:auto right-aligns it together with the
+   clock button (which follows it in the header). */
+.update-pill {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.update-pill:hover {
+  filter: brightness(1.08);
+}
+
 .dot {
   width: 8px;
   height: 8px;
