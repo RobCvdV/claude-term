@@ -85,6 +85,29 @@ export interface TabStatus {
   git: GitInfo | null
 }
 
+/** A markdown document surfaced in the status-bar Docs overlay. */
+export interface DocEntry {
+  /** absolute path on disk */
+  path: string
+  /** display title: the file's first `# ` heading, else its file name */
+  title: string
+  /** modification time, epoch ms (used to sort plans newest-first) */
+  mtime: number
+}
+
+/** Which status-bar label opened the overlay / which section to focus. */
+export type DocGroup = 'plan' | 'roadmap' | 'docs'
+
+/** Markdown docs available for one project (tab), grouped for the overlay. */
+export interface ProjectDocs {
+  /** plan-mode plans (~/.claude/plans) this project's sessions created, newest first */
+  plans: DocEntry[]
+  /** ROADMAP.md (or the first roadmap*.md) in the repo root, if any */
+  roadmap: DocEntry | null
+  /** README + other *.md in the repo root, plus every *.md under docs/ */
+  docs: DocEntry[]
+}
+
 export interface SlashCommand {
   /** without the leading slash, e.g. "commit-commands:commit" */
   name: string

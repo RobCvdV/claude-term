@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ActivityState, PersistedSession, TabId, TabInfo, TabStatus } from '../../shared/types'
+import type {
+  ActivityState,
+  DocGroup,
+  PersistedSession,
+  TabId,
+  TabInfo,
+  TabStatus
+} from '../../shared/types'
 import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
+import { DocsOverlay } from './components/DocsOverlay'
 import {
   disposeTerm,
   focusTerm,
@@ -52,6 +60,7 @@ export default function App(): React.JSX.Element {
   const [colors, setColors] = useState<Record<TabId, string>>({})
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [docsGroup, setDocsGroup] = useState<DocGroup | null>(null)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
 
@@ -469,7 +478,18 @@ export default function App(): React.JSX.Element {
             />
           ))}
           {showClaudeUi && activeStatus && (
-            <StatusBar status={activeStatus} color={activeId ? colors[activeId] : undefined} />
+            <StatusBar
+              status={activeStatus}
+              color={activeId ? colors[activeId] : undefined}
+              onOpenDocs={setDocsGroup}
+            />
+          )}
+          {docsGroup && activeId && (
+            <DocsOverlay
+              tabId={activeId}
+              initialGroup={docsGroup}
+              onClose={() => setDocsGroup(null)}
+            />
           )}
           {showClaudeUi && activeId && (
             <PromptBox
