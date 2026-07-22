@@ -150,12 +150,16 @@ jobs:
       # the draft — guards against a split-race draft (blockmap-only) becoming
       # the public release. Since this job `needs` all build legs, a missing
       # asset here means an upload silently landed elsewhere.
+      # This job has no checkout, so gh can't infer the repo from a git remote —
+      # every gh call must name the repo explicitly (-R) or it dies with
+      # "fatal: not a git repository".
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           V="v${{ needs.version.outputs.version }}"
-          names=$(gh release view "$V" --json assets --jq '.assets[].name')
+          names=$(gh release view "$V" -R "$REPO" --json assets --jq '.assets[].name')
           for pat in '\.dmg$' '\.exe$' '\.AppImage$'; do
             echo "$names" | grep -q "$pat" || {
               echo "::error::draft $V is missing an asset matching /$pat/ — refusing to publish"
@@ -163,7 +167,7 @@ jobs:
               exit 1
             }
           done
-          gh release edit "$V" --draft=false --latest
+          gh release edit "$V" -R "$REPO" --draft=false --latest
 
       # Belt for any remaining edge case: delete same-tag drafts ONLY when they
       # carry nothing but blockmaps. Deleting a draft destroys its assets — an
