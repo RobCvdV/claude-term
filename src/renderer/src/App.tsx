@@ -88,6 +88,21 @@ export default function App(): React.JSX.Element {
     requestAnimationFrame(() => promptRefs.current.get(tabId)?.focus())
   }
 
+  // Put focus where it's most useful for the tab's current state: an active
+  // claude session with no pending dialog → prompt box; a dialog the user must
+  // drive (needs-attention) or a plain terminal → the terminal. Used after a
+  // modal overlay closes so focus never gets stranded on the dismissed dialog.
+  const restoreFocus = (tabId: TabId): void => {
+    requestAnimationFrame(() => {
+      const st = statusesRef.current[tabId]
+      if (st?.claudeActive && st.activity !== 'needs-attention') {
+        promptRefs.current.get(tabId)?.focus()
+      } else {
+        focusTerm(tabId)
+      }
+    })
+  }
+
   // a dialog (permission prompt / question picker) appeared: focus the active
   // tab's terminal so arrows+Enter work immediately. Never steal across tabs.
   useEffect(() => {
@@ -488,7 +503,10 @@ export default function App(): React.JSX.Element {
             <DocsOverlay
               tabId={activeId}
               initialGroup={docsGroup}
-              onClose={() => setDocsGroup(null)}
+              onClose={() => {
+                setDocsGroup(null)
+                if (activeId) restoreFocus(activeId)
+              }}
             />
           )}
           {showClaudeUi && activeId && (
