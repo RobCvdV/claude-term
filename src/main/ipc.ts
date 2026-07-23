@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { basename, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -97,6 +97,12 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       message: 'Choose the project folder for the new Claude Code session'
     })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+  })
+
+  // Open terminal links in the user's real browser, not the app window.
+  // Only http(s) — never file:// or other schemes from arbitrary terminal output.
+  ipcMain.handle('shell:openExternal', (_e, url: string) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
 
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))

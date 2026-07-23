@@ -1,5 +1,6 @@
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { TabId } from '../../shared/types'
 
@@ -58,6 +59,14 @@ export function createTerm(tabId: TabId): TermEntry {
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
+
+  // Cmd/Ctrl-click URLs to open them in the default browser (iTerm2 style).
+  // A plain click falls through to xterm's normal selection behaviour.
+  term.loadAddon(
+    new WebLinksAddon((event, uri) => {
+      if (event.metaKey || event.ctrlKey) window.claudeTerm.openExternal(uri)
+    })
+  )
 
   const containerEl = document.createElement('div')
   containerEl.className = 'term-container'
