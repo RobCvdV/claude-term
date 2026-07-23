@@ -19,6 +19,7 @@ export interface ClaudeTermApi {
   closeTab(tabId: TabId): Promise<void>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
+  openExternal(url: string): Promise<void>
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
@@ -64,6 +65,7 @@ const api: ClaudeTermApi = {
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
