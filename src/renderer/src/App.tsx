@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ActivityState,
-  DocGroup,
   PersistedSession,
   TabId,
   TabInfo,
@@ -12,7 +11,7 @@ import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
-import { DocsOverlay } from './components/DocsOverlay'
+import { composeWindowTitle } from './tab-title'
 import {
   disposeTerm,
   focusTerm,
@@ -60,7 +59,6 @@ export default function App(): React.JSX.Element {
   const [colors, setColors] = useState<Record<TabId, string>>({})
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
-  const [docsGroup, setDocsGroup] = useState<DocGroup | null>(null)
   // version of a downloaded update waiting to install (drives the header pill)
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
@@ -505,16 +503,17 @@ export default function App(): React.JSX.Element {
             <StatusBar
               status={activeStatus}
               color={activeId ? colors[activeId] : undefined}
-              onOpenDocs={setDocsGroup}
-            />
-          )}
-          {docsGroup && activeId && (
-            <DocsOverlay
-              tabId={activeId}
-              initialGroup={docsGroup}
-              onClose={() => {
-                setDocsGroup(null)
-                if (activeId) restoreFocus(activeId)
+              onOpenDocs={(group) => {
+                if (!activeId) return
+                const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Docs'
+                window.claudeTerm.openDocsWindow(
+                  activeId,
+                  group,
+                  composeWindowTitle(title, activeStatus)
+                )
+                // the docs window takes OS focus; leave the main window's focus
+                // on the prompt/terminal so it's usable the moment you return
+                restoreFocus(activeId)
               }}
             />
           )}

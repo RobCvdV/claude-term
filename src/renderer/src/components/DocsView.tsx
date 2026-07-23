@@ -5,9 +5,8 @@ import { MARKDOWN_LANG, setupMonaco } from '../monaco-setup'
 
 interface Props {
   tabId: string
-  /** which label was clicked — the overlay opens focused on that section */
-  initialGroup: DocGroup
-  onClose: () => void
+  /** which section to focus — changes when the owner tab re-opens the window */
+  group: DocGroup
 }
 
 function escapeHtml(s: string): string {
@@ -136,7 +135,7 @@ function pickInitial(d: ProjectDocs, group: DocGroup): DocEntry | null {
   return null
 }
 
-export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.Element {
+export function DocsView({ tabId, group }: Props): React.JSX.Element {
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
   const [selected, setSelected] = useState<DocEntry | null>(null)
   // keyed to its path so a stale doc never shows while the next one loads
@@ -152,13 +151,13 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
     window.claudeTerm.listDocs(tabId).then((d) => {
       if (!live) return
       setDocs(d)
-      setSelected(pickInitial(d, initialGroup))
+      setSelected(pickInitial(d, group))
       setLoading(false)
     })
     return () => {
       live = false
     }
-  }, [tabId, initialGroup])
+  }, [tabId, group])
 
   useEffect(() => {
     if (!selected) return
@@ -191,6 +190,19 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
   useEffect(() => {
     saveRef.current = save
   }, [save])
+
+  // Let the main process know whether there are unsaved edits, so closing the
+  // window (or its tab) can prompt to save/discard first.
+  useEffect(() => {
+    window.claudeTerm.docsDirty(dirty)
+  }, [dirty])
+
+  // Honour a "save before closing" request from the main process.
+  useEffect(() => {
+    return window.claudeTerm.onDocsRequestSave(() => {
+      void saveRef.current().finally(() => window.claudeTerm.docsSaveDone())
+    })
+  }, [])
 
   // Monaco editor lifecycle — mounted only while editing the current doc.
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -231,20 +243,6 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
     return !dirty || window.confirm('Discard unsaved changes?')
   }, [dirty])
 
-  const requestClose = useCallback((): void => {
-    if (confirmDiscard()) onClose()
-  }, [confirmDiscard, onClose])
-
-  // Escape closes (guarded); the overlay is modal so it holds focus off the
-  // terminal. Bail while editing so Monaco's own Escape (close widgets) works.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && mode !== 'edit') requestClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [mode, requestClose])
-
   const rendered = useMemo(() => (shown ? renderMarkdown(shown) : ''), [shown])
 
   const onPreviewClick = (e: React.MouseEvent): void => {
@@ -283,8 +281,8 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
     ) : null
 
   return (
-    <div className="activity-backdrop" onMouseDown={requestClose}>
-      <div className="docs-panel" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="docs-window">
+      <div className="docs-panel">
         <div className="activity-head">
           <span className="activity-title">
             {selected?.title ?? 'Docs'}
@@ -325,9 +323,6 @@ export function DocsOverlay({ tabId, initialGroup, onClose }: Props): React.JSX.
               </button>
             </div>
           )}
-          <button className="activity-close" onClick={requestClose} title="Close (Esc)">
-            ×
-          </button>
         </div>
 
         <div className="docs-body">
