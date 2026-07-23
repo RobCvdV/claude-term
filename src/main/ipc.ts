@@ -80,10 +80,12 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     return { tabId, cwd: dir, title: basename(dir) || dir }
   })
 
-  ipcMain.handle('tab:close', (_e, tabId: TabId) => {
+  ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
+    // Flush the docs window first (may prompt to save) while the tab's status —
+    // and thus the doc's cwd — is still resolvable.
+    await closeDocsWindowForTab(tabId)
     ptys.kill(tabId)
     status.removeTab(tabId)
-    closeDocsWindowForTab(tabId)
   })
 
   ipcMain.on('docs:openWindow', (_e, tabId: TabId, group: DocGroup, title: string) => {

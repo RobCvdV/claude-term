@@ -191,6 +191,19 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
     saveRef.current = save
   }, [save])
 
+  // Let the main process know whether there are unsaved edits, so closing the
+  // window (or its tab) can prompt to save/discard first.
+  useEffect(() => {
+    window.claudeTerm.docsDirty(dirty)
+  }, [dirty])
+
+  // Honour a "save before closing" request from the main process.
+  useEffect(() => {
+    return window.claudeTerm.onDocsRequestSave(() => {
+      void saveRef.current().finally(() => window.claudeTerm.docsSaveDone())
+    })
+  }, [])
+
   // Monaco editor lifecycle — mounted only while editing the current doc.
   const hostRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
