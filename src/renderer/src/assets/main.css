@@ -591,17 +591,22 @@ body {
   padding: 14px;
 }
 
-/* --- Docs overlay (plan / roadmap / docs) --- */
+/* --- Docs window (plan / roadmap / docs) --- */
+/* Its own OS window: the panel fills the whole viewport, no floating chrome. */
+.docs-window {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-raised);
+}
+
 .docs-panel {
   display: flex;
   flex-direction: column;
-  width: min(980px, 94vw);
-  height: 82vh;
+  flex: 1;
+  min-width: 0;
   background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
 .docs-actions {

@@ -3,13 +3,14 @@ import { basename, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
-import type { PersistedSession, TabId, TabInfo } from '../shared/types'
+import type { DocGroup, PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listCommands, searchFiles } from './completions'
 import { findLiveBackgroundAgent, transcriptExists } from './agents'
 import { buildActivityReport } from './activity-log'
 import { listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
+import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { getVolume, setVolume } from './volume'
 import type { VolumeOp, WorklogPlan } from '../shared/types'
@@ -82,6 +83,11 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('tab:close', (_e, tabId: TabId) => {
     ptys.kill(tabId)
     status.removeTab(tabId)
+    closeDocsWindowForTab(tabId)
+  })
+
+  ipcMain.on('docs:openWindow', (_e, tabId: TabId, group: DocGroup, title: string) => {
+    openOrFocusDocsWindow(tabId, group, title)
   })
 
   ipcMain.handle('tab:restart', async (_e, tabId: TabId) => {

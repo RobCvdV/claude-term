@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ActivityReport,
+  DocGroup,
   LoggedWorklog,
   PersistedSession,
   ProjectDocs,
@@ -31,6 +32,10 @@ export interface ClaudeTermApi {
   readDoc(tabId: TabId, path: string): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
   writeDoc(tabId: TabId, path: string, content: string): Promise<boolean>
+  /** open (or focus, if already open) the docs window for a tab, on `group` */
+  openDocsWindow(tabId: TabId, group: DocGroup, title: string): void
+  /** (docs window only) the owner tab asked to switch section / retitle */
+  onDocsSetGroup(cb: (payload: { group: DocGroup; title: string }) => void): () => void
   loadSession(): Promise<PersistedSession | null>
   saveSession(state: PersistedSession): Promise<void>
   saveSessionSync(state: PersistedSession): void
@@ -76,6 +81,9 @@ const api: ClaudeTermApi = {
   readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
   writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),
+  openDocsWindow: (tabId, group, title) =>
+    ipcRenderer.send('docs:openWindow', tabId, group, title),
+  onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),
   loadSession: () => ipcRenderer.invoke('session:load'),
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),
