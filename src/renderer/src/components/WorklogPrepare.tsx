@@ -99,9 +99,15 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
   }
 
   // Second press ("Done"): tee up the follow-up prompt and close the panel so
-  // it's sitting in the box ready to send to Claude.
+  // it's sitting in the box ready to send to Claude. The prompt points Claude
+  // straight at the plan we just wrote so it posts those entries instead of
+  // re-deriving the activity from scratch.
   const finish = (): void => {
-    onFillPrompt('Log my hours')
+    onFillPrompt(
+      'Log my hours — post the prepared worklog at ~/.claude/activity-worklog-plan.json ' +
+        'to Jira. Use those entries exactly as prepared; do not re-analyze my activity. ' +
+        'Skip any already recorded in ~/.claude/activity-worklog-log.json.'
+    )
     onClose()
   }
 
