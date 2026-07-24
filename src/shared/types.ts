@@ -113,7 +113,13 @@ export interface SlashCommand {
   name: string
   description: string
   hint: string
-  source: 'built-in' | 'user' | 'project' | 'plugin'
+  source: 'built-in' | 'user' | 'project' | 'plugin' | 'app'
+}
+
+/** Result of an in-app `git switch` triggered by the `/switch` command. */
+export interface BranchSwitchResult {
+  ok: boolean
+  error?: string
 }
 
 export interface TabInfo {

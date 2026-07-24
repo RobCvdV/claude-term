@@ -3,6 +3,7 @@ import type * as monacoNs from 'monaco-editor'
 import type { TabId } from '../../../shared/types'
 import { agentsOverviewOpen, focusTerm, readInputSuggestion } from '../term-registry'
 import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
+import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -24,13 +25,6 @@ interface Props {
 export interface Attachment {
   mention: string
   isImage: boolean
-}
-
-// app-local command: "/color blue" (or #rrggbb, or off) tints the tab border
-// without ever reaching claude. Returns the color arg, or null if not a match.
-const COLOR_RE = /^\/color\s+(\S+)\s*$/i
-function parseColor(text: string): string | null {
-  return text.match(COLOR_RE)?.[1]?.toLowerCase() ?? null
 }
 
 export interface PromptBoxHandle {
@@ -60,6 +54,16 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   const hostRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
   const [empty, setEmpty] = useState(true)
+  // transient one-line error from an app command (e.g. a failed `/switch`)
+  const [cmdError, setCmdError] = useState<string | null>(null)
+  const cmdErrorTimer = useRef<number | null>(null)
+  const showCmdError = (msg: string): void => {
+    setCmdError(msg)
+    if (cmdErrorTimer.current !== null) window.clearTimeout(cmdErrorTimer.current)
+    cmdErrorTimer.current = window.setTimeout(() => setCmdError(null), 6000)
+  }
+  const showCmdErrorRef = useRef(showCmdError)
+  showCmdErrorRef.current = showCmdError
   // keep the latest handlers for the addCommand/closure below (bound once)
   const stepTabRef = useRef(onStepTab)
   stepTabRef.current = onStepTab
@@ -233,10 +237,21 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       pushHistory(text)
       historyIndexRef.current = null
       draftRef.current = ''
-      const color = parseColor(text)
-      if (color) {
-        colorRef.current(color)
-        editor.setValue('')
+      // app-local command (e.g. /color, /switch): handle in-app, don't send to
+      // claude. run() returns false to keep the box text (so a failed /switch
+      // stays editable next to its error).
+      const matched = matchAppCommand(text)
+      if (matched) {
+        void Promise.resolve(
+          matched.cmd.run({
+            tabId,
+            arg: matched.arg,
+            setColor: (c) => colorRef.current(c),
+            setError: (m) => showCmdErrorRef.current(m)
+          })
+        ).then((keep) => {
+          if (keep !== false) editor.setValue('')
+        })
         return
       }
       window.claudeTerm.submitPrompt(tabId, expandImages(text), countImages(text))
@@ -295,7 +310,19 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         !e.ctrlKey &&
         !e.metaKey
       ) {
-        if (document.querySelector('.suggest-widget.visible')) return
+        if (document.querySelector('.suggest-widget.visible')) {
+          // Enter = pick + run for single-select arg popups (e.g. /switch,
+          // /model, /effort): accept the highlighted item, then submit. Tab
+          // still just fills (Monaco's default accept, untouched). Dir pickers
+          // (/add-dir) and plain /name, @file picks keep accept-only on Enter.
+          if (picksAndRuns(model.getLineContent(1))) {
+            e.preventDefault()
+            e.stopPropagation()
+            editor.trigger('kb', 'acceptSelectedSuggestion', {})
+            queueMicrotask(() => send())
+          }
+          return
+        }
         e.preventDefault()
         e.stopPropagation()
         send()
@@ -451,7 +478,11 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         const before = currentModel.getLineContent(pos.lineNumber).slice(0, pos.column - 1)
         const inSlash = pos.lineNumber === 1 && before.startsWith('/') && !/\s/.test(before)
         const inAt = /(^|\s)@[^\s@]*$/.test(before)
-        if (inSlash || inAt) editor.trigger('deleteRetrigger', 'editor.action.triggerSuggest', {})
+        // deleting inside a command's arg (e.g. "/switch fea", "/add-dir sr") reopens its picker
+        const argCmd = /^\/(\S+)\s/.exec(before)
+        const inAppArg = pos.lineNumber === 1 && !!argCmd && !!getArgCompleter(argCmd[1])
+        if (inSlash || inAt || inAppArg)
+          editor.trigger('deleteRetrigger', 'editor.action.triggerSuggest', {})
       }, 0)
     })
 
@@ -471,6 +502,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       else promptDrafts.set(tabId, draft)
       if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
       agentsWatchRef.current = null
+      if (cmdErrorTimer.current !== null) window.clearTimeout(cmdErrorTimer.current)
       contentSub.dispose()
       changeSub.dispose()
       retriggerSub.dispose()
@@ -495,6 +527,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         style={color ? ({ '--session-color': color } as React.CSSProperties) : undefined}
       >
         <div className="editor-host" ref={hostRef} />
+        {cmdError && <div className="editor-cmd-error">{cmdError}</div>}
         {empty && (
           <div className="editor-placeholder">
             {disabled

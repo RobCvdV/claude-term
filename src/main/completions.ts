@@ -143,9 +143,9 @@ function scanPlugins(home: string, add: (c: SlashCommand) => void): void {
     const manifest = JSON.parse(
       readFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), 'utf8')
     ) as { plugins?: Record<string, Array<{ installPath?: string }>> }
-    const settings = JSON.parse(
-      readFileSync(join(home, '.claude', 'settings.json'), 'utf8')
-    ) as { enabledPlugins?: Record<string, boolean> }
+    const settings = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8')) as {
+      enabledPlugins?: Record<string, boolean>
+    }
     const enabled = settings.enabledPlugins ?? {}
     for (const [key, installs] of Object.entries(manifest.plugins ?? {})) {
       if (!enabled[key]) continue
@@ -218,7 +218,7 @@ function walkFiles(root: string): string[] {
  * Directories come back with a trailing "/" — the renderer re-triggers the
  * suggest popup on accept so the user descends level by level.
  */
-function navigateDir(cwd: string, query: string, limit: number): string[] {
+function navigateDir(cwd: string, query: string, limit: number, dirsOnly = false): string[] {
   const lastSlash = query.lastIndexOf('/')
   const lastSeg = query.slice(lastSlash + 1)
   let dirPart: string
@@ -239,16 +239,26 @@ function navigateDir(cwd: string, query: string, limit: number): string[] {
   const q = filter.toLowerCase()
   const scored: Array<{ name: string; isDir: boolean; score: number }> = []
   for (const entry of entries) {
+    const isDir = entry.isDirectory()
+    if (dirsOnly && !isDir) continue
     if (entry.name.startsWith('.') && !filter.startsWith('.')) continue
     const lower = entry.name.toLowerCase()
     const score = !q ? 0 : lower.startsWith(q) ? 0 : lower.includes(q) ? 1 : -1
-    if (score >= 0) scored.push({ name: entry.name, isDir: entry.isDirectory(), score })
+    if (score >= 0) scored.push({ name: entry.name, isDir, score })
   }
   scored.sort(
-    (a, b) =>
-      a.score - b.score || Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name)
+    (a, b) => a.score - b.score || Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name)
   )
   return scored.slice(0, limit).map((e) => dirPart + e.name + (e.isDir ? '/' : ''))
+}
+
+/**
+ * Directory-only navigation for the `/add-dir` picker: single level, from cwd
+ * (relative, absolute, or ".."-climbing), each dir with a trailing "/" so the
+ * renderer can descend level by level. Empty query lists cwd's directories.
+ */
+export function listDirs(cwd: string, query: string, limit = 30): string[] {
+  return navigateDir(cwd, query, limit, true)
 }
 
 export async function searchFiles(cwd: string, query: string, limit = 30): Promise<string[]> {
@@ -279,4 +289,60 @@ function isSubsequence(needle: string, haystack: string): boolean {
     if (haystack[j] === needle[i]) i++
   }
   return i === needle.length
+}
+
+// ---- /switch branch completions ----
+
+const BRANCH_CACHE_TTL_MS = 10_000
+const branchCache = new Map<string, { at: number; branches: string[] }>()
+
+function runGitBranches(cwd: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    // local branches, most-recently-committed first; drop the current one (the
+    // "*"-prefixed entry) since switching to it is a no-op
+    execFile(
+      'git',
+      ['-C', cwd, 'branch', '--format=%(HEAD)%(refname:short)', '--sort=-committerdate'],
+      { timeout: 5_000, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8' },
+      (err, stdout) =>
+        resolve(
+          err
+            ? []
+            : stdout
+                .split('\n')
+                .filter((l) => l && !l.startsWith('*'))
+                .map((l) => l.trim())
+        )
+    )
+  })
+}
+
+async function listAllBranches(cwd: string): Promise<string[]> {
+  const cached = branchCache.get(cwd)
+  if (cached && Date.now() - cached.at < BRANCH_CACHE_TTL_MS) return cached.branches
+  const branches = await runGitBranches(cwd)
+  branchCache.set(cwd, { at: Date.now(), branches })
+  return branches
+}
+
+/**
+ * Branches for the `/switch` picker. Matches the query as a SUBSTRING (not just
+ * a prefix) so a bare ticket number like "10302" finds "feature/MTX-10302-foo".
+ */
+export async function listBranches(cwd: string, query: string, limit = 30): Promise<string[]> {
+  const branches = await listAllBranches(cwd)
+  const q = query.trim().toLowerCase()
+  if (!q) return branches.slice(0, limit)
+
+  const scored: Array<{ name: string; score: number }> = []
+  for (const name of branches) {
+    const lower = name.toLowerCase()
+    let score = -1
+    if (lower.startsWith(q)) score = 0
+    else if (lower.includes(q)) score = 1
+    else if (isSubsequence(q, lower)) score = 2
+    if (score >= 0) scored.push({ name, score })
+  }
+  scored.sort((a, b) => a.score - b.score)
+  return scored.slice(0, limit).map((s) => s.name)
 }
