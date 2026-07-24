@@ -10,6 +10,7 @@ import 'monaco-editor/esm/vs/editor/editor.all.js'
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import type { TabId } from '../../shared/types'
+import { appSlashCommands, getArgCompleter } from './app-commands'
 
 self.MonacoEnvironment = {
   getWorker: () => new editorWorker()
@@ -59,20 +60,62 @@ export function setupMonaco(): typeof monaco {
       const line = model.getLineContent(position.lineNumber)
       const before = line.slice(0, position.column - 1)
 
+      // command arguments: "/switch <query>" or "/add-dir <path>" → the
+      // command's own picker (git branches, directories). Only the arg span is
+      // replaced, so insertText is the bare value; incomplete:true re-queries
+      // every keystroke so the backend's filtering wins over monaco's local one.
+      // No completer → fall through (so "@file" after a slash still works).
+      if (position.lineNumber === 1 && before.startsWith('/')) {
+        const argMatch = /^\/(\S+)\s+([\s\S]*)$/.exec(before)
+        const completer = argMatch ? getArgCompleter(argMatch[1]) : undefined
+        if (argMatch && completer) {
+          const query = argMatch[2]
+          const items = await completer(tabId, query)
+          const argStart = position.column - query.length
+          const range = new monaco.Range(1, argStart, 1, position.column)
+          return {
+            suggestions: items.map((it, i) => ({
+              label: it.label,
+              kind: it.isDir
+                ? monaco.languages.CompletionItemKind.Folder
+                : monaco.languages.CompletionItemKind.Value,
+              detail: it.detail,
+              insertText: it.value,
+              filterText: it.value,
+              sortText: String(i).padStart(4, '0'),
+              range,
+              // dirs: reopen the popup on accept so the user descends a level
+              command: it.isDir
+                ? { id: 'editor.action.triggerSuggest', title: 'descend' }
+                : undefined
+            })),
+            incomplete: true
+          }
+        }
+      }
+
       // slash commands: only as the very first token of the message
       if (position.lineNumber === 1 && before.startsWith('/') && !/\s/.test(before)) {
-        const commands = await window.claudeTerm.listCommands(tabId)
+        // app-local commands first, then claude's own commands/skills
+        const commands = [...appSlashCommands(), ...(await window.claudeTerm.listCommands(tabId))]
         const range = new monaco.Range(1, 1, 1, position.column)
         return {
-          suggestions: commands.map((cmd) => ({
-            label: { label: `/${cmd.name}`, description: cmd.source },
-            kind: monaco.languages.CompletionItemKind.Function,
-            detail: cmd.hint,
-            documentation: cmd.description,
-            insertText: `/${cmd.name} `,
-            filterText: `/${cmd.name}`,
-            range
-          }))
+          suggestions: commands.map((cmd) => {
+            const hasArgs = !!getArgCompleter(cmd.name)
+            return {
+              label: { label: `/${cmd.name}`, description: cmd.source },
+              kind: monaco.languages.CompletionItemKind.Function,
+              detail: cmd.hint,
+              documentation: cmd.description,
+              insertText: `/${cmd.name} `,
+              filterText: `/${cmd.name}`,
+              range,
+              // open the arg popup immediately after picking a command that takes one
+              command: hasArgs
+                ? { id: 'editor.action.triggerSuggest', title: 'arguments' }
+                : undefined
+            }
+          })
         }
       }
 

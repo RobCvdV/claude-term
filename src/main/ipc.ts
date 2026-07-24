@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import type { DocGroup, PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
-import { listCommands, searchFiles } from './completions'
+import { listBranches, listCommands, listDirs, searchFiles } from './completions'
+import { switchBranch } from './git-actions'
 import { findLiveBackgroundAgent, transcriptExists } from './agents'
 import { buildActivityReport } from './activity-log'
 import { listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
@@ -205,6 +206,21 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('completions:files', (_e, tabId: TabId, query: string) => {
     const cwd = status.getCwd(tabId)
     return cwd ? searchFiles(cwd, query) : []
+  })
+
+  ipcMain.handle('completions:branches', (_e, tabId: TabId, query: string) => {
+    const cwd = status.getCwd(tabId)
+    return cwd ? listBranches(cwd, query) : []
+  })
+
+  ipcMain.handle('completions:dirs', (_e, tabId: TabId, query: string) => {
+    const cwd = status.getCwd(tabId)
+    return cwd ? listDirs(cwd, query) : []
+  })
+
+  ipcMain.handle('git:switch', (_e, tabId: TabId, branch: string) => {
+    const cwd = status.getCwd(tabId)
+    return cwd ? switchBranch(cwd, branch) : { ok: false, error: 'no working directory' }
   })
 
   ipcMain.on('pty:input', (_e, tabId: TabId, data: string) => ptys.write(tabId, data))

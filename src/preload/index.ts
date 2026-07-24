@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ActivityReport,
+  BranchSwitchResult,
   DocGroup,
   LoggedWorklog,
   PersistedSession,
@@ -29,6 +30,12 @@ export interface ClaudeTermApi {
   volumeSet(op: VolumeOp): Promise<VolumeState>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
+  /** local git branches matching `query` (substring match), for /switch */
+  listBranches(tabId: TabId, query: string): Promise<string[]>
+  /** directories under cwd matching `query` (single level), for /add-dir */
+  listDirs(tabId: TabId, query: string): Promise<string[]>
+  /** run `git switch <branch>` in the tab's cwd */
+  switchBranch(tabId: TabId, branch: string): Promise<BranchSwitchResult>
   listDocs(tabId: TabId): Promise<ProjectDocs>
   readDoc(tabId: TabId, path: string): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
@@ -85,6 +92,9 @@ const api: ClaudeTermApi = {
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
+  listBranches: (tabId, query) => ipcRenderer.invoke('completions:branches', tabId, query),
+  listDirs: (tabId, query) => ipcRenderer.invoke('completions:dirs', tabId, query),
+  switchBranch: (tabId, branch) => ipcRenderer.invoke('git:switch', tabId, branch),
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
   readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
