@@ -163,11 +163,24 @@ export class StatusServer {
    *  keeps its original --settings, so its statusline/hooks POST to a dead
    *  endpoint and never reach us — without this the Claude UI (status bar +
    *  prompt box) would stay hidden for that tab forever. A real statusline or
-   *  SessionEnd, if one ever arrives, still overrides this. */
-  markClaudeActive(tabId: TabId): void {
+   *  SessionEnd, if one ever arrives, still overrides this.
+   *
+   *  `sessionId` is the id we revived from. Seeding it matters for the same
+   *  reason: a tab whose session never POSTs would otherwise persist with no
+   *  session id, so the *next* launch had nothing to revive from and silently
+   *  demoted the tab to a plain terminal. */
+  markClaudeActive(tabId: TabId, sessionId?: string): void {
     const tab = this.tabs.get(tabId)
-    if (!tab || tab.status.claudeActive) return
+    if (!tab) return
+    const seedId = sessionId && !tab.status.sessionId
+    if (tab.status.claudeActive && !seedId) return
     tab.status.claudeActive = true
+    if (seedId) {
+      tab.status.sessionId = sessionId as string
+      // a reattached background agent is "ours" again — quit should offer to
+      // stop it alongside the agents we dispatched this run
+      this.seenSessions.add(sessionId as string)
+    }
     this.onUpdate(tab.status)
   }
 

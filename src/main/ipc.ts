@@ -8,7 +8,7 @@ import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listBranches, listCommands, listDirs, searchFiles } from './completions'
 import { switchBranch } from './git-actions'
-import { findLiveBackgroundAgent, transcriptExists } from './agents'
+import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { buildActivityReport } from './activity-log'
 import { listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
@@ -34,10 +34,23 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     exit: (tabId, exitCode) => {
       status.markExited(tabId, exitCode)
       send('pty:exit', tabId, exitCode)
+    },
+    // The resume we chose was refused because the daemon has the session as a
+    // live background agent — attach to it instead of leaving a dead tab.
+    resumeRefused: (tabId, sessionId) => {
+      void jobIdForRefusedResume(sessionId).then((jobId) => {
+        if (jobId) void ptys.attachInPlace(tabId, jobId)
+      })
     }
   })
 
-  status.onUpdate = (tabStatus) => send('status:update', tabStatus)
+  status.onUpdate = (tabStatus) => {
+    // A statusline arrived → the tab has a real session rendering, so a
+    // background-agent refusal can no longer be ahead of us (see
+    // PtyManager.stopRefusalWatch).
+    if (tabStatus.payload) ptys.stopRefusalWatch(tabStatus.tabId)
+    send('status:update', tabStatus)
+  }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // A branch switch renames the live session (name has no spaces → no quoting).
   status.onRenameSession = (tabId, name) => ptys.injectPrompt(tabId, `/rename ${name}`)
@@ -46,6 +59,13 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
   const { ptys, status } = services
+
+  // Started when the renderer loads the persisted session (which is where we
+  // first see every id about to be revived) and awaited by each revive.
+  let agentWarmup: Promise<void> | null = null
+  const awaitAgentWarmup = async (): Promise<void> => {
+    if (agentWarmup) await agentWarmup
+  }
 
   ipcMain.handle('tab:create', async (_e, cwd?: string, resume?: string): Promise<TabInfo> => {
     // a persisted cwd may no longer exist — fall back to home rather than fail
@@ -58,23 +78,24 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     //  - resumable transcript on disk → `claude --resume`;
     //  - neither (id outlived its transcript / was never written) → plain
     //    shell, so we don't dump "No conversation found" into the tab.
+    // Waits for the daemon to be answerable first (see warmLiveAgents): asking
+    // too early reports no agents and we'd pick a --resume the daemon refuses.
     if (resume) {
-      const bg = await findLiveBackgroundAgent(resume)
-      if (bg) {
-        await ptys.create(tabId, dir, undefined, bg.id ?? bg.sessionId)
-        // An attached bg agent can't feed our status server (its --settings
-        // point at a dead endpoint), so surface the Claude UI optimistically —
-        // otherwise the prompt box never appears for this tab.
-        status.markClaudeActive(tabId)
-      } else if (transcriptExists(resume)) {
+      await awaitAgentWarmup()
+      const target = await resolveRevive(resume)
+      if (target.mode === 'attach') {
+        await ptys.create(tabId, dir, undefined, target.jobId)
+      } else if (target.mode === 'resume') {
         await ptys.create(tabId, dir, resume)
-        // Resume self-reports via statusline within ~1s, but seed the UI now so
-        // the prompt box doesn't flicker in (and shows even if the first
-        // statusline POST is missed).
-        status.markClaudeActive(tabId)
       } else {
         await ptys.create(tabId, dir)
       }
+      // Both revive paths self-report via statusline within ~1s, but seed the UI
+      // now so the prompt box doesn't flicker in — and an attached bg agent
+      // never reports at all (its --settings point at a dead endpoint), so this
+      // is the only thing that shows its Claude UI and keeps its session id
+      // in the persisted state for the next launch.
+      if (target.mode !== 'shell') status.markClaudeActive(tabId, resume)
     } else {
       await ptys.create(tabId, dir)
     }
@@ -173,7 +194,16 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       /* best effort — a failed save just means no restore next launch */
     }
   }
-  ipcMain.handle('session:load', () => readSession())
+  ipcMain.handle('session:load', () => {
+    const state = readSession()
+    // Kick off daemon warm-up for the sessions this launch is about to revive,
+    // so the first tab:create doesn't have to decide against a cold daemon.
+    const ids = (state?.tabs ?? [])
+      .filter((t) => t.claudeActive && t.sessionId)
+      .map((t) => t.sessionId as string)
+    if (ids.length > 0) agentWarmup = warmLiveAgents(ids)
+    return state
+  })
   ipcMain.handle('session:save', (_e, state: PersistedSession) => writeSession(state))
   // synchronous variant for beforeunload, where async IPC may not finish
   ipcMain.on('session:saveSync', (e, state: PersistedSession) => {
