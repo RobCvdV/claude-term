@@ -63,6 +63,11 @@ export default function App(): React.JSX.Element {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
+  // Session id each tab was revived from. Kept so a revive that didn't come up
+  // (daemon busy, transcript briefly unreadable) doesn't get persisted as "no
+  // session" — that turned one bad launch into permanent loss of the tab's
+  // conversation, since the next launch had nothing left to resume.
+  const revivedIds = useRef(new Map<TabId, string>())
 
   useEffect(() => {
     return window.claudeTerm.onStatusUpdate((status) => {
@@ -279,6 +284,7 @@ export default function App(): React.JSX.Element {
       const resume = t.claudeActive && t.sessionId ? t.sessionId : undefined
       const tab = await window.claudeTerm.createTab(t.cwd, resume)
       created.push({ ...tab, title: t.title || tab.title })
+      if (resume) revivedIds.current.set(tab.tabId, resume)
       if (t.manualTitle) manualTitles.current.add(tab.tabId)
       if (t.color) colorInit[tab.tabId] = t.color
       statusInit[tab.tabId] = await window.claudeTerm.statusSnapshot(tab.tabId)
@@ -319,7 +325,7 @@ export default function App(): React.JSX.Element {
           title: t.title,
           manualTitle: manualTitles.current.has(t.tabId),
           color: colorsRef.current[t.tabId],
-          sessionId: st?.sessionId ?? null,
+          sessionId: st?.sessionId ?? revivedIds.current.get(t.tabId) ?? null,
           claudeActive: !!st?.claudeActive
         }
       }),
@@ -379,6 +385,7 @@ export default function App(): React.JSX.Element {
       })
       promptRefs.current.delete(tabId)
       manualTitles.current.delete(tabId)
+      revivedIds.current.delete(tabId)
     },
     [statuses]
   )

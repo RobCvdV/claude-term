@@ -18,6 +18,16 @@ const IMAGE_SUBMIT_PER_IMAGE_MS = 300
  *  into the PTY once the shell has had time to become interactive. */
 const RESUME_INJECT_MS = 1200
 
+/** How long after a `--resume` we keep watching for the CLI refusing it because
+ *  the session is running as a background agent (see watchBgRefusal). Long
+ *  enough to cover a slow launch, short enough that the phrase can't be
+ *  mistaken for the session's own later output. */
+const REFUSAL_WATCH_MS = 30_000
+
+/** The refusal, whitespace-stripped: "Session <id> is currently running as a
+ *  background agent (bg). Use `claude agents` to find and attach to it, …" */
+const BG_REFUSAL = 'iscurrentlyrunningasabackgroundagent'
+
 /**
  * Claude Code marks its own environment so a `claude` launched from within a
  * running session behaves as a *child* session — ephemeral id, no persisted
@@ -41,6 +51,9 @@ interface TabPty {
   cols: number
   rows: number
   exited: boolean
+  /** Set while we watch a just-issued `--resume` for the background-agent
+   *  refusal; cleared once it fires or the window closes. */
+  refusal: { sessionId: string; buf: string; timer: NodeJS.Timeout } | null
 }
 
 export class PtyManager {
@@ -51,6 +64,9 @@ export class PtyManager {
     private emit: {
       data: (tabId: TabId, data: string) => void
       exit: (tabId: TabId, exitCode: number) => void
+      /** A `--resume` was refused because the session is running as a
+       *  background agent; ipc.ts resolves its job id and attaches instead. */
+      resumeRefused?: (tabId: TabId, sessionId: string) => void
     }
   ) {}
 
@@ -101,11 +117,16 @@ export class PtyManager {
       env: spawnEnv
     })
 
-    const tab: TabPty = { proc, cwd, cols, rows, exited: false }
+    const tab: TabPty = { proc, cwd, cols, rows, exited: false, refusal: null }
     this.tabs.set(tabId, tab)
-    proc.onData((data) => this.emit.data(tabId, data))
+    if (resume) this.watchBgRefusal(tab, resume)
+    proc.onData((data) => {
+      if (tab.refusal) this.checkBgRefusal(tabId, tab, data)
+      this.emit.data(tabId, data)
+    })
     proc.onExit(({ exitCode }) => {
       tab.exited = true
+      this.clearRefusalWatch(tab)
       this.emit.exit(tabId, exitCode)
     })
 
@@ -121,6 +142,70 @@ export class PtyManager {
         if (current && !current.exited) current.proc.write(`${cmd}\r`)
       }, RESUME_INJECT_MS)
     }
+  }
+
+  /**
+   * A session that was promoted to a daemon-managed background agent can only be
+   * attached, never `--resume`d — and whether it counts as "running" is the
+   * daemon's call at that instant, so our pre-flight check (ipc.ts) can lose the
+   * race and pick a resume the CLI then refuses. Watch the tab's output for that
+   * refusal and hand it back to ipc.ts, which attaches instead: without this the
+   * tab is left as a bare shell showing an error, and the conversation looks lost.
+   */
+  private watchBgRefusal(tab: TabPty, sessionId: string): void {
+    tab.refusal = {
+      sessionId,
+      buf: '',
+      timer: setTimeout(() => this.clearRefusalWatch(tab), REFUSAL_WATCH_MS)
+    }
+  }
+
+  private clearRefusalWatch(tab: TabPty): void {
+    if (!tab.refusal) return
+    clearTimeout(tab.refusal.timer)
+    tab.refusal = null
+  }
+
+  /** Stop watching a tab for the refusal. Called once a real session reports in
+   *  (see ipc.ts): the refusal can only precede that, so anything the session
+   *  itself writes about background agents must not be mistaken for it. */
+  stopRefusalWatch(tabId: TabId): void {
+    const tab = this.tabs.get(tabId)
+    if (tab) this.clearRefusalWatch(tab)
+  }
+
+  /** Both the refusal phrase and the resumed session id must appear before we
+   *  act. Escapes are stripped from the whole accumulated tail rather than
+   *  per chunk — a PTY read can split an escape sequence down the middle, and
+   *  the leftover bytes would then sit inside the phrase we're looking for.
+   *  Whitespace goes too, because the message hard-wraps at the tab width. */
+  private checkBgRefusal(tabId: TabId, tab: TabPty, data: string): void {
+    const watch = tab.refusal
+    if (!watch) return
+    watch.buf = (watch.buf + data).slice(-8192)
+    const clean = watch.buf
+      // eslint-disable-next-line no-control-regex -- stripping escapes needs ESC
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+      // eslint-disable-next-line no-control-regex -- as above
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+      // eslint-disable-next-line no-control-regex -- as above
+      .replace(/\x1b./g, '')
+      .replace(/\s+/g, '')
+    if (!clean.includes(BG_REFUSAL) || !clean.includes(watch.sessionId)) return
+    const sessionId = watch.sessionId
+    this.clearRefusalWatch(tab)
+    this.emit.resumeRefused?.(tabId, sessionId)
+  }
+
+  /** Attach a background agent in a tab whose shell is already sitting at a
+   *  prompt (recovery after a refused resume). Bypasses the `claude` wrapper:
+   *  `claude attach` takes no --settings (see create). */
+  async attachInPlace(tabId: TabId, jobId: string): Promise<void> {
+    const tab = this.tabs.get(tabId)
+    if (!tab || tab.exited) return
+    const realClaude = await resolveClaudePath()
+    const current = this.tabs.get(tabId)
+    if (current && !current.exited) current.proc.write(`"${realClaude}" attach ${jobId}\r`)
   }
 
   /** Respawn a fresh shell in the same tab/cwd (after the shell exited). */
