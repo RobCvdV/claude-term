@@ -32,6 +32,7 @@ interface Bucketed {
   key: string
   ticket: string | null
   label: string
+  branch: string
   project: string
 }
 
@@ -44,7 +45,7 @@ function classify(cwd: string, branch: string): Bucketed {
   // distinct per project+branch so personal/main-branch time isn't merged.
   const key = ticket ?? `${project}:${b || '—'}`
   const label = ticket ?? b ?? project
-  return { key, ticket, label: label || project, project }
+  return { key, ticket, label: label || project, branch: b, project }
 }
 
 function localDate(tsSec: number): string {
@@ -59,8 +60,22 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-function toBucket(b: Bucketed, sec: number): ActivityBucket {
-  return { key: b.key, ticket: b.ticket, label: b.label, project: b.project, hours: round2(sec / 3600) }
+/** One bucket being accumulated: seconds plus every branch name seen for it. */
+interface Acc {
+  b: Bucketed
+  sec: number
+  branches: Set<string>
+}
+
+function toBucket({ b, sec, branches }: Acc): ActivityBucket {
+  return {
+    key: b.key,
+    ticket: b.ticket,
+    label: b.label,
+    branches: [...branches].sort(),
+    project: b.project,
+    hours: round2(sec / 3600)
+  }
 }
 
 /** Local YYYY-MM-DD of the oldest day included in a trailing rangeDays window. */
@@ -110,8 +125,8 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
     else bySession.set(beat.session, [beat])
   }
 
-  // perDay: date -> (bucket key -> accumulated seconds)
-  const perDay = new Map<string, Map<string, { b: Bucketed; sec: number }>>()
+  // perDay: date -> (bucket key -> accumulated seconds + branches seen)
+  const perDay = new Map<string, Map<string, Acc>>()
   const add = (date: string, b: Bucketed, sec: number): void => {
     let day = perDay.get(date)
     if (!day) {
@@ -119,8 +134,12 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
       perDay.set(date, day)
     }
     const cur = day.get(b.key)
-    if (cur) cur.sec += sec
-    else day.set(b.key, { b, sec })
+    if (cur) {
+      cur.sec += sec
+      if (b.branch) cur.branches.add(b.branch)
+    } else {
+      day.set(b.key, { b, sec, branches: new Set(b.branch ? [b.branch] : []) })
+    }
   }
 
   // Whole-workday span per day: min/max beat ts across ALL beats (ticket or
@@ -155,7 +174,7 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
 
   const days: ActivityDay[] = dates.map((date) => {
     const buckets = [...perDay.get(date)!.values()]
-      .map(({ b, sec }) => toBucket(b, sec))
+      .map(toBucket)
       .filter((x) => x.hours > 0)
       .sort((a, z) => z.hours - a.hours)
     const totalHours = round2(buckets.reduce((s, x) => s + x.hours, 0))
@@ -169,16 +188,20 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
   })
 
   // Totals across the whole window, per bucket key.
-  const totalsMap = new Map<string, { b: Bucketed; sec: number }>()
+  const totalsMap = new Map<string, Acc>()
   for (const date of dates) {
-    for (const { b, sec } of perDay.get(date)!.values()) {
+    for (const { b, sec, branches } of perDay.get(date)!.values()) {
       const cur = totalsMap.get(b.key)
-      if (cur) cur.sec += sec
-      else totalsMap.set(b.key, { b, sec })
+      if (cur) {
+        cur.sec += sec
+        for (const br of branches) cur.branches.add(br)
+      } else {
+        totalsMap.set(b.key, { b, sec, branches: new Set(branches) })
+      }
     }
   }
   const totals = [...totalsMap.values()]
-    .map(({ b, sec }) => toBucket(b, sec))
+    .map(toBucket)
     .filter((x) => x.hours > 0)
     .sort((a, z) => z.hours - a.hours)
   const totalHours = round2(totals.reduce((s, x) => s + x.hours, 0))
