@@ -98,14 +98,22 @@ export interface DocEntry {
 /** Which status-bar label opened the overlay / which section to focus. */
 export type DocGroup = 'plan' | 'roadmap' | 'docs'
 
+/** A folder's markdown files, shown as one section in the docs overlay. */
+export interface DocSection {
+  /** section heading: the sub-folder's name, or the project name for root files */
+  name: string
+  entries: DocEntry[]
+}
+
 /** Markdown docs available for one project (tab), grouped for the overlay. */
 export interface ProjectDocs {
   /** plan-mode plans (~/.claude/plans) this project's sessions created, newest first */
   plans: DocEntry[]
   /** ROADMAP.md (or the first roadmap*.md) in the repo root, if any */
   roadmap: DocEntry | null
-  /** README + other *.md in the repo root, plus every *.md under docs/ */
-  docs: DocEntry[]
+  /** every *.md in the repo root or one sub-directory deep, grouped by folder:
+   *  root files first, then each sub-folder that holds *.md, folder-name sorted */
+  sections: DocSection[]
 }
 
 export interface SlashCommand {

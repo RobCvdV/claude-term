@@ -208,9 +208,9 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
           roadmap
         </button>
       )}
-      {docs && docs.docs.length > 0 && (
+      {docs && docs.sections.length > 0 && (
         <button className="doc-link" onClick={() => onOpenDocs('docs')} title="Project docs">
-          docs {docs.docs.length}
+          docs {docs.sections.reduce((n, s) => n + s.entries.length, 0)}
         </button>
       )}
       {ticket && (

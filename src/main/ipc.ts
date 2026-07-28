@@ -213,7 +213,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   ipcMain.handle('docs:list', (_e, tabId: TabId) => {
     const cwd = status.getCwd(tabId)
-    return cwd ? listProjectDocs(cwd) : { plans: [], roadmap: null, docs: [] }
+    return cwd ? listProjectDocs(cwd) : { plans: [], roadmap: null, sections: [] }
   })
   ipcMain.handle('docs:read', (_e, tabId: TabId, path: string) => {
     const cwd = status.getCwd(tabId)
