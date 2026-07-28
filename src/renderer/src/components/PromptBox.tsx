@@ -1,9 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import type { TabId } from '../../../shared/types'
-import { agentsOverviewOpen, focusTerm, readInputSuggestion } from '../term-registry'
+import { focusTerm, readInputSuggestion, terminalDialogOpen } from '../term-registry'
 import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
 import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
+import { focusAfterSubmit, type FocusState } from '../focus-policy'
+import { runFocusLoan, type LoanMode } from '../focus-loan'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -14,6 +16,8 @@ interface Props {
   // focus the editor as soon as it mounts (box just appeared for an active,
   // dialog-free session). App still owns focus for tab switches / dialogs.
   autoFocus: boolean
+  /** the tab's live claude state — read on submit to decide where focus goes */
+  focusState: FocusState | null
   onStepTab: (delta: number) => void
   onColor: (color: string) => void
   color?: string
@@ -48,7 +52,7 @@ const HISTORY_MAX = 100
 const promptDrafts = new Map<TabId, string>()
 
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
-  { tabId, disabled, autoFocus, onStepTab, onColor, color },
+  { tabId, disabled, autoFocus, focusState, onStepTab, onColor, color },
   ref
 ): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -71,12 +75,14 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   colorRef.current = onColor
   const autoFocusRef = useRef(autoFocus)
   autoFocusRef.current = autoFocus
+  const focusStateRef = useRef(focusState)
+  focusStateRef.current = focusState
   // history travel: which entry is showing (null = editing the draft), and the
   // parked draft text restored when travelling forward past the newest entry
   const historyIndexRef = useRef<number | null>(null)
   const draftRef = useRef('')
-  // interval watching for the agents overview (opened via ←) to be left
-  const agentsWatchRef = useRef<number | null>(null)
+  // cancels the running focus loan, if any (see focus-loan)
+  const loanCancelRef = useRef<(() => void) | null>(null)
   // send routine, hoisted out of the mount effect so the Send button shares it
   const sendRef = useRef<() => void>(() => {})
   // [imageN] chip → the @-path/quoted-path actually submitted; a per-box counter
@@ -231,6 +237,21 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       editor.revealLine(line)
     }
 
+    // Terminal focus is always a loan: hand it over (or stand by to), then take
+    // it back the moment the TUI stops showing something worth driving. Only one
+    // loan runs at a time.
+    const lendFocus = (mode: LoanMode): void => {
+      loanCancelRef.current?.()
+      loanCancelRef.current = runFocusLoan(mode, {
+        probe: () => ({
+          boxFocused: editor.hasTextFocus(),
+          dialogOpen: terminalDialogOpen(tabId)
+        }),
+        focusBox: () => editor.focus(),
+        focusTerminal: () => focusTerm(tabId)
+      })
+    }
+
     const send = (): void => {
       const text = editor.getValue().replace(/\n+$/, '')
       if (!text || editor.getOption(monaco.editor.EditorOption.readOnly)) return
@@ -250,46 +271,35 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
             setError: (m) => showCmdErrorRef.current(m)
           })
         ).then((keep) => {
-          if (keep !== false) editor.setValue('')
+          if (keep !== false) {
+            editor.setValue('')
+            editor.focus() // the Send button may have taken focus on the way in
+          }
         })
         return
       }
       window.claudeTerm.submitPrompt(tabId, expandImages(text), countImages(text))
       editor.setValue('')
       resetImages()
-      // slash commands usually open a TUI menu/dialog — hand focus to the
-      // terminal so arrows/Enter drive it right away
-      if (text.startsWith('/')) focusTerm(tabId)
+      // A slash command opens a TUI menu only if it runs now; queued mid-turn it
+      // opens nothing yet. focusAfterSubmit picks which — and 'box' also brings
+      // focus back from the Send button.
+      switch (focusAfterSubmit(text, focusStateRef.current)) {
+        case 'lend-terminal':
+          focusTerm(tabId)
+          lendFocus('handover')
+          break
+        case 'watch-terminal':
+          editor.focus()
+          lendFocus('watch')
+          break
+        default:
+          loanCancelRef.current?.()
+          loanCancelRef.current = null
+          editor.focus()
+      }
     }
     sendRef.current = send
-
-    // After ← hands focus to the terminal for the agents overview, poll the
-    // terminal buffer for the overview's footer hint: once it shows, wait for
-    // it to disappear — the view was left, by enter/esc/space-reply or any
-    // other way — and hand focus back to this box. If the footer never shows
-    // (no agents, the view didn't open), reclaim focus after ~1s.
-    const watchAgentsViewReturn = (): void => {
-      if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
-      let ticks = 0
-      let opened = false
-      agentsWatchRef.current = window.setInterval(() => {
-        ticks++
-        const stop = (refocus: boolean): void => {
-          if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
-          agentsWatchRef.current = null
-          if (refocus) editor.focus()
-        }
-        if (editor.hasTextFocus()) return stop(false) // focus already came back
-        const open = agentsOverviewOpen(tabId)
-        if (!opened) {
-          if (open)
-            opened = true // overview is up; now wait for it to close
-          else if (ticks >= 5) stop(true) // never opened — take focus back
-          return
-        }
-        if (!open) stop(true) // footer gone — the view was left
-      }, 200)
-    }
 
     // box just appeared for an active, dialog-free session → focus it now. Done
     // here (not via a ref call from App) so it lands after the editor exists,
@@ -447,7 +457,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         e.stopPropagation()
         window.claudeTerm.ptyInput(tabId, '\x1b[D')
         focusTerm(tabId)
-        watchAgentsViewReturn()
+        lendFocus('handover')
       }
     })
     editor.addCommand(monaco.KeyCode.Escape, () => focusTerm(tabId), '!suggestWidgetVisible')
@@ -500,8 +510,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       const draft = editor.getValue()
       if (draft.trim() === '') promptDrafts.delete(tabId)
       else promptDrafts.set(tabId, draft)
-      if (agentsWatchRef.current !== null) window.clearInterval(agentsWatchRef.current)
-      agentsWatchRef.current = null
+      loanCancelRef.current?.()
+      loanCancelRef.current = null
       if (cmdErrorTimer.current !== null) window.clearTimeout(cmdErrorTimer.current)
       contentSub.dispose()
       changeSub.dispose()

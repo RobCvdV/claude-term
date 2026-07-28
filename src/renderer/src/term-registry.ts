@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { TabId } from '../../shared/types'
+import { agentsOverviewInRows, dialogOpenInRows, PROMPT_MARKERS } from './terminal-scan'
 
 export interface TermEntry {
   term: Terminal
@@ -101,7 +102,23 @@ export function getTerm(tabId: TabId): TermEntry | undefined {
 }
 
 // Prompt-marker glyphs Claude Code uses at the start of its input line.
-const PROMPT_MARKERS = new Set(['>', '❯', '›'])
+const PROMPT_MARKER_SET = new Set<string>(PROMPT_MARKERS)
+
+/** How many rows up from the bottom the TUI scrapers look. */
+const SCAN_ROWS = 15
+
+/** The bottom rows of a tab's terminal as plain text, bottom-most first. */
+function bottomRows(tabId: TabId, count = SCAN_ROWS): string[] {
+  const term = entries.get(tabId)?.term
+  if (!term) return []
+  const buf = term.buffer.active
+  const bottom = buf.baseY + term.rows - 1
+  const rows: string[] = []
+  for (let y = bottom; y >= Math.max(0, bottom - (count - 1)); y--) {
+    rows.push(buf.getLine(y)?.translateToString(true) ?? '')
+  }
+  return rows
+}
 
 /**
  * A cell belongs to Claude Code's grayed-out suggestion (not typed text) when
@@ -148,7 +165,7 @@ function scanRow(line: import('@xterm/xterm').IBufferLine, cols: number): Sugges
   for (let x = 0; x < Math.min(cols, 8); x++) {
     const c = line.getCell(x, cell)
     if (!c) continue
-    if (PROMPT_MARKERS.has(c.getChars())) {
+    if (PROMPT_MARKER_SET.has(c.getChars())) {
       markerCol = x
       break
     }
@@ -199,29 +216,27 @@ export function readInputSuggestion(tabId: TabId): string | null {
 // test hook (CDP/DevTools): what the scraper extracts for a tab right now.
 ;(window as unknown as Record<string, unknown>).__readInputSuggestion = readInputSuggestion
 
-// The agents overview's footer hint line — the one part of that view that is
-// reliably distinguishable from the normal prompt view (both render an input
-// row between plain "────" separators, so the input row itself can't be used).
-const AGENTS_FOOTER_RE = /enter to return|space to reply|ctrl\+x to delete/
-
 /**
  * Is Claude Code's agents overview (opened with ← on an empty prompt) showing
  * in this tab's terminal? Detected by its footer hint in the bottom rows.
  */
 export function agentsOverviewOpen(tabId: TabId): boolean {
-  const term = entries.get(tabId)?.term
-  if (!term) return false
-  const buf = term.buffer.active
-  const bottom = buf.baseY + term.rows - 1
-  for (let y = bottom; y >= Math.max(0, bottom - 14); y--) {
-    const text = buf.getLine(y)?.translateToString(true) ?? ''
-    if (AGENTS_FOOTER_RE.test(text)) return true
-  }
-  return false
+  return agentsOverviewInRows(bottomRows(tabId))
 }
 
-// test hook (CDP/DevTools): is the agents overview showing in a tab's terminal?
+/**
+ * Is the tab's terminal showing a dialog the user must drive with the keyboard
+ * (permission prompt, picker, agents overview)? Drives the focus loans: while
+ * this is true the terminal keeps focus, and the moment it stops being true the
+ * prompt box takes focus back. A tab with no terminal yet counts as no dialog.
+ */
+export function terminalDialogOpen(tabId: TabId): boolean {
+  return dialogOpenInRows(bottomRows(tabId))
+}
+
+// test hooks (CDP/DevTools): what the TUI scrapers see for a tab right now.
 ;(window as unknown as Record<string, unknown>).__agentsOverviewOpen = agentsOverviewOpen
+;(window as unknown as Record<string, unknown>).__terminalDialogOpen = terminalDialogOpen
 
 // Debug helper for tuning the dim-detection against a live TUI: dumps the bottom
 // rows with per-cell fg info so the isDimCell predicate can be calibrated.

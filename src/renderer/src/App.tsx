@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type {
-  ActivityState,
-  PersistedSession,
-  TabId,
-  TabInfo,
-  TabStatus
-} from '../../shared/types'
+import type { PersistedSession, TabId, TabInfo, TabStatus } from '../../shared/types'
 import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
@@ -18,6 +12,14 @@ import {
   setTerminalEscapeHandler,
   setTerminalTitleHandler
 } from './term-registry'
+import {
+  focusForTab,
+  focusOnStatusChange,
+  focusOnTerminalEscape,
+  focusStateOf,
+  type FocusState,
+  type FocusTarget
+} from './focus-policy'
 
 // Turn a dropped NON-image file's path into the text submitted to claude: an
 // @-mention (@relative inside the cwd, @absolute otherwise) — the form Claude
@@ -89,22 +91,18 @@ export default function App(): React.JSX.Element {
   // clobber the saved session with an empty/partial tab list
   const restoredRef = useRef(false)
 
-  const focusBox = (tabId: TabId): void => {
-    requestAnimationFrame(() => promptRefs.current.get(tabId)?.focus())
+  // The one place focus actually moves. Every decision comes from focus-policy.
+  const applyFocus = (tabId: TabId, target: FocusTarget): void => {
+    if (target === 'box') promptRefs.current.get(tabId)?.focus()
+    else if (target === 'terminal') focusTerm(tabId)
   }
 
-  // Put focus where it's most useful for the tab's current state: an active
-  // claude session with no pending dialog → prompt box; a dialog the user must
-  // drive (needs-attention) or a plain terminal → the terminal. Used after a
-  // modal overlay closes so focus never gets stranded on the dismissed dialog.
+  // Put focus where it's most useful for the tab's *current* state. Deferred a
+  // frame so it lands after the DOM change that prompted it (tab switch, an
+  // overlay closing) — otherwise the element we focus may not be visible yet.
   const restoreFocus = (tabId: TabId): void => {
     requestAnimationFrame(() => {
-      const st = statusesRef.current[tabId]
-      if (st?.claudeActive && st.activity !== 'needs-attention') {
-        promptRefs.current.get(tabId)?.focus()
-      } else {
-        focusTerm(tabId)
-      }
+      applyFocus(tabId, focusForTab(focusStateOf(statusesRef.current[tabId])))
     })
   }
 
@@ -132,74 +130,38 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
-  // on tab switch, put focus where it's most useful: a claude session with a
-  // pending dialog → terminal; an active claude session → prompt box; a plain
-  // terminal (no session) → terminal.
+  // on tab switch, put focus where it's most useful for the tab we land on
   useEffect(() => {
     if (!activeId) return
     const raf = requestAnimationFrame(() => {
-      const st = statusesRef.current[activeId]
-      if (st?.claudeActive && st.activity !== 'needs-attention') {
-        promptRefs.current.get(activeId)?.focus()
-      } else {
-        focusTerm(activeId)
-      }
+      applyFocus(activeId, focusForTab(focusStateOf(statusesRef.current[activeId])))
     })
     return () => cancelAnimationFrame(raf)
   }, [activeId])
 
-  // React to claude session start/stop and turn completion on the active tab.
-  const prevActivityRef = useRef<Record<TabId, ActivityState>>({})
-  const prevClaudeRef = useRef<Record<TabId, boolean>>({})
+  // React to claude session start/stop, dialogs and turn completion.
+  const prevFocusStateRef = useRef<Record<TabId, FocusState>>({})
   useEffect(() => {
     for (const [tabId, status] of Object.entries(statuses)) {
-      if (!status) continue
-      const isActive = tabId === activeIdRef.current
-
-      // claude session appeared → focus the box; ended → back to the terminal
-      const prevClaude = prevClaudeRef.current[tabId]
-      if (status.claudeActive !== prevClaude) {
-        prevClaudeRef.current[tabId] = status.claudeActive
-        if (isActive) {
-          if (status.claudeActive) focusBox(tabId)
-          else focusTerm(tabId)
-        }
-      }
-
-      // Return focus to the prompt box either when the turn finishes (busy →
-      // idle) OR the instant a dialog is answered and work resumes
-      // (needs-attention → busy). The terminal only holds focus while a dialog
-      // is actually waiting, so the box is focused the rest of the time.
-      const cur = status.activity
-      const prev = prevActivityRef.current[tabId]
-      if (cur !== prev) {
-        prevActivityRef.current[tabId] = cur
-        const turnFinished = cur === 'idle' && prev && prev !== 'idle'
-        const dialogAnswered = prev === 'needs-attention' && cur === 'busy'
-        if (status.claudeActive && isActive && (turnFinished || dialogAnswered)) {
-          promptRefs.current.get(tabId)?.focus()
-        }
-      }
+      const next = focusStateOf(status)
+      if (!next) continue
+      const prev = prevFocusStateRef.current[tabId] ?? null
+      prevFocusStateRef.current[tabId] = next
+      applyFocus(tabId, focusOnStatusChange(prev, next, tabId === activeIdRef.current))
     }
   }, [statuses])
 
   // Esc in the terminal dismisses a client-side overlay (/usage, /config, …) and
-  // should hand focus back to the box. We can't gate on 'idle': those commands
-  // fire UserPromptSubmit (→busy) but run no model turn, so no Stop ever arrives
-  // and the tab stays 'busy' — the old idle-only guard left focus stranded on
-  // the terminal. Only a real dialog (needs-attention) keeps focus there. The
-  // delay lets the overlay finish closing and lets a rapid double-Esc still land
-  // in the terminal before we take focus.
+  // should hand focus back to the box (see focusOnTerminalEscape). The delay
+  // lets the overlay finish closing and lets a rapid double-Esc still land in
+  // the terminal before we take focus.
   useEffect(() => {
     setTerminalEscapeHandler((tabId) => {
       if (tabId !== activeIdRef.current) return
-      const st = statusesRef.current[tabId]
-      if (!st?.claudeActive || st.activity === 'needs-attention') return
+      if (focusOnTerminalEscape(focusStateOf(statusesRef.current[tabId])) !== 'box') return
       setTimeout(() => {
         if (activeIdRef.current !== tabId) return
-        const cur = statusesRef.current[tabId]
-        if (!cur?.claudeActive || cur.activity === 'needs-attention') return
-        promptRefs.current.get(tabId)?.focus()
+        applyFocus(tabId, focusOnTerminalEscape(focusStateOf(statusesRef.current[tabId])))
       }, 120)
     })
   }, [])
@@ -533,7 +495,8 @@ export default function App(): React.JSX.Element {
               tabId={activeId}
               disabled={false}
               // focus on mount unless a dialog is waiting (that wants the terminal)
-              autoFocus={activeStatus?.activity !== 'needs-attention'}
+              autoFocus={focusForTab(focusStateOf(activeStatus)) === 'box'}
+              focusState={focusStateOf(activeStatus)}
               onStepTab={stepTab}
               onColor={(color) => setTabColor(activeId, color)}
               color={colors[activeId]}
