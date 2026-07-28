@@ -2,7 +2,7 @@ import { shell } from 'electron'
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { basename, join, resolve, sep } from 'path'
-import type { DocEntry, ProjectDocs } from '../shared/types'
+import type { DocEntry, DocSection, ProjectDocs } from '../shared/types'
 
 const PLANS_DIR = join(homedir(), '.claude', 'plans')
 
@@ -125,62 +125,72 @@ function plansForProject(cwd: string): DocEntry[] {
   return plans
 }
 
-/** Every *.md under `dir`, recursively (skips dot-files/dirs). */
-function listMarkdown(dir: string): string[] {
-  const out: string[] = []
-  let items: import('fs').Dirent[]
-  try {
-    items = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return out
-  }
-  for (const it of items) {
-    if (it.name.startsWith('.')) continue
-    const full = join(dir, it.name)
-    if (it.isDirectory()) out.push(...listMarkdown(full))
-    else if (it.isFile() && /\.md$/i.test(it.name)) out.push(full)
-  }
-  return out
+/** Sub-directories never worth scanning for docs (heavy or build output). */
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'coverage'])
+
+/** README first, then alphabetical by file name — the order docs are shown in. */
+function byDocName(a: string, b: string): number {
+  const ar = /readme\.md$/i.test(a) ? 0 : 1
+  const br = /readme\.md$/i.test(b) ? 0 : 1
+  return ar - br || basename(a).localeCompare(basename(b))
 }
 
-/** Roadmap + docs that live inside the project folder. */
-function repoDocs(cwd: string): { roadmap: DocEntry | null; docs: DocEntry[] } {
-  let rootMd: string[] = []
+/** The *.md files directly inside `dir` (not recursive). */
+function markdownIn(dir: string): string[] {
   try {
-    rootMd = readdirSync(cwd).filter((f) => /\.md$/i.test(f))
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((it) => it.isFile() && /\.md$/i.test(it.name))
+      .map((it) => join(dir, it.name))
   } catch {
-    return { roadmap: null, docs: [] }
+    return []
   }
+}
+
+/** Roadmap + doc sections that live inside the project folder. Scans the root
+ *  and every immediate sub-folder (one level deep), grouping each folder's *.md
+ *  into its own section — so ad-hoc folders like research/ or tmp/ show up too. */
+function repoDocs(cwd: string): { roadmap: DocEntry | null; sections: DocSection[] } {
+  let items: import('fs').Dirent[]
+  try {
+    items = readdirSync(cwd, { withFileTypes: true })
+  } catch {
+    return { roadmap: null, sections: [] }
+  }
+
+  const rootMd = items.filter((it) => it.isFile() && /\.md$/i.test(it.name)).map((it) => it.name)
 
   // roadmap = ROADMAP.md exactly, else the first roadmap*.md (case-insensitive)
   const roadmapName =
     rootMd.find((f) => f.toLowerCase() === 'roadmap.md') ??
     rootMd.find((f) => /^roadmap.*\.md$/i.test(f)) ??
     null
-  const roadmap = roadmapName ? entry(join(cwd, roadmapName)) : null
 
-  // root docs: every other root *.md, README pinned first, then alphabetical
-  const rootDocs = rootMd
+  const sections: DocSection[] = []
+
+  // root section (the project folder's own *.md, minus the roadmap)
+  const rootFiles = rootMd
     .filter((f) => f !== roadmapName)
     .map((f) => join(cwd, f))
-    .sort((a, b) => {
-      const ar = /readme\.md$/i.test(a) ? 0 : 1
-      const br = /readme\.md$/i.test(b) ? 0 : 1
-      return ar - br || basename(a).localeCompare(basename(b))
-    })
+    .sort(byDocName)
+  if (rootFiles.length) sections.push({ name: basename(cwd) || cwd, entries: rootFiles.map(entry) })
 
-  // then everything under docs/, by path
-  const docsDir = join(cwd, 'docs')
-  const subDocs = existsSync(docsDir)
-    ? listMarkdown(docsDir).sort((a, b) => a.localeCompare(b))
-    : []
+  // one section per immediate sub-folder that holds *.md, folder-name sorted
+  const subDirs = items
+    .filter((it) => it.isDirectory() && !it.name.startsWith('.') && !SKIP_DIRS.has(it.name))
+    .map((it) => it.name)
+    .sort((a, b) => a.localeCompare(b))
+  for (const name of subDirs) {
+    const files = markdownIn(join(cwd, name)).sort(byDocName)
+    if (files.length) sections.push({ name, entries: files.map(entry) })
+  }
 
-  return { roadmap, docs: [...rootDocs, ...subDocs].map(entry) }
+  const roadmap = roadmapName ? entry(join(cwd, roadmapName)) : null
+  return { roadmap, sections }
 }
 
 export function listProjectDocs(cwd: string): ProjectDocs {
-  const { roadmap, docs } = repoDocs(cwd)
-  return { plans: plansForProject(cwd), roadmap, docs }
+  const { roadmap, sections } = repoDocs(cwd)
+  return { plans: plansForProject(cwd), roadmap, sections }
 }
 
 /** The overlay may only read/open files inside the plans dir or the project cwd. */

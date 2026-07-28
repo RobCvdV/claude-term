@@ -130,7 +130,7 @@ function pickInitial(d: ProjectDocs, group: DocGroup): DocEntry | null {
   for (const g of order) {
     if (g === 'plan' && d.plans[0]) return d.plans[0]
     if (g === 'roadmap' && d.roadmap) return d.roadmap
-    if (g === 'docs' && d.docs[0]) return d.docs[0]
+    if (g === 'docs' && d.sections[0]?.entries[0]) return d.sections[0].entries[0]
   }
   return null
 }
@@ -253,7 +253,7 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
     if (/^https?:\/\//.test(href)) window.open(href)
   }
 
-  const empty = !docs || (!docs.plans.length && !docs.roadmap && !docs.docs.length)
+  const empty = !docs || (!docs.plans.length && !docs.roadmap && !docs.sections.length)
 
   const selectDoc = (e: DocEntry): void => {
     if (e.path === selected?.path || !confirmDiscard()) return
@@ -335,7 +335,7 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
               <div className="docs-rail">
                 {section('Plan', docs!.plans)}
                 {section('Roadmap', docs!.roadmap ? [docs!.roadmap] : [])}
-                {section('Docs', docs!.docs)}
+                {docs!.sections.map((s) => section(s.name, s.entries))}
               </div>
               {mode === 'edit' ? (
                 <div className="docs-editor" ref={hostRef} />
