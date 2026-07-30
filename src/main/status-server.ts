@@ -1,6 +1,8 @@
 import { createServer, Server } from 'http'
 import { randomBytes } from 'crypto'
 import { execFile } from 'child_process'
+import { existsSync } from 'fs'
+import { join } from 'path'
 import type {
   ActivityState,
   GitInfo,
@@ -9,6 +11,8 @@ import type {
   TabId,
   TabStatus
 } from '../shared/types'
+import { parseRemote } from '../shared/repo-links'
+import { pullRequestUrl } from './pr-links'
 import { sessionNameForBranch } from './session-name'
 
 const GIT_CACHE_MS = 5_000
@@ -348,10 +352,11 @@ function runGit(cwd: string, args: string[]): Promise<string | null> {
 async function gitInfo(cwd: string): Promise<GitInfo | null> {
   const branch = await runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
   if (branch === null) return null
-  const [porcelain, upstream, remoteUrl] = await Promise.all([
+  const [porcelain, upstream, remoteUrl, topLevel] = await Promise.all([
     runGit(cwd, ['status', '--porcelain']),
     runGit(cwd, ['rev-parse', '--abbrev-ref', '@{upstream}']),
-    runGit(cwd, ['remote', 'get-url', 'origin'])
+    runGit(cwd, ['remote', 'get-url', 'origin']),
+    runGit(cwd, ['rev-parse', '--show-toplevel'])
   ])
   const changed = porcelain ? porcelain.split('\n').filter(Boolean).length : 0
   let unpushed = 0
@@ -369,5 +374,14 @@ async function gitInfo(cwd: string): Promise<GitInfo | null> {
       }
     }
   }
-  return { branch, changed, unpushed, behind, remoteUrl: remoteUrl ?? '' }
+  const repo = parseRemote(remoteUrl ?? '')
+  return {
+    branch,
+    changed,
+    unpushed,
+    behind,
+    remoteUrl: remoteUrl ?? '',
+    prUrl: repo ? pullRequestUrl(cwd, repo, branch) : null,
+    hasWorkflows: topLevel ? existsSync(join(topLevel, '.github', 'workflows')) : false
+  }
 }
