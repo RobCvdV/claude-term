@@ -43,6 +43,8 @@ export class StatusServer {
   /** Every session id that has POSTed to us this run (tabs + any background
    *  agents dispatched from a tab). Used at quit to find our daemon agents. */
   private seenSessions = new Set<string>()
+  /** Set once the app is tearing down — see freeze(). */
+  private frozen = false
   port = 0
 
   /** Set by ipc.ts; called whenever a tab's status changes. */
@@ -92,6 +94,23 @@ export class StatusServer {
       })
     })
     this.gitTimer = setInterval(() => this.refreshAllGit(), GIT_TIMER_MS)
+  }
+
+  /**
+   * Stop accepting status changes: we're quitting, and what we hold right now is
+   * exactly what has to reach session.json.
+   *
+   * Quitting kills every PTY, which makes each tab report its Claude session
+   * gone (the PTY exit, plus the session's own SessionEnd hook on the way out).
+   * Those updates reached the renderer *before* its final save, so a tab that
+   * was mid-conversation persisted as `claudeActive: false` and the next launch
+   * revived nothing — the tab came back as a plain terminal and then overwrote
+   * its own session id with null, losing the conversation for good.
+   *
+   * Must be called before the PTYs are killed (see index.ts shutdown()).
+   */
+  freeze(): void {
+    this.frozen = true
   }
 
   stop(): void {
@@ -154,7 +173,7 @@ export class StatusServer {
   /** The tab's shell (the PTY) exited — the whole tab is done. */
   markExited(tabId: TabId, exitCode: number): void {
     const tab = this.tabs.get(tabId)
-    if (!tab) return
+    if (!tab || this.frozen) return
     tab.status.claudeActive = false
     tab.status.activity = 'exited'
     tab.status.exitCode = exitCode
@@ -175,7 +194,7 @@ export class StatusServer {
    *  demoted the tab to a plain terminal. */
   markClaudeActive(tabId: TabId, sessionId?: string): void {
     const tab = this.tabs.get(tabId)
-    if (!tab) return
+    if (!tab || this.frozen) return
     const seedId = sessionId && !tab.status.sessionId
     if (tab.status.claudeActive && !seedId) return
     tab.status.claudeActive = true
@@ -190,7 +209,7 @@ export class StatusServer {
 
   markRestarted(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
-    if (!tab) return
+    if (!tab || this.frozen) return
     tab.status.claudeActive = false
     tab.status.activity = 'idle'
     tab.status.exitCode = null
@@ -206,7 +225,7 @@ export class StatusServer {
   // doesn't render the tab's statusline, so sourcing the id here avoids that.
   private handleStatusline(tabId: TabId, payload: StatuslinePayload): void {
     const tab = this.tabs.get(tabId)
-    if (!tab) return
+    if (!tab || this.frozen) return
     if (payload.session_id) this.seenSessions.add(payload.session_id)
     tab.status.claudeActive = true
     tab.status.payload = payload
@@ -229,7 +248,9 @@ export class StatusServer {
   // on a "first id wins" rule left the dot stuck busy on the tab's own turns.
   private handleHook(tabId: TabId, evt: HookEvent): void {
     const tab = this.tabs.get(tabId)
-    if (!tab) return
+    // SessionEnd arrives for every tab while we're quitting; honoring it would
+    // erase the very state we're about to persist (see freeze).
+    if (!tab || this.frozen) return
     if (evt.session_id) this.seenSessions.add(evt.session_id)
     // Note: the generic `Notification` hook is intentionally NOT mapped to an
     // activity state. It fires both for permission needs AND as a "waiting for
@@ -291,7 +312,7 @@ export class StatusServer {
 
   private async refreshGit(tabId: TabId): Promise<void> {
     const tab = this.tabs.get(tabId)
-    if (!tab) return
+    if (!tab || this.frozen) return
     const now = Date.now()
     if (now - tab.gitFetchedAt < GIT_CACHE_MS) return
     tab.gitFetchedAt = now

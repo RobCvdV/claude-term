@@ -215,6 +215,10 @@ async function confirmQuit(): Promise<void> {
 }
 
 function shutdown(): void {
+  // Freeze *first*: killing the PTYs makes every tab report its Claude session
+  // gone, and those updates would otherwise reach the renderer before its final
+  // save — persisting live conversations as "no session" (see StatusServer.freeze).
+  services.status.freeze()
   services.ptys.killAll()
   services.status.stop()
 }
