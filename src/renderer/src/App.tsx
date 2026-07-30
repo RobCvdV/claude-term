@@ -119,7 +119,8 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
-  // an update finished downloading — surface the header pill
+  // an update finished downloading — surface the header pill (null withdraws it
+  // again when a newer release turned up and that download became obsolete)
   useEffect(() => {
     return window.claudeTerm.onUpdateDownloaded((version) => setUpdateVersion(version))
   }, [])

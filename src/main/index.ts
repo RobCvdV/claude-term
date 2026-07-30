@@ -6,7 +6,7 @@ import { createServices, registerIpc } from './ipc'
 import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
-import { setupUpdater, confirmAndInstall, checkForUpdatesInteractive } from './updater'
+import { setupUpdater, installUpdate, checkForUpdatesInteractive } from './updater'
 import { installAppMenu } from './menu'
 import { closeAllDocsWindows } from './docs-window'
 
@@ -111,11 +111,11 @@ app.whenReady().then(async () => {
   // install quits + relaunches; the normal session restore reopens the tabs and
   // resumes/reattaches their Claude sessions.
   setupUpdater(() => mainWindow)
-  ipcMain.handle('update:install', () => confirmAndInstall(() => mainWindow, prepareUpdateQuit))
+  ipcMain.handle('update:install', () => installUpdate(() => mainWindow, prepareUpdateQuit))
 
   // Native menu with a manual "Check for Updates…" item (app menu on macOS,
   // Help menu elsewhere) alongside the standard Edit/View/Window roles.
-  installAppMenu(() => checkForUpdatesInteractive(() => mainWindow, prepareUpdateQuit))
+  installAppMenu(() => void checkForUpdatesInteractive(() => mainWindow, prepareUpdateQuit))
 
   // First-run: offer to install the global activity-logging hook (feeds the
   // 🕐 Activity hours view). Idempotent + merge-only; never blocks startup.
