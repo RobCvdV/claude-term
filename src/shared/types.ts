@@ -194,6 +194,9 @@ export interface PersistedTab {
   /** `/add-dir` directories seen in this tab (absent for tabs saved before this
    *  was tracked, hence optional) */
   addedDirs?: string[]
+  /** the tab's most recent submitted prompts, oldest first, so ↑ still recalls
+   *  them after a restart. Trimmed on write — see prompt-history.ts. */
+  promptHistory?: string[]
 }
 
 export interface PersistedSession {

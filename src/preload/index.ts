@@ -77,9 +77,10 @@ export interface ClaudeTermApi {
   onPtyExit(cb: (tabId: TabId, exitCode: number) => void): () => void
   onStatusUpdate(cb: (status: TabStatus) => void): () => void
   onAttention(cb: (tabId: TabId, hookEvent: string) => void): () => void
-  /** fires when an update has finished downloading and is ready to install */
-  onUpdateDownloaded(cb: (version: string) => void): () => void
-  /** ask to restart & install the downloaded update; returns true if starting */
+  /** the update that is downloaded and ready to install, or null when a newer
+   *  release superseded it (re-fires with the newer one once that downloads) */
+  onUpdateDownloaded(cb: (version: string | null) => void): () => void
+  /** re-check the feed, then ask to restart & install; true if starting */
   installUpdate(): Promise<boolean>
 }
 
@@ -95,8 +96,7 @@ function subscribe<Args extends unknown[]>(
 
 const api: ClaudeTermApi = {
   initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
-  createTab: (cwd, resume, addedDirs) =>
-    ipcRenderer.invoke('tab:create', cwd, resume, addedDirs),
+  createTab: (cwd, resume, addedDirs) => ipcRenderer.invoke('tab:create', cwd, resume, addedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
