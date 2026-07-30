@@ -5,10 +5,27 @@
 // (The full `monaco-editor` entry = editor.all + all of that.)
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import 'monaco-editor/esm/vs/editor/editor.all.js'
-// The one bundled language we opt into: markdown, for the docs editor's syntax
-// highlighting. (Self-registers the 'markdown' language on import.)
+// The languages we opt into, each self-registering on import. Markdown is for
+// the docs editor; the rest cover the config files the settings window edits
+// (see config-lang.ts for the file → language mapping). These are tokenizers
+// only — no language service, no extra worker.
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'
+import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution'
+import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution'
+import 'monaco-editor/esm/vs/basic-languages/ini/ini.contribution'
+import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution'
+import 'monaco-editor/esm/vs/basic-languages/dockerfile/dockerfile.contribution'
+import 'monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution'
+import 'monaco-editor/esm/vs/basic-languages/java/java.contribution'
+import 'monaco-editor/esm/vs/basic-languages/pascal/pascal.contribution'
+import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution'
+import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
+// JSON is the exception: it gets the full language service (its own worker), so
+// a trailing comma or duplicate key in a settings file is flagged before saving
+// rather than silently breaking whatever reads it.
+import 'monaco-editor/esm/vs/language/json/monaco.contribution'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices'
 import type { TabId } from '../../shared/types'
 import { appSlashCommands, getArgCompleter } from './app-commands'
@@ -16,11 +33,23 @@ import { registerSpellActions } from './spell'
 import { registerGrammarActions } from './grammar'
 
 self.MonacoEnvironment = {
-  getWorker: () => new editorWorker()
+  getWorker: (_id, label) => (label === 'json' ? new jsonWorker() : new editorWorker())
 }
 
 export const PROMPT_LANG = 'claude-prompt'
 export const MARKDOWN_LANG = 'markdown'
+
+/** The json language service's config. Monaco registers it on the `monaco`
+ *  namespace at runtime, but its ESM type declaration is empty (`export {}`),
+ *  so this is the shape we need, declared locally. */
+interface JsonDefaults {
+  setDiagnosticsOptions(options: {
+    validate?: boolean
+    allowComments?: boolean
+    enableSchemaRequest?: boolean
+    schemas?: unknown[]
+  }): void
+}
 
 const noEvent = (): monaco.IDisposable => ({ dispose: () => {} })
 const viewport = (): { width: number; height: number } => ({
@@ -109,6 +138,17 @@ export function setupMonaco(): typeof monaco {
       'editorInfo.foreground': '#8a8f99',
       'editorOverviewRuler.infoForeground': '#8a8f9944'
     }
+  })
+
+  // Comments are tolerated (tsconfig.json, .vscode/*.json and Claude's own
+  // settings files use them), and schema fetching is off: the renderer runs
+  // from file:// under a `connect-src 'self'` CSP, so a request would only fail.
+  const json = (monaco.languages as unknown as { json?: { jsonDefaults: JsonDefaults } }).json
+  json?.jsonDefaults.setDiagnosticsOptions({
+    validate: true,
+    allowComments: true,
+    enableSchemaRequest: false,
+    schemas: []
   })
 
   registerSpellActions([PROMPT_LANG, MARKDOWN_LANG])

@@ -118,7 +118,7 @@ export class StatusServer {
     this.server?.close()
   }
 
-  registerTab(tabId: TabId, cwd: string): void {
+  registerTab(tabId: TabId, cwd: string, addedDirs: string[] = []): void {
     this.tabs.set(tabId, {
       cwd,
       gitFetchedAt: 0,
@@ -132,6 +132,7 @@ export class StatusServer {
         sessionId: null,
         exitCode: null,
         cwd,
+        addedDirs,
         payload: null,
         git: null
       }
@@ -149,6 +150,20 @@ export class StatusServer {
 
   getCwd(tabId: TabId): string | null {
     return this.tabs.get(tabId)?.cwd ?? null
+  }
+
+  /** Extra working directories seen for this tab (`/add-dir`). */
+  getAddedDirs(tabId: TabId): string[] {
+    return this.tabs.get(tabId)?.status.addedDirs ?? []
+  }
+
+  /** Record a directory the tab's session was told to add. Idempotent, so
+   *  re-issuing `/add-dir` for the same folder doesn't duplicate the section. */
+  addDirectory(tabId: TabId, dir: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen || tab.status.addedDirs.includes(dir)) return
+    tab.status.addedDirs = [...tab.status.addedDirs, dir]
+    this.onUpdate(tab.status)
   }
 
   /** How many tabs have a Claude session actively working right now. */

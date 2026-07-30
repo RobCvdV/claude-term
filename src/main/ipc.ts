@@ -12,6 +12,9 @@ import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { buildActivityReport } from './activity-log'
 import { listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
+import { listConfigFiles, readConfigFile, writeConfigFile } from './config-files'
+import { closeConfigWindowForTab, openOrFocusConfigWindow } from './config-window'
+import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { getVolume, setVolume } from './volume'
 import type { VolumeOp, WorklogPlan } from '../shared/types'
@@ -67,51 +70,59 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     if (agentWarmup) await agentWarmup
   }
 
-  ipcMain.handle('tab:create', async (_e, cwd?: string, resume?: string): Promise<TabInfo> => {
-    // a persisted cwd may no longer exist — fall back to home rather than fail
-    const dir = cwd && existsSync(cwd) ? cwd : homedir()
-    const tabId: TabId = randomUUID()
-    status.registerTab(tabId, dir)
-    // Resolve how to restore a persisted session (only when `resume` is set):
-    //  - live daemon-managed background agent → `claude attach` (--resume
-    //    refuses a live bg session);
-    //  - resumable transcript on disk → `claude --resume`;
-    //  - neither (id outlived its transcript / was never written) → plain
-    //    shell, so we don't dump "No conversation found" into the tab.
-    // Waits for the daemon to be answerable first (see warmLiveAgents): asking
-    // too early reports no agents and we'd pick a --resume the daemon refuses.
-    if (resume) {
-      await awaitAgentWarmup()
-      const target = await resolveRevive(resume)
-      if (target.mode === 'attach') {
-        await ptys.create(tabId, dir, undefined, target.jobId)
-      } else if (target.mode === 'resume') {
-        await ptys.create(tabId, dir, resume)
+  ipcMain.handle(
+    'tab:create',
+    async (_e, cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo> => {
+      // a persisted cwd may no longer exist — fall back to home rather than fail
+      const dir = cwd && existsSync(cwd) ? cwd : homedir()
+      const tabId: TabId = randomUUID()
+      status.registerTab(tabId, dir, (addedDirs ?? []).filter(existsSync))
+      // Resolve how to restore a persisted session (only when `resume` is set):
+      //  - live daemon-managed background agent → `claude attach` (--resume
+      //    refuses a live bg session);
+      //  - resumable transcript on disk → `claude --resume`;
+      //  - neither (id outlived its transcript / was never written) → plain
+      //    shell, so we don't dump "No conversation found" into the tab.
+      // Waits for the daemon to be answerable first (see warmLiveAgents): asking
+      // too early reports no agents and we'd pick a --resume the daemon refuses.
+      if (resume) {
+        await awaitAgentWarmup()
+        const target = await resolveRevive(resume)
+        if (target.mode === 'attach') {
+          await ptys.create(tabId, dir, undefined, target.jobId)
+        } else if (target.mode === 'resume') {
+          await ptys.create(tabId, dir, resume)
+        } else {
+          await ptys.create(tabId, dir)
+        }
+        // Both revive paths self-report via statusline within ~1s, but seed the UI
+        // now so the prompt box doesn't flicker in — and an attached bg agent
+        // never reports at all (its --settings point at a dead endpoint), so this
+        // is the only thing that shows its Claude UI and keeps its session id
+        // in the persisted state for the next launch.
+        if (target.mode !== 'shell') status.markClaudeActive(tabId, resume)
       } else {
         await ptys.create(tabId, dir)
       }
-      // Both revive paths self-report via statusline within ~1s, but seed the UI
-      // now so the prompt box doesn't flicker in — and an attached bg agent
-      // never reports at all (its --settings point at a dead endpoint), so this
-      // is the only thing that shows its Claude UI and keeps its session id
-      // in the persisted state for the next launch.
-      if (target.mode !== 'shell') status.markClaudeActive(tabId, resume)
-    } else {
-      await ptys.create(tabId, dir)
+      return { tabId, cwd: dir, title: basename(dir) || dir }
     }
-    return { tabId, cwd: dir, title: basename(dir) || dir }
-  })
+  )
 
   ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
-    // Flush the docs window first (may prompt to save) while the tab's status —
-    // and thus the doc's cwd — is still resolvable.
+    // Flush the detached windows first (they may prompt to save) while the tab's
+    // status — and thus their cwd/roots — is still resolvable.
     await closeDocsWindowForTab(tabId)
+    await closeConfigWindowForTab(tabId)
     ptys.kill(tabId)
     status.removeTab(tabId)
   })
 
   ipcMain.on('docs:openWindow', (_e, tabId: TabId, group: DocGroup, title: string) => {
     openOrFocusDocsWindow(tabId, group, title)
+  })
+
+  ipcMain.on('config:openWindow', (_e, tabId: TabId, title: string) => {
+    openOrFocusConfigWindow(tabId, title)
   })
 
   ipcMain.handle('tab:restart', async (_e, tabId: TabId) => {
@@ -241,6 +252,29 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     return cwd ? writeDoc(cwd, path, content) : false
   })
 
+  // Project configuration files (the status-bar Settings window). Roots are the
+  // tab's cwd plus its added directories — resolved here, never passed in.
+  const configPatternsFile = join(app.getPath('userData'), 'config-file-patterns.json')
+  const rootsFor = (tabId: TabId): { cwd: string | null; addedDirs: string[] } => {
+    const cwd = status.getCwd(tabId)
+    return { cwd, addedDirs: cwd ? mergeAddedDirs(cwd, status.getAddedDirs(tabId)) : [] }
+  }
+
+  ipcMain.handle('config:list', (_e, tabId: TabId) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd
+      ? listConfigFiles(cwd, addedDirs, configPatternsFile)
+      : { sections: [], patternsFile: configPatternsFile }
+  })
+  ipcMain.handle('config:read', (_e, tabId: TabId, path: string) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd ? readConfigFile(cwd, addedDirs, configPatternsFile, path) : null
+  })
+  ipcMain.handle('config:write', (_e, tabId: TabId, path: string, content: string) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd ? writeConfigFile(cwd, addedDirs, configPatternsFile, path, content) : false
+  })
+
   ipcMain.handle('completions:commands', (_e, tabId: TabId) => {
     const cwd = status.getCwd(tabId)
     return cwd ? listCommands(cwd) : []
@@ -270,7 +304,15 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.on('pty:resize', (_e, tabId: TabId, cols: number, rows: number) =>
     ptys.resize(tabId, cols, rows)
   )
-  ipcMain.on('prompt:submit', (_e, tabId: TabId, text: string, imageCount?: number) =>
+  ipcMain.on('prompt:submit', (_e, tabId: TabId, text: string, imageCount?: number) => {
+    // `/add-dir` is claude's own command — we don't intercept it, but this is the
+    // only place the app can observe one, so note the folder for the Settings
+    // window (see added-dirs.ts for why there is no other source).
+    const cwd = status.getCwd(tabId)
+    if (cwd) {
+      const dir = addedDirFromPrompt(text, cwd)
+      if (dir && existsSync(dir)) status.addDirectory(tabId, dir)
+    }
     ptys.injectPrompt(tabId, text, imageCount ?? 0)
-  )
+  })
 }

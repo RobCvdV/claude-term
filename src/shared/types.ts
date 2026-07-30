@@ -85,6 +85,10 @@ export interface TabStatus {
   /** most recent known cwd (updated from the statusline payload while a claude
    *  session runs); used to restore/resume the tab in the right folder. */
   cwd: string
+  /** extra working directories added to the session with `/add-dir`, absolute.
+   *  Only those submitted through the app's prompt box are seen — see
+   *  added-dirs.ts. Persisted with the tab so they survive a restart. */
+  addedDirs: string[]
   payload: StatuslinePayload | null
   git: GitInfo | null
 }
@@ -120,6 +124,43 @@ export interface ProjectDocs {
   sections: DocSection[]
 }
 
+/** Above this size a config file is listed but not opened — a generated file
+ *  that happens to match a pattern shouldn't be able to hang the editor. Shared
+ *  policy: the main process enforces it, the window explains it. */
+export const MAX_CONFIG_EDIT_BYTES = 2 * 1024 * 1024
+
+/** One configuration/settings file surfaced in the status-bar Settings window. */
+export interface ConfigEntry {
+  /** absolute path on disk */
+  path: string
+  /** display label: the path relative to its scan root (posix separators) */
+  rel: string
+  /** modification time, epoch ms */
+  mtime: number
+  /** byte size — the window refuses to open very large files rather than
+   *  hanging Monaco on a generated file that happens to match a pattern */
+  size: number
+}
+
+/** One scan root's config files, shown as a section in the Settings window. */
+export interface ConfigSection {
+  /** section heading: the root folder's name */
+  name: string
+  /** absolute path of the root this section was scanned from */
+  root: string
+  /** shown under the heading when the root isn't the tab's own cwd */
+  subtitle?: string
+  entries: ConfigEntry[]
+}
+
+/** Config files available for one tab: its cwd, plus every added directory. */
+export interface ProjectConfigFiles {
+  sections: ConfigSection[]
+  /** absolute path of the user-editable include/exclude pattern file; it is
+   *  listed as its own section so it can be edited in the same editor */
+  patternsFile: string
+}
+
 export interface SlashCommand {
   /** without the leading slash, e.g. "commit-commands:commit" */
   name: string
@@ -150,6 +191,9 @@ export interface PersistedTab {
   /** the claude session id to --resume, if one was running when we last saved */
   sessionId: string | null
   claudeActive: boolean
+  /** `/add-dir` directories seen in this tab (absent for tabs saved before this
+   *  was tracked, hence optional) */
+  addedDirs?: string[]
 }
 
 export interface PersistedSession {

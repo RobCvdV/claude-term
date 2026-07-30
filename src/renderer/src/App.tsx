@@ -248,7 +248,7 @@ export default function App(): React.JSX.Element {
     const statusInit: Record<TabId, TabStatus | null> = {}
     for (const t of saved.tabs) {
       const resume = t.claudeActive && t.sessionId ? t.sessionId : undefined
-      const tab = await window.claudeTerm.createTab(t.cwd, resume)
+      const tab = await window.claudeTerm.createTab(t.cwd, resume, t.addedDirs)
       created.push({ ...tab, title: t.title || tab.title })
       lastKnown.current.set(tab.tabId, {
         sessionId: t.sessionId ?? null,
@@ -294,6 +294,7 @@ export default function App(): React.JSX.Element {
           title: t.title,
           manualTitle: manualTitles.current.has(t.tabId),
           color: colorsRef.current[t.tabId],
+          addedDirs: st?.addedDirs ?? [],
           ...persistedSessionOf(st, lastKnown.current.get(t.tabId))
         }
       }),
@@ -494,6 +495,15 @@ export default function App(): React.JSX.Element {
                 )
                 // the docs window takes OS focus; leave the main window's focus
                 // on the prompt/terminal so it's usable the moment you return
+                restoreFocus(activeId)
+              }}
+              onOpenSettings={() => {
+                if (!activeId) return
+                const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Settings'
+                window.claudeTerm.openConfigWindow(
+                  activeId,
+                  `${composeWindowTitle(title, activeStatus)} — settings`
+                )
                 restoreFocus(activeId)
               }}
             />

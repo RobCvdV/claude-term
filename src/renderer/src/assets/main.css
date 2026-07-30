@@ -889,6 +889,61 @@ body {
   margin: 1.2em 0;
 }
 
+/* --- Settings window (project config files) --- */
+/* Reuses the docs window's shell (.docs-window/.docs-panel/.docs-rail/…); only
+   the extras it needs are defined here. The rail is wider because entries are
+   paths (".claude/settings.json"), not short titles. */
+.config-window .docs-rail {
+  width: 280px;
+}
+
+/* Entries are paths, so wrap rather than ellipsize — truncating the end hides
+   the file name, which is the part that identifies the entry. */
+.config-window .docs-item {
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.docs-window .config-filter {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 7px;
+  margin-bottom: 10px;
+}
+
+.docs-window .config-filter:focus {
+  outline: none;
+  border-color: var(--fg-dim);
+}
+
+.docs-window .config-filter::placeholder {
+  color: var(--fg-dim);
+}
+
+/* the absolute path of an /add-dir root, under its section heading */
+.config-section-sub {
+  display: block;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+.config-meta {
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  align-self: center;
+}
+
 .activity-empty {
   color: var(--fg-dim);
   text-align: center;
