@@ -150,6 +150,9 @@ export interface PersistedTab {
   /** the claude session id to --resume, if one was running when we last saved */
   sessionId: string | null
   claudeActive: boolean
+  /** the tab's most recent submitted prompts, oldest first, so ↑ still recalls
+   *  them after a restart. Trimmed on write — see prompt-history.ts. */
+  promptHistory?: string[]
 }
 
 export interface PersistedSession {

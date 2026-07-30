@@ -8,6 +8,7 @@ import { ActivityOverview } from './components/ActivityOverview'
 import { composeWindowTitle } from './tab-title'
 import { moveItem } from './tab-reorder'
 import { persistedSessionOf, type RestoredSession } from './session-persist'
+import { forgetPromptHistory, persistedHistoryFor, restorePromptHistory } from './prompt-history'
 import {
   disposeTerm,
   focusTerm,
@@ -241,7 +242,7 @@ export default function App(): React.JSX.Element {
   }, [openTab])
 
   // Recreate the saved tabs (in order), resuming any that had a live claude
-  // session. Colors/titles/active tab are restored too.
+  // session. Colors/titles/prompt history/active tab are restored too.
   const restoreSession = useCallback(async (saved: PersistedSession): Promise<void> => {
     const created: TabInfo[] = []
     const colorInit: Record<TabId, string> = {}
@@ -256,6 +257,7 @@ export default function App(): React.JSX.Element {
       })
       if (t.manualTitle) manualTitles.current.add(tab.tabId)
       if (t.color) colorInit[tab.tabId] = t.color
+      restorePromptHistory(tab.tabId, t.promptHistory)
       statusInit[tab.tabId] = await window.claudeTerm.statusSnapshot(tab.tabId)
     }
     setTabs(created)
@@ -294,6 +296,7 @@ export default function App(): React.JSX.Element {
           title: t.title,
           manualTitle: manualTitles.current.has(t.tabId),
           color: colorsRef.current[t.tabId],
+          promptHistory: persistedHistoryFor(t.tabId),
           ...persistedSessionOf(st, lastKnown.current.get(t.tabId))
         }
       }),
@@ -354,6 +357,7 @@ export default function App(): React.JSX.Element {
       promptRefs.current.delete(tabId)
       manualTitles.current.delete(tabId)
       lastKnown.current.delete(tabId)
+      forgetPromptHistory(tabId)
     },
     [statuses]
   )

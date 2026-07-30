@@ -8,6 +8,7 @@ import { SpellToggle } from './SpellToggle'
 import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
 import { focusAfterSubmit, type FocusState } from '../focus-policy'
 import { runFocusLoan, type LoanMode } from '../focus-loan'
+import { promptHistoryFor, pushPrompt } from '../prompt-history'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -43,14 +44,10 @@ export interface PromptBoxHandle {
 // image chips shown in the box; expanded back to their real mention on submit
 const IMAGE_TOKEN_RE = /\[image\d+\]/g
 
-// terminal-style prompt history, per tab. Lives at module scope so it survives
-// the PromptBox remount on every tab switch (the box is keyed by active tab).
-const promptHistories = new Map<TabId, string[]>()
-const HISTORY_MAX = 100
-
-// unsubmitted draft text, per tab. Same reason as promptHistories: the box
-// unmounts (and disposes its Monaco model) on every tab switch, so the draft
-// has to live outside the component to survive switching away and back.
+// unsubmitted draft text, per tab. Same reason the prompt history lives outside
+// the component (see prompt-history.ts, which owns that store): the box unmounts
+// (and disposes its Monaco model) on every tab switch, so the draft has to
+// survive switching away and back. Unlike the history, drafts are not persisted.
 const promptDrafts = new Map<TabId, string>()
 
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
@@ -224,13 +221,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       {}) as Record<TabId, monacoNs.editor.IStandaloneCodeEditor>
     registry[tabId] = editor
 
-    const pushHistory = (text: string): void => {
-      const list = promptHistories.get(tabId) ?? []
-      if (list[list.length - 1] !== text) list.push(text)
-      if (list.length > HISTORY_MAX) list.splice(0, list.length - HISTORY_MAX)
-      promptHistories.set(tabId, list)
-    }
-
     // set the whole prompt text and park the cursor at the very end (history recall)
     const setValueCursorEnd = (text: string): void => {
       editor.setValue(text)
@@ -257,7 +247,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     const send = (): void => {
       const text = editor.getValue().replace(/\n+$/, '')
       if (!text || editor.getOption(monaco.editor.EditorOption.readOnly)) return
-      pushHistory(text)
+      pushPrompt(tabId, text)
       historyIndexRef.current = null
       draftRef.current = ''
       // app-local command (e.g. /color, /switch): handle in-app, don't send to
@@ -386,7 +376,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         const pos = editor.getPosition()
         const sel = editor.getSelection()
         if (!pos || (sel && !sel.isEmpty())) return
-        const history = promptHistories.get(tabId) ?? []
+        const history = promptHistoryFor(tabId)
         // same rendered row ⇔ same top offset (handles wrap: model line 1 can
         // span several visual rows, only the outermost one triggers history)
         const rowTop = (p: monacoNs.IPosition): number =>
