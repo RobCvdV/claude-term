@@ -154,6 +154,19 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   // dev/scripting convenience: auto-open a tab in this folder at startup
   ipcMain.handle('app:initialCwd', () => process.env.CLAUDE_TERM_DEFAULT_CWD ?? null)
 
+  // Harper's grammar engine, as raw wasm bytes. The renderer can't fetch it
+  // itself — the packaged app runs from file://, where fetch is blocked — so it
+  // travels over IPC and becomes a blob: URL there. Copied into resources/ by
+  // postinstall (see scripts/copy-harper-wasm.mjs); missing file = no grammar.
+  ipcMain.handle('grammar:wasm', () => {
+    const wasm = join(__dirname, '../../resources/harper-grammar.wasm')
+    try {
+      return readFileSync(wasm)
+    } catch {
+      return null
+    }
+  })
+
   // tab/session persistence across launches
   const sessionFile = join(app.getPath('userData'), 'session.json')
   const readSession = (): PersistedSession | null => {

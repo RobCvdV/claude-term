@@ -1,4 +1,5 @@
 import type { SlashCommand, TabId } from '../../shared/types'
+import { getSpellConfig, setSpellConfig, type SpellConfig, type SpellLang } from './spell'
 
 // App-local commands: intercepted in the prompt box and handled inside the app,
 // never sent to claude. They ride the same Monaco suggest widget as claude's
@@ -68,8 +69,63 @@ export const APP_COMMANDS: AppCommand[] = [
       )
       return true
     }
+  },
+  {
+    name: 'spell',
+    description: 'Text checking: spelling languages, or grammar in the docs editor',
+    hint: '<off|en|nl|en+nl|grammar>',
+    runOnPick: true,
+    validate: (arg) => !!parseSpellArg(arg),
+    complete: async () => {
+      const active = isActiveSpellChoice(getSpellConfig())
+      return SPELL_CHOICES.map((c) => ({
+        label: c.label,
+        value: c.value,
+        detail: active(c.value) ? `${c.detail} (current)` : c.detail
+      }))
+    },
+    run: ({ arg }) => {
+      const parsed = parseSpellArg(arg)
+      if (parsed) setSpellConfig(parsed)
+      return true
+    }
   }
 ]
+
+const SPELL_CHOICES = [
+  { label: 'en+nl', value: 'en+nl', detail: 'Spelling: English and Dutch' },
+  { label: 'en', value: 'en', detail: 'Spelling: English only' },
+  { label: 'nl', value: 'nl', detail: 'Spelling: Dutch only' },
+  { label: 'grammar on', value: 'grammar', detail: 'Grammar in the docs editor' },
+  { label: 'grammar off', value: 'nogrammar', detail: 'No grammar checking' },
+  { label: 'off', value: 'off', detail: 'No spelling, no grammar' }
+]
+
+/** Which menu entry matches the live config, so it can be marked "(current)". */
+function isActiveSpellChoice(c: SpellConfig): (value: string) => boolean {
+  return (value) => {
+    if (value === 'off') return !c.enabled
+    if (value === 'grammar') return c.enabled && c.grammar
+    if (value === 'nogrammar') return !c.grammar
+    return c.enabled && c.langs.join('+') === value
+  }
+}
+
+/**
+ * `off` / `on`, `grammar` / `nogrammar`, or a `+`-joined language list. Anything
+ * unrecognised returns null, which sends the line to claude instead.
+ */
+function parseSpellArg(arg: string): SpellConfig | null {
+  const value = arg.trim().toLowerCase()
+  const current = getSpellConfig()
+  if (value === 'off') return { ...current, enabled: false }
+  if (value === 'on' || value === '') return { ...current, enabled: true }
+  if (value === 'grammar') return { ...current, enabled: true, grammar: true }
+  if (value === 'nogrammar') return { ...current, grammar: false }
+  const langs = value.split(/[+,\s]+/)
+  if (!langs.every((l): l is SpellLang => l === 'en' || l === 'nl')) return null
+  return { ...current, enabled: true, langs: [...new Set(langs)] }
+}
 
 const byName = new Map(APP_COMMANDS.map((c) => [c.name, c]))
 

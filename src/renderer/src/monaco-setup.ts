@@ -9,8 +9,11 @@ import 'monaco-editor/esm/vs/editor/editor.all.js'
 // highlighting. (Self-registers the 'markdown' language on import.)
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices'
 import type { TabId } from '../../shared/types'
 import { appSlashCommands, getArgCompleter } from './app-commands'
+import { registerSpellActions } from './spell'
+import { registerGrammarActions } from './grammar'
 
 self.MonacoEnvironment = {
   getWorker: () => new editorWorker()
@@ -19,11 +22,63 @@ self.MonacoEnvironment = {
 export const PROMPT_LANG = 'claude-prompt'
 export const MARKDOWN_LANG = 'markdown'
 
+const noEvent = (): monaco.IDisposable => ({ dispose: () => {} })
+const viewport = (): { width: number; height: number } => ({
+  width: document.body.clientWidth,
+  height: document.body.clientHeight
+})
+
+/**
+ * Monaco's standalone layout service answers "how big is the window?" with the
+ * focused editor's own container. Popups that size themselves against it then
+ * get squeezed into the 64px prompt box — the quick-fix list caps its height at
+ * 70% of it, so it renders as one scrolling row. Both our editors live in a
+ * normal window, so measure against the document instead.
+ */
+const windowLayoutService = {
+  _serviceBrand: undefined,
+  onDidLayoutMainContainer: noEvent,
+  onDidLayoutActiveContainer: noEvent,
+  onDidLayoutContainer: noEvent,
+  onDidChangeActiveContainer: noEvent,
+  onDidAddContainer: noEvent,
+  mainContainerOffset: { top: 0, quickPickTop: 0 },
+  activeContainerOffset: { top: 0, quickPickTop: 0 },
+  get mainContainer() {
+    return document.body
+  },
+  get activeContainer() {
+    return document.body
+  },
+  get mainContainerDimension() {
+    return viewport()
+  },
+  get activeContainerDimension() {
+    return viewport()
+  },
+  get containers() {
+    return [document.body]
+  },
+  getContainer: () => document.body,
+  whenContainerStylesLoaded: () => undefined,
+  focus: () => {
+    monaco.editor
+      .getEditors()
+      .find((e) => e.hasTextFocus())
+      ?.focus()
+  }
+}
+
 let initialized = false
 
 export function setupMonaco(): typeof monaco {
   if (initialized) return monaco
   initialized = true
+
+  // Must come before ANY other Monaco call: the first call into the standalone
+  // services locks the collection in (they all fall back to `initialize({})`),
+  // and overrides supplied later are silently dropped.
+  StandaloneServices.initialize({ layoutService: windowLayoutService })
   // exposed for scripted E2E testing (CDP)
   ;(window as unknown as Record<string, unknown>).__monaco = monaco
 
@@ -48,9 +103,17 @@ export function setupMonaco(): typeof monaco {
       'editor.lineHighlightBackground': '#2a2b30',
       'editorWidget.background': '#232428',
       'editorWidget.border': '#35363c',
-      'scrollbarSlider.background': '#35363c88'
+      'scrollbarSlider.background': '#35363c88',
+      // spelling is the only thing that raises Info markers here — keep the
+      // squiggle muted so a typo never reads as an error
+      'editorInfo.foreground': '#8a8f99',
+      'editorOverviewRuler.infoForeground': '#8a8f9944'
     }
   })
+
+  registerSpellActions([PROMPT_LANG, MARKDOWN_LANG])
+  // grammar only ever runs in the docs (markdown) editor
+  registerGrammarActions([MARKDOWN_LANG])
 
   monaco.languages.registerCompletionItemProvider(PROMPT_LANG, {
     triggerCharacters: ['/', '@'],
