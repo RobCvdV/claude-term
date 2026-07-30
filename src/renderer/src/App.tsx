@@ -9,6 +9,7 @@ import { composeWindowTitle } from './tab-title'
 import { moveItem } from './tab-reorder'
 import { persistedSessionOf, type RestoredSession } from './session-persist'
 import { forgetPromptHistory, persistedHistoryFor, restorePromptHistory } from './prompt-history'
+import { forgetDraft, persistedDraftFor, restoreDraft } from './prompt-drafts'
 import {
   disposeTerm,
   focusTerm,
@@ -259,6 +260,7 @@ export default function App(): React.JSX.Element {
       if (t.manualTitle) manualTitles.current.add(tab.tabId)
       if (t.color) colorInit[tab.tabId] = t.color
       restorePromptHistory(tab.tabId, t.promptHistory)
+      restoreDraft(tab.tabId, t.promptDraft)
       statusInit[tab.tabId] = await window.claudeTerm.statusSnapshot(tab.tabId)
     }
     setTabs(created)
@@ -299,6 +301,7 @@ export default function App(): React.JSX.Element {
           color: colorsRef.current[t.tabId],
           addedDirs: st?.addedDirs ?? [],
           promptHistory: persistedHistoryFor(t.tabId),
+          promptDraft: persistedDraftFor(t.tabId),
           ...persistedSessionOf(st, lastKnown.current.get(t.tabId))
         }
       }),
@@ -360,6 +363,7 @@ export default function App(): React.JSX.Element {
       manualTitles.current.delete(tabId)
       lastKnown.current.delete(tabId)
       forgetPromptHistory(tabId)
+      forgetDraft(tabId)
     },
     [statuses]
   )
