@@ -9,6 +9,7 @@ import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './
 import { setupUpdater, installUpdate, checkForUpdatesInteractive } from './updater'
 import { installAppMenu } from './menu'
 import { closeAllDocsWindows } from './docs-window'
+import { closeAllConfigWindows } from './config-window'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
 // anything reads app.getPath('userData').
@@ -74,9 +75,10 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => {
     mainWindow = null
-    // detached docs windows would otherwise keep the app alive after the main
-    // window is gone (window-all-closed never fires)
+    // detached docs/settings windows would otherwise keep the app alive after
+    // the main window is gone (window-all-closed never fires)
     closeAllDocsWindows()
+    closeAllConfigWindows()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

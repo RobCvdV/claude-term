@@ -5,6 +5,7 @@ import type {
   DocGroup,
   LoggedWorklog,
   PersistedSession,
+  ProjectConfigFiles,
   ProjectDocs,
   SlashCommand,
   TabId,
@@ -17,7 +18,7 @@ import type {
 
 export interface ClaudeTermApi {
   initialCwd(): Promise<string | null>
-  createTab(cwd?: string, resume?: string): Promise<TabInfo>
+  createTab(cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
@@ -52,6 +53,19 @@ export interface ClaudeTermApi {
   onDocsRequestSave(cb: () => void): () => void
   /** (docs window only) acknowledge a save request has completed */
   docsSaveDone(): void
+  listConfigFiles(tabId: TabId): Promise<ProjectConfigFiles>
+  readConfigFile(tabId: TabId, path: string): Promise<string | null>
+  writeConfigFile(tabId: TabId, path: string, content: string): Promise<boolean>
+  /** open (or focus, if already open) the settings window for a tab */
+  openConfigWindow(tabId: TabId, title: string): void
+  /** (settings window only) the owner tab re-opened it — re-scan the roots */
+  onConfigRefresh(cb: () => void): () => void
+  /** (settings window only) report unsaved-edit state so close can prompt */
+  configDirty(dirty: boolean): void
+  /** (settings window only) main asks the window to save before closing */
+  onConfigRequestSave(cb: () => void): () => void
+  /** (settings window only) acknowledge a save request has completed */
+  configSaveDone(): void
   loadSession(): Promise<PersistedSession | null>
   saveSession(state: PersistedSession): Promise<void>
   saveSessionSync(state: PersistedSession): void
@@ -82,7 +96,7 @@ function subscribe<Args extends unknown[]>(
 
 const api: ClaudeTermApi = {
   initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
-  createTab: (cwd, resume) => ipcRenderer.invoke('tab:create', cwd, resume),
+  createTab: (cwd, resume, addedDirs) => ipcRenderer.invoke('tab:create', cwd, resume, addedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
@@ -108,6 +122,15 @@ const api: ClaudeTermApi = {
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),
   docsSaveDone: () => ipcRenderer.send('docs:saveDone'),
+  listConfigFiles: (tabId) => ipcRenderer.invoke('config:list', tabId),
+  readConfigFile: (tabId, path) => ipcRenderer.invoke('config:read', tabId, path),
+  writeConfigFile: (tabId, path, content) =>
+    ipcRenderer.invoke('config:write', tabId, path, content),
+  openConfigWindow: (tabId, title) => ipcRenderer.send('config:openWindow', tabId, title),
+  onConfigRefresh: (cb) => subscribe('config:refresh', cb),
+  configDirty: (dirty) => ipcRenderer.send('config:dirty', dirty),
+  onConfigRequestSave: (cb) => subscribe('config:requestSave', cb),
+  configSaveDone: () => ipcRenderer.send('config:saveDone'),
   loadSession: () => ipcRenderer.invoke('session:load'),
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),

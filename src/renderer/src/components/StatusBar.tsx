@@ -14,6 +14,8 @@ interface Props {
   color?: string
   /** open the docs overlay focused on the clicked section */
   onOpenDocs: (group: DocGroup) => void
+  /** open the settings window (project configuration files) */
+  onOpenSettings: () => void
 }
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
@@ -66,7 +68,12 @@ function fmtElapsed(sinceMs: number, now: number): string {
   return m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`
 }
 
-export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Element {
+export function StatusBar({
+  status,
+  color,
+  onOpenDocs,
+  onOpenSettings
+}: Props): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -221,6 +228,15 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
           docs {docs.sections.reduce((n, s) => n + s.entries.length, 0)}
         </button>
       )}
+      {/* No count here, unlike docs: listing config files stats every match, and
+          this re-renders on every status update. */}
+      <button
+        className="doc-link"
+        onClick={onOpenSettings}
+        title="Configuration &amp; settings files for this project"
+      >
+        settings
+      </button>
       {ticket && (
         <ExternalLink url={`https://mendrix.atlassian.net/browse/${ticket}`} className="ext-link">
           Jira
