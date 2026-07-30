@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { existsSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { basename, join } from 'path'
+import { join } from 'path'
 import { loginShellEnv, resolveClaudePath } from './shell-env'
 
 /** `claude agents --json` has to cold-start the daemon on the first call after a
@@ -84,25 +84,33 @@ export async function findOwnBackgroundAgents(
 
 /**
  * The background-agent job records Claude Code keeps on disk
- * (~/.claude/jobs/<jobId>/state.json, whose `linkScanPath` points at the
- * session's transcript). Unlike `claude agents --json` this doesn't need a
- * running daemon, so it still answers "was this session promoted to a
- * background agent?" while the daemon is cold — the exact moment we restore.
- * Returns the job id, which is what `claude attach` wants.
+ * (~/.claude/jobs/<jobId>/state.json). Unlike `claude agents --json` this
+ * doesn't need a running daemon, so it still answers "was this session promoted
+ * to a background agent?" while the daemon is cold — the exact moment we
+ * restore. Returns the job id, which is what `claude attach` wants.
+ *
+ * Matched on the record's own `sessionId`. NOT on `linkScanPath`: that names the
+ * session the agent was *forked from* (it tracks `resumeSessionId` — verified
+ * across every job record on this machine), so a tab session that merely
+ * dispatched a background agent matched the sub-agent's job. Two ways that hurt:
+ * warmLiveAgents then waited out its whole deadline on every launch for an id
+ * the daemon will never list, and a refused resume could attach the tab to the
+ * sub-agent's conversation instead of the user's own.
  */
-export function findBgJobForSession(sessionId: string): BgJobRecord | null {
-  const jobs = join(homedir(), '.claude', 'jobs')
+export function findBgJobForSession(
+  sessionId: string,
+  jobsDir = join(homedir(), '.claude', 'jobs')
+): BgJobRecord | null {
   let dirs: string[]
   try {
-    dirs = readdirSync(jobs)
+    dirs = readdirSync(jobsDir)
   } catch {
     return null
   }
   for (const dir of dirs) {
     try {
-      const state = JSON.parse(readFileSync(join(jobs, dir, 'state.json'), 'utf8'))
-      const path = typeof state?.linkScanPath === 'string' ? state.linkScanPath : ''
-      if (path && basename(path) === `${sessionId}.jsonl`) {
+      const state = JSON.parse(readFileSync(join(jobsDir, dir, 'state.json'), 'utf8'))
+      if (state?.sessionId === sessionId) {
         return { jobId: dir, state: typeof state?.state === 'string' ? state.state : null }
       }
     } catch {
