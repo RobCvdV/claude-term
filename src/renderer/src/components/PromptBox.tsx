@@ -9,6 +9,7 @@ import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
 import { focusAfterSubmit, type FocusState } from '../focus-policy'
 import { runFocusLoan, type LoanMode } from '../focus-loan'
 import { promptHistoryFor, pushPrompt } from '../prompt-history'
+import { draftFor, lastImageNumber, saveDraft } from '../prompt-drafts'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -44,12 +45,6 @@ export interface PromptBoxHandle {
 // image chips shown in the box; expanded back to their real mention on submit
 const IMAGE_TOKEN_RE = /\[image\d+\]/g
 
-// unsubmitted draft text, per tab. Same reason the prompt history lives outside
-// the component (see prompt-history.ts, which owns that store): the box unmounts
-// (and disposes its Monaco model) on every tab switch, so the draft has to
-// survive switching away and back. Unlike the history, drafts are not persisted.
-const promptDrafts = new Map<TabId, string>()
-
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   { tabId, disabled, autoFocus, focusState, onStepTab, onColor, color },
   ref
@@ -84,10 +79,12 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   const loanCancelRef = useRef<(() => void) | null>(null)
   // send routine, hoisted out of the mount effect so the Send button shares it
   const sendRef = useRef<() => void>(() => {})
-  // [imageN] chip → the @-path/quoted-path actually submitted; a per-box counter
-  // keeps chip numbers stable as more images are dropped in one prompt
-  const imageMapRef = useRef(new Map<string, string>())
-  const imageCounterRef = useRef(0)
+  // [imageN] chip → the @-path/quoted-path actually submitted. Seeded from the
+  // parked draft: the chips are only labels, so losing the map on remount would
+  // submit a literal "[image1]". The counter resumes past the restored chips so
+  // a newly dropped image can't reuse a label the draft still holds.
+  const imageMapRef = useRef(new Map(Object.entries(draftFor(tabId)?.images ?? {})))
+  const imageCounterRef = useRef(lastImageNumber(draftFor(tabId)?.images ?? {}))
   // swap every [imageN] chip in the text back to its real mention before submit
   const expandImages = (text: string): string =>
     text.replace(IMAGE_TOKEN_RE, (m) => imageMapRef.current.get(m) ?? m)
@@ -167,8 +164,9 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     if (!host) return
     const monaco = setupMonaco()
 
-    // restore any draft parked when we last switched away from this tab
-    const initialDraft = promptDrafts.get(tabId) ?? ''
+    // restore any draft parked when we last switched away from this tab (or, if
+    // it came from session.json, when the app last quit)
+    const initialDraft = draftFor(tabId)?.text ?? ''
     const model = monaco.editor.createModel(initialDraft, PROMPT_LANG, modelUriForTab(tabId))
     const editor = monaco.editor.create(host, {
       model,
@@ -493,16 +491,24 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       host.style.height = `${height}px`
     }
     const contentSub = editor.onDidContentSizeChange(grow)
-    const changeSub = editor.onDidChangeModelContent(() => setEmpty(model.getValue() === ''))
+    // Keep the parked draft current as it's typed, not just on unmount: the
+    // active tab's box never unmounts, so at quit its text would otherwise never
+    // have reached the store. This only updates the in-memory store — it
+    // deliberately doesn't trigger a session save, or every keystroke would churn
+    // session.json and flood session-backups/ with draft noise.
+    const changeSub = editor.onDidChangeModelContent(() => {
+      const text = model.getValue()
+      setEmpty(text === '')
+      saveDraft(tabId, text, imageMapRef.current)
+    })
     const spell = attachSpellcheck(editor, 'prompt')
     grow()
 
     return () => {
-      // park the unsubmitted draft (if any) so it's restored on remount; drop
-      // the entry when the box is empty so a stale draft can't resurrect
-      const draft = editor.getValue()
-      if (draft.trim() === '') promptDrafts.delete(tabId)
-      else promptDrafts.set(tabId, draft)
+      // park the unsubmitted draft (if any) so it's restored on remount, with the
+      // image chips it refers to; a blank box drops the entry so a stale draft
+      // can't resurrect
+      saveDraft(tabId, editor.getValue(), imageMapRef.current)
       loanCancelRef.current?.()
       loanCancelRef.current = null
       if (cmdErrorTimer.current !== null) window.clearTimeout(cmdErrorTimer.current)
