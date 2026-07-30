@@ -140,6 +140,13 @@ export interface TabInfo {
   title: string
 }
 
+/** An unsubmitted prompt, with the image chips it still refers to. */
+export interface PromptDraft {
+  text: string
+  /** `[imageN]` chip → the real @path/quoted path submit expands it back to */
+  images: Record<string, string>
+}
+
 /** One tab as saved to disk between launches. */
 export interface PersistedTab {
   cwd: string
@@ -153,6 +160,8 @@ export interface PersistedTab {
   /** the tab's most recent submitted prompts, oldest first, so ↑ still recalls
    *  them after a restart. Trimmed on write — see prompt-history.ts. */
   promptHistory?: string[]
+  /** half-written prompt left in the box — see prompt-drafts.ts */
+  promptDraft?: PromptDraft
 }
 
 export interface PersistedSession {
