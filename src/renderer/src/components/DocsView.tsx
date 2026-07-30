@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import type { DocEntry, DocGroup, ProjectDocs } from '../../../shared/types'
 import { MARKDOWN_LANG, setupMonaco } from '../monaco-setup'
+import { attachSpellcheck } from '../spell'
+import { attachGrammar } from '../grammar'
 
 interface Props {
   tabId: string
@@ -225,9 +227,13 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
     })
     editorRef.current = editor
     const sub = editor.onDidChangeModelContent(() => setDraft(editor.getValue()))
+    const spell = attachSpellcheck(editor, 'markdown')
+    const grammar = attachGrammar(editor)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
     editor.focus()
     return () => {
+      grammar.dispose()
+      spell.dispose()
       sub.dispose()
       editor.dispose()
       model.dispose()

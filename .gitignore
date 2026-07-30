@@ -1,6 +1,9 @@
 node_modules
 dist
 out
+
+# copied from node_modules by postinstall (scripts/copy-harper-wasm.mjs)
+resources/harper-grammar.wasm
 .DS_Store
 .eslintcache
 *.log*

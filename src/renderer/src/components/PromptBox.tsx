@@ -3,6 +3,8 @@ import type * as monacoNs from 'monaco-editor'
 import type { TabId } from '../../../shared/types'
 import { focusTerm, readInputSuggestion, terminalDialogOpen } from '../term-registry'
 import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
+import { attachSpellcheck } from '../spell'
+import { SpellToggle } from './SpellToggle'
 import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
 import { focusAfterSubmit, type FocusState } from '../focus-policy'
 import { runFocusLoan, type LoanMode } from '../focus-loan'
@@ -502,6 +504,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     }
     const contentSub = editor.onDidContentSizeChange(grow)
     const changeSub = editor.onDidChangeModelContent(() => setEmpty(model.getValue() === ''))
+    const spell = attachSpellcheck(editor, 'prompt')
     grow()
 
     return () => {
@@ -516,6 +519,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       contentSub.dispose()
       changeSub.dispose()
       retriggerSub.dispose()
+      spell.dispose()
       editor.dispose()
       model.dispose()
       editorRef.current = null
@@ -537,6 +541,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         style={color ? ({ '--session-color': color } as React.CSSProperties) : undefined}
       >
         <div className="editor-host" ref={hostRef} />
+        <SpellToggle />
         {cmdError && <div className="editor-cmd-error">{cmdError}</div>}
         {empty && (
           <div className="editor-placeholder">

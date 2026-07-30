@@ -64,6 +64,8 @@ body {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
+  position: relative; /* so the dragged tab can stack above its neighbours */
+  transition: transform 120ms ease;
   /* start at 220px but shrink to share the bar when many tabs are open; the
      min-width (overriding min-width:auto) keeps a tab usable — dot + truncated
      title + close — rather than letting it collapse to nothing */
@@ -79,6 +81,25 @@ body {
 .tab.active {
   background: var(--bg);
   color: var(--fg);
+}
+
+/* ---- tab drag-reorder ---- */
+.tab-bar.reordering {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* the dragged tab tracks the pointer, so it must not lag behind a transition */
+.tab.dragging {
+  transition: none;
+  z-index: 2;
+  opacity: 0.9;
+  background: var(--bg);
+  cursor: grabbing;
+}
+
+.tab-bar.reordering .tab-close {
+  visibility: hidden;
 }
 
 .tab-labels {
@@ -493,12 +514,50 @@ body {
   opacity: 0.55;
 }
 
+/* which dictionaries spell checking uses, in the box's bottom-right corner */
+.spell-toggle {
+  position: absolute;
+  right: 10px;
+  bottom: 4px;
+  display: flex;
+  gap: 2px;
+  /* above editor text (a long last line runs under it) but below the suggest
+     widget, which sits at z-index 50 */
+  z-index: 5;
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
+.spell-lang {
+  background: none;
+  border: none;
+  padding: 1px 3px;
+  font-family: Menlo, Monaco, monospace;
+  font-size: 9.5px;
+  line-height: 1.4;
+  letter-spacing: 0.4px;
+  color: var(--fg-dim);
+  opacity: 0.5;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.spell-lang:hover {
+  opacity: 0.9;
+}
+
+.spell-lang.on {
+  color: var(--accent);
+  opacity: 0.95;
+}
+
 /* transient one-line error from an app command (e.g. a failed /switch) */
 .editor-cmd-error {
   position: absolute;
   bottom: 6px;
   left: 12px;
-  right: 12px;
+  /* stop short of the spell toggle */
+  right: 72px;
   color: var(--red);
   font-family: Menlo, Monaco, monospace;
   font-size: 12px;

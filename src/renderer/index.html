@@ -3,10 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <title>claude-term</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!--
+      https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+      'wasm-unsafe-eval' + blob: are for the grammar checker: compiling Harper's
+      WebAssembly needs the former (it permits wasm only, NOT JS eval), and its
+      bytes reach the worker as a blob: URL because the packaged app runs from
+      file://, where fetch is blocked.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' blob:; worker-src 'self' blob:"
     />
   </head>
 

@@ -28,6 +28,8 @@ export interface ClaudeTermApi {
   worklogLogged(): Promise<LoggedWorklog[]>
   volumeGet(): Promise<VolumeState>
   volumeSet(op: VolumeOp): Promise<VolumeState>
+  /** Harper's wasm bytes for the grammar checker; null when not installed */
+  grammarWasm(): Promise<Uint8Array | null>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
   /** local git branches matching `query` (substring match), for /switch */
@@ -90,6 +92,7 @@ const api: ClaudeTermApi = {
   worklogLogged: () => ipcRenderer.invoke('worklog:logged'),
   volumeGet: () => ipcRenderer.invoke('volume:get'),
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
+  grammarWasm: () => ipcRenderer.invoke('grammar:wasm'),
   listCommands: (tabId) => ipcRenderer.invoke('completions:commands', tabId),
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
   listBranches: (tabId, query) => ipcRenderer.invoke('completions:branches', tabId, query),
