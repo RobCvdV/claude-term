@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { DocGroup, ProjectDocs, TabStatus } from '../../../shared/types'
+import {
+  actionsUrl,
+  branchUrl,
+  circleCiUrl,
+  parseRemote,
+  releasesUrl
+} from '../../../shared/repo-links'
 import { VolumeControl } from './VolumeControl'
 
 interface Props {
@@ -88,7 +95,8 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
     }
   }, [tabId, cwd, activityKey])
 
-  // branch display with MTX ticket highlight + Bitbucket link
+  // branch display with MTX ticket highlight + Bitbucket/GitHub link
+  const repo = git?.remoteUrl ? parseRemote(git.remoteUrl) : null
   let branchEl: React.JSX.Element | null = null
   let ticket: string | null = null
   if (git?.branch) {
@@ -104,21 +112,20 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
         </>
       )
     }
-    const bb = /bitbucket\.org[:/]([^/]+)\/([^/.]+)/.exec(git.remoteUrl)
-    const gh = /github\.com[:/]([^/]+)\/([^/.]+)/.exec(git.remoteUrl)
-    const branchUrl = bb
-      ? `https://bitbucket.org/${bb[1]}/${bb[2]}/branch/${encodeURIComponent(git.branch)}`
-      : gh
-        ? `https://github.com/${gh[1]}/${gh[2]}/tree/${encodeURIComponent(git.branch)}`
-        : null
-    branchEl = branchUrl ? (
-      <ExternalLink url={branchUrl} className="branch-link">
+    branchEl = repo ? (
+      <ExternalLink url={branchUrl(repo, git.branch)} className="branch-link">
         {inner}
       </ExternalLink>
     ) : (
       <span>{inner}</span>
     )
   }
+
+  // CI / PR links for the current branch. The PR one only appears once the main
+  // process has actually found an open PR (Bitbucket API / `gh`).
+  const circleci = repo && git?.branch ? circleCiUrl(repo, git.branch) : null
+  const actions = repo && git?.branch && git.hasWorkflows ? actionsUrl(repo, git.branch) : null
+  const releases = repo ? releasesUrl(repo) : null
 
   const usedPct = payload?.context_window?.used_percentage
   const ctxClass =
@@ -170,11 +177,12 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
           {git.behind > 0 && <span className="stat-behind">↓{git.behind}</span>}
         </span>
       )}
-      {payload?.cost && (payload.cost.total_lines_added ?? 0) + (payload.cost.total_lines_removed ?? 0) > 0 && (
-        <span className="dim">
-          +{payload.cost.total_lines_added ?? 0}/−{payload.cost.total_lines_removed ?? 0}
-        </span>
-      )}
+      {payload?.cost &&
+        (payload.cost.total_lines_added ?? 0) + (payload.cost.total_lines_removed ?? 0) > 0 && (
+          <span className="dim">
+            +{payload.cost.total_lines_added ?? 0}/−{payload.cost.total_lines_removed ?? 0}
+          </span>
+        )}
       {payload?.model?.display_name && (
         <span className="model">
           {payload.model.display_name}
@@ -221,6 +229,26 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
       {jenkins && (
         <ExternalLink url={jenkins} className="ext-link">
           Jenkins
+        </ExternalLink>
+      )}
+      {circleci && (
+        <ExternalLink url={circleci} className="ext-link">
+          CircleCI
+        </ExternalLink>
+      )}
+      {git?.prUrl && (
+        <ExternalLink url={git.prUrl} className="ext-link">
+          PR
+        </ExternalLink>
+      )}
+      {actions && (
+        <ExternalLink url={actions} className="ext-link">
+          Actions
+        </ExternalLink>
+      )}
+      {releases && (
+        <ExternalLink url={releases} className="ext-link">
+          Releases
         </ExternalLink>
       )}
       <VolumeControl />

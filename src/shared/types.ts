@@ -65,6 +65,10 @@ export interface GitInfo {
   unpushed: number
   behind: number
   remoteUrl: string
+  /** open PR for this branch, resolved in the background (null until known) */
+  prUrl: string | null
+  /** repo has .github/workflows — drives the Actions link */
+  hasWorkflows: boolean
 }
 
 /** Everything the renderer needs to draw one tab's status bar. */
