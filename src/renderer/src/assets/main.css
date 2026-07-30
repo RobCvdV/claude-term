@@ -64,6 +64,8 @@ body {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
+  position: relative; /* so the dragged tab can stack above its neighbours */
+  transition: transform 120ms ease;
   /* start at 220px but shrink to share the bar when many tabs are open; the
      min-width (overriding min-width:auto) keeps a tab usable — dot + truncated
      title + close — rather than letting it collapse to nothing */
@@ -79,6 +81,25 @@ body {
 .tab.active {
   background: var(--bg);
   color: var(--fg);
+}
+
+/* ---- tab drag-reorder ---- */
+.tab-bar.reordering {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* the dragged tab tracks the pointer, so it must not lag behind a transition */
+.tab.dragging {
+  transition: none;
+  z-index: 2;
+  opacity: 0.9;
+  background: var(--bg);
+  cursor: grabbing;
+}
+
+.tab-bar.reordering .tab-close {
+  visibility: hidden;
 }
 
 .tab-labels {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActivityState, TabId, TabInfo, TabStatus } from '../../../shared/types'
 import { tabSubtitle } from '../tab-title'
+import { dropIndex, shiftFor } from '../tab-reorder'
 
 interface Props {
   tabs: TabInfo[]
@@ -11,11 +12,24 @@ interface Props {
   onClose: (tabId: TabId) => void
   onNewTab: () => void
   onRename: (tabId: TabId, title: string) => void
+  onReorder: (from: number, to: number) => void
   onOpenActivity: () => void
   /** version of a downloaded update, or null — shows the "update ready" pill */
   updateVersion: string | null
   onInstallUpdate: () => void
 }
+
+interface Drag {
+  from: number
+  to: number
+  /** live pointer offset from where the drag started */
+  dx: number
+  /** width of the dragged tab — the slot pitch the others shift by */
+  width: number
+}
+
+/** Pointer travel before a press turns into a reorder rather than a click. */
+const DRAG_THRESHOLD = 4
 
 function dotClass(status: TabStatus | null | undefined): string {
   if (status?.activity === 'exited') return 'dot exited'
@@ -47,6 +61,7 @@ export function TabBar({
   onClose,
   onNewTab,
   onRename,
+  onReorder,
   onOpenActivity,
   updateVersion,
   onInstallUpdate
@@ -54,6 +69,9 @@ export function TabBar({
   const [editingId, setEditingId] = useState<TabId | null>(null)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const [drag, setDrag] = useState<Drag | null>(null)
+  // mirrors `drag` so the mouseup listener can read it without re-subscribing
+  const dragRef = useRef<Drag | null>(null)
 
   useEffect(() => {
     if (editingId) inputRef.current?.select()
@@ -64,20 +82,65 @@ export function TabBar({
     setEditingId(null)
   }
 
+  const startDrag = (e: React.MouseEvent<HTMLElement>, index: number): void => {
+    const bar = e.currentTarget.parentElement
+    if (!bar) return
+    // measure once: every slot keeps its start geometry, the tabs just slide
+    const rects = Array.from(bar.querySelectorAll<HTMLElement>('.tab')).map((n) =>
+      n.getBoundingClientRect()
+    )
+    const centers = rects.map((r) => r.left + r.width / 2)
+    const width = rects[index]?.width ?? 0
+    const startX = e.clientX
+    let dragging = false
+
+    const update = (next: Drag | null): void => {
+      dragRef.current = next
+      setDrag(next)
+    }
+
+    const onMove = (ev: MouseEvent): void => {
+      const dx = ev.clientX - startX
+      if (!dragging && Math.abs(dx) < DRAG_THRESHOLD) return
+      dragging = true
+      update({ from: index, to: dropIndex(centers, index, centers[index] + dx), dx, width })
+    }
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      const d = dragRef.current
+      update(null)
+      if (d && d.to !== d.from) onReorder(d.from, d.to)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   return (
-    <div className="tab-bar">
+    <div className={`tab-bar ${drag ? 'reordering' : ''}`}>
       <div className="tab-drag-region" />
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const isActive = tab.tabId === activeId
         const subtitle = tabSubtitle(tab.title, statuses[tab.tabId])
         const boxShadow = tabShadow(colors[tab.tabId], isActive)
+        const isDragged = drag?.from === index
+        const shift = !drag
+          ? 0
+          : isDragged
+            ? drag.dx
+            : shiftFor(index, drag.from, drag.to, drag.width)
         return (
           <div
             key={tab.tabId}
-            className={`tab ${isActive ? 'active' : ''}`}
-            style={boxShadow ? { boxShadow } : undefined}
+            className={`tab ${isActive ? 'active' : ''} ${isDragged ? 'dragging' : ''}`}
+            style={{
+              ...(boxShadow ? { boxShadow } : null),
+              ...(shift ? { transform: `translateX(${shift}px)` } : null)
+            }}
             onMouseDown={(e) => {
-              if (e.button === 0 && editingId !== tab.tabId) onSelect(tab.tabId)
+              if (e.button !== 0 || editingId === tab.tabId) return
+              onSelect(tab.tabId)
+              if (!(e.target as HTMLElement).closest('.tab-close')) startDrag(e, index)
             }}
             onContextMenu={(e) => {
               e.preventDefault()

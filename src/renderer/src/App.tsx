@@ -6,6 +6,7 @@ import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
 import { composeWindowTitle } from './tab-title'
+import { moveItem } from './tab-reorder'
 import {
   disposeTerm,
   focusTerm,
@@ -357,6 +358,11 @@ export default function App(): React.JSX.Element {
     setTabs((prev) => prev.map((t) => (t.tabId === tabId ? { ...t, title } : t)))
   }, [])
 
+  // drag-reorder from the tab bar — the new order also drives the ⌘1..⌘9 shortcuts
+  const reorderTabs = useCallback((from: number, to: number): void => {
+    setTabs((prev) => moveItem(prev, from, to))
+  }, [])
+
   const restartTab = useCallback((tabId: TabId): void => {
     void window.claudeTerm.restartTab(tabId)
   }, [])
@@ -444,6 +450,7 @@ export default function App(): React.JSX.Element {
         onClose={closeTab}
         onNewTab={newTab}
         onRename={renameTab}
+        onReorder={reorderTabs}
         onOpenActivity={() => setShowActivity(true)}
         updateVersion={updateVersion}
         onInstallUpdate={() => void window.claudeTerm.installUpdate()}
