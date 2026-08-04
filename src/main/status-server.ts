@@ -245,17 +245,14 @@ export class StatusServer {
     tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
-    // Re-home the tab only on project_dir (the session's launch dir — covers
-    // "cd elsewhere, then run claude"). current_dir follows the Bash tool's
-    // persistent cwd, so a session doing cross-repo work would drift the tab's
-    // identity into the other repo — and that drifted cwd gets persisted,
-    // corrupting the restore (wrong spawn dir + resume from the wrong project).
-    const dir = payload.workspace?.project_dir
-    if (dir && dir !== tab.cwd) {
-      tab.cwd = dir
-      tab.status.cwd = dir
-      tab.gitFetchedAt = 0
-    }
+    // The tab's cwd is NEVER re-homed from payloads. current_dir follows the
+    // Bash tool's persistent cwd, and even project_dir moves mid-session (the
+    // CLI's /cd + set_cwd relocate the session and rewrite originalCwd) — and a
+    // resumed session chdirs back to its recorded home on its own. Adopting
+    // either drifts the tab's identity into another repo, gets persisted, and
+    // corrupts the restore (wrong spawn dir + resume from the wrong project).
+    // The session's own workspace, when different, is shown by the renderer as
+    // a secondary folder chip instead (StatusBar).
     this.onUpdate(tab.status)
     void this.refreshGit(tabId)
   }

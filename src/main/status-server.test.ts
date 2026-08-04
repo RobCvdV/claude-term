@@ -50,11 +50,12 @@ describe('StatusServer', () => {
   // itself gone — via the PTY exit and its own SessionEnd hook. Those updates
   // used to reach the renderer before its final save, so a tab mid-conversation
   // persisted as "no session was running" and the next launch revived nothing.
-  // The regression: workspace.current_dir follows the session's persistent
-  // shell cwd, so cross-repo work (a `cd` into a sibling repo) used to re-home
-  // the tab into that repo. The drifted cwd was then persisted, and the next
-  // launch spawned the tab there and resumed the session from the wrong
-  // project. Only project_dir (the launch dir) may move the tab.
+  // The regression: the tab's cwd is its identity (persisted, respawned), and
+  // NO payload field is safe to adopt. current_dir follows the Bash tool's
+  // persistent cwd, and even project_dir moves mid-session (/cd + set_cwd
+  // relocate the session and rewrite originalCwd; a resumed session chdirs
+  // back to its recorded home by itself). Adopting either drifted the tab
+  // into another repo and corrupted the restore.
   describe('statusline workspace', () => {
     it('ignores current_dir drift (mid-session cd into another repo)', () => {
       const { server, tabId } = withLiveTab()
@@ -72,14 +73,14 @@ describe('StatusServer', () => {
       expect(server.getCwd(tabId)).toBe('/repo')
     })
 
-    it('re-homes on project_dir (cd before launching claude)', () => {
+    it('ignores a project_dir move too (/cd, or a resumed session going home)', () => {
       const { server, tabId } = withLiveTab()
       statusline(server, tabId, {
         session_id: 'sess-1',
         workspace: { current_dir: '/elsewhere', project_dir: '/elsewhere' }
       })
-      expect(server.getCwd(tabId)).toBe('/elsewhere')
-      expect(server.snapshot(tabId)?.cwd).toBe('/elsewhere')
+      expect(server.getCwd(tabId)).toBe('/repo')
+      expect(server.snapshot(tabId)?.cwd).toBe('/repo')
     })
 
     it('still records the session id and payload', () => {

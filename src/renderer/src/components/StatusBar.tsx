@@ -86,17 +86,19 @@ export function StatusBar({
 
   const payload = status?.payload
   const git = status?.git
-  // The tab's workspace is its launch dir (status.cwd — stable for the life of
-  // the session). current_dir is where the session's shell currently sits; it
-  // drifts during cross-repo work, so it's shown as a secondary folder instead
-  // of replacing the workspace.
+  // The tab's folder is where it was created (status.cwd — never re-homed).
+  // The session's own location can differ: current_dir follows its shell
+  // during cross-repo work, and project_dir moves when the session is
+  // relocated (/cd). Whichever differs shows as a secondary folder chip,
+  // preferring the live current_dir.
   const cwd = status?.cwd
   const folder = lastSegment(cwd)
   const currentDir = payload?.workspace?.current_dir ?? payload?.cwd
-  const driftFolder =
-    cwd && currentDir && stripSlash(currentDir) !== stripSlash(cwd)
-      ? lastSegment(currentDir)
-      : undefined
+  const projectDir = payload?.workspace?.project_dir
+  const driftDir = [currentDir, projectDir].find(
+    (d) => cwd && d && stripSlash(d) !== stripSlash(cwd)
+  )
+  const driftFolder = lastSegment(driftDir)
 
   // plan/roadmap/docs available for this tab's project — drives the labels below.
   // Re-fetched on activity changes too, so a plan or docs written mid-session
@@ -190,7 +192,7 @@ export function StatusBar({
       {activityEl}
       {folder && <span className="folder">{folder}</span>}
       {driftFolder && (
-        <span className="folder folder-drift" title={currentDir}>
+        <span className="folder folder-drift" title={driftDir}>
           ▸ {driftFolder}
         </span>
       )}
