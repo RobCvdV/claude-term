@@ -10,6 +10,7 @@ import { focusAfterSubmit, type FocusState } from '../focus-policy'
 import { runFocusLoan, type LoanMode } from '../focus-loan'
 import { promptHistoryFor, pushPrompt } from '../prompt-history'
 import { draftFor, lastImageNumber, saveDraft } from '../prompt-drafts'
+import { suggestWidgetAccepting } from '../suggest-widget'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -299,7 +300,9 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     // Enter must be intercepted at the keydown layer: addCommand(Enter) is
     // swallowed by Monaco's text-input (EditContext) pipeline, which inserts a
     // newline before a command keybinding can fire. onKeyDown + preventDefault
-    // wins. While the suggest widget is open, let Monaco handle Enter (accept).
+    // wins. While the suggest widget is open with a pick, let Monaco handle
+    // Enter (accept) — but not in its Loading/No-suggestions message states,
+    // where Enter has nothing to accept and must still submit.
     // The widget renders in a fixed overlay (fixedOverflowWidgets), so query it
     // at the document level; only the focused editor ever shows one.
     editor.onKeyDown((e) => {
@@ -310,7 +313,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         !e.ctrlKey &&
         !e.metaKey
       ) {
-        if (document.querySelector('.suggest-widget.visible')) {
+        if (suggestWidgetAccepting()) {
           // Enter = pick + run for single-select arg popups (e.g. /switch,
           // /model, /effort): accept the highlighted item, then submit. Tab
           // still just fills (Monaco's default accept, untouched). Dir pickers
@@ -370,7 +373,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       const upKey = e.keyCode === monaco.KeyCode.UpArrow
       const downKey = e.keyCode === monaco.KeyCode.DownArrow
       if ((upKey || downKey) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-        if (document.querySelector('.suggest-widget.visible')) return
+        if (suggestWidgetAccepting()) return
         const pos = editor.getPosition()
         const sel = editor.getSelection()
         if (!pos || (sel && !sel.isEmpty())) return
@@ -421,7 +424,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         !e.metaKey &&
         editor.getValue() === '' &&
         !editor.getOption(monaco.editor.EditorOption.readOnly) &&
-        !document.querySelector('.suggest-widget.visible') &&
+        !suggestWidgetAccepting() &&
         readInputSuggestion(tabId)
       ) {
         e.preventDefault()

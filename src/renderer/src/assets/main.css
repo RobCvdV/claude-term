@@ -334,6 +334,11 @@ body {
   color: #fff;
 }
 
+/* where the session's shell has cd'd to, when outside the workspace */
+.status-bar .folder-drift {
+  color: #c9edc4;
+}
+
 .status-bar .dim {
   color: var(--fg-dim);
 }

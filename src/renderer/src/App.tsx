@@ -7,6 +7,7 @@ import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
 import { composeWindowTitle } from './tab-title'
 import { moveItem } from './tab-reorder'
+import { closeTabConfirmMessage } from './close-guard'
 import { persistedSessionOf, type RestoredSession } from './session-persist'
 import { forgetPromptHistory, persistedHistoryFor, restorePromptHistory } from './prompt-history'
 import { forgetDraft, persistedDraftFor, restoreDraft } from './prompt-drafts'
@@ -332,12 +333,8 @@ export default function App(): React.JSX.Element {
   const closeTab = useCallback(
     (tabId: TabId): void => {
       const status = statuses[tabId]
-      if (
-        status?.activity === 'busy' &&
-        !window.confirm('A claude session is still working. Close this tab?')
-      ) {
-        return
-      }
+      const confirmMsg = closeTabConfirmMessage(status)
+      if (confirmMsg && !window.confirm(confirmMsg)) return
       void window.claudeTerm.closeTab(tabId)
       disposeTerm(tabId)
       setTabs((prev) => {

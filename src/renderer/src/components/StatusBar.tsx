@@ -20,6 +20,10 @@ interface Props {
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
 
+const stripSlash = (p: string): string => p.replace(/\/+$/, '')
+const lastSegment = (p: string | undefined): string | undefined =>
+  p ? p.split('/').filter(Boolean).pop() : undefined
+
 /** Colour class for a rate-limit percentage: dim <40, white ≥40, orange ≥60,
  *  red ≥80. `active=false` keeps it dim regardless (used to hold the weekly
  *  window quiet until its last 2 days). */
@@ -82,8 +86,17 @@ export function StatusBar({
 
   const payload = status?.payload
   const git = status?.git
-  const cwd = payload?.workspace?.current_dir ?? payload?.cwd
-  const folder = cwd ? cwd.split('/').filter(Boolean).pop() : undefined
+  // The tab's workspace is its launch dir (status.cwd — stable for the life of
+  // the session). current_dir is where the session's shell currently sits; it
+  // drifts during cross-repo work, so it's shown as a secondary folder instead
+  // of replacing the workspace.
+  const cwd = status?.cwd
+  const folder = lastSegment(cwd)
+  const currentDir = payload?.workspace?.current_dir ?? payload?.cwd
+  const driftFolder =
+    cwd && currentDir && stripSlash(currentDir) !== stripSlash(cwd)
+      ? lastSegment(currentDir)
+      : undefined
 
   // plan/roadmap/docs available for this tab's project — drives the labels below.
   // Re-fetched on activity changes too, so a plan or docs written mid-session
@@ -176,6 +189,11 @@ export function StatusBar({
     <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
       {activityEl}
       {folder && <span className="folder">{folder}</span>}
+      {driftFolder && (
+        <span className="folder folder-drift" title={currentDir}>
+          ▸ {driftFolder}
+        </span>
+      )}
       {branchEl}
       {git && (
         <span className="git-stats">
