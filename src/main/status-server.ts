@@ -245,7 +245,12 @@ export class StatusServer {
     tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
-    const dir = payload.workspace?.current_dir ?? payload.cwd
+    // Re-home the tab only on project_dir (the session's launch dir — covers
+    // "cd elsewhere, then run claude"). current_dir follows the Bash tool's
+    // persistent cwd, so a session doing cross-repo work would drift the tab's
+    // identity into the other repo — and that drifted cwd gets persisted,
+    // corrupting the restore (wrong spawn dir + resume from the wrong project).
+    const dir = payload.workspace?.project_dir
     if (dir && dir !== tab.cwd) {
       tab.cwd = dir
       tab.status.cwd = dir

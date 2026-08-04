@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { StatusServer } from './status-server'
-import type { TabStatus } from '../shared/types'
+import type { StatuslinePayload, TabStatus } from '../shared/types'
 
 /** A server with a registered tab hosting a live Claude session, plus the
  *  updates it pushed. No HTTP listener: the hook/statusline entry points are
@@ -28,6 +28,12 @@ const hook = (server: StatusServer, tabId: string, name: string): void =>
     server as unknown as { handleHook: (t: string, e: { hook_event_name: string }) => void }
   ).handleHook(tabId, { hook_event_name: name })
 
+/** Drive a statusline the way an HTTP POST to /statusline does. */
+const statusline = (server: StatusServer, tabId: string, payload: StatuslinePayload): void =>
+  (
+    server as unknown as { handleStatusline: (t: string, p: StatuslinePayload) => void }
+  ).handleStatusline(tabId, payload)
+
 describe('StatusServer', () => {
   it('tracks a live session', () => {
     const { server, tabId } = withLiveTab()
@@ -44,6 +50,50 @@ describe('StatusServer', () => {
   // itself gone — via the PTY exit and its own SessionEnd hook. Those updates
   // used to reach the renderer before its final save, so a tab mid-conversation
   // persisted as "no session was running" and the next launch revived nothing.
+  // The regression: workspace.current_dir follows the session's persistent
+  // shell cwd, so cross-repo work (a `cd` into a sibling repo) used to re-home
+  // the tab into that repo. The drifted cwd was then persisted, and the next
+  // launch spawned the tab there and resumed the session from the wrong
+  // project. Only project_dir (the launch dir) may move the tab.
+  describe('statusline workspace', () => {
+    it('ignores current_dir drift (mid-session cd into another repo)', () => {
+      const { server, tabId } = withLiveTab()
+      statusline(server, tabId, {
+        session_id: 'sess-1',
+        workspace: { current_dir: '/other-repo', project_dir: '/repo' }
+      })
+      expect(server.getCwd(tabId)).toBe('/repo')
+      expect(server.snapshot(tabId)?.cwd).toBe('/repo')
+    })
+
+    it('ignores the top-level cwd field too (same drifting value)', () => {
+      const { server, tabId } = withLiveTab()
+      statusline(server, tabId, { session_id: 'sess-1', cwd: '/other-repo' })
+      expect(server.getCwd(tabId)).toBe('/repo')
+    })
+
+    it('re-homes on project_dir (cd before launching claude)', () => {
+      const { server, tabId } = withLiveTab()
+      statusline(server, tabId, {
+        session_id: 'sess-1',
+        workspace: { current_dir: '/elsewhere', project_dir: '/elsewhere' }
+      })
+      expect(server.getCwd(tabId)).toBe('/elsewhere')
+      expect(server.snapshot(tabId)?.cwd).toBe('/elsewhere')
+    })
+
+    it('still records the session id and payload', () => {
+      const { server, tabId } = withLiveTab()
+      statusline(server, tabId, {
+        session_id: 'sess-2',
+        workspace: { current_dir: '/other-repo', project_dir: '/repo' }
+      })
+      const s = server.snapshot(tabId)
+      expect(s?.sessionId).toBe('sess-2')
+      expect(s?.payload?.workspace?.current_dir).toBe('/other-repo')
+    })
+  })
+
   describe('freeze', () => {
     it('keeps a live session live when the PTY is killed on quit', () => {
       const { server, tabId } = withLiveTab()
