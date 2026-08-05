@@ -13,10 +13,10 @@ const nameOf = (p: string): string => p.split('/').filter(Boolean).pop() ?? p
 /**
  * Folders for the status bar: `home` is the tab's own folder (its identity —
  * never re-homed), `others` every distinct additional place the session works
- * in — its live/project dir when the session moved (/cd, or a resume going
- * back to its recorded home) and the added working directories (/add-dir or
- * settings additionalDirectories, via the statusline's added_dirs; the
- * tab-level record is the fallback for payload-less sessions).
+ * in — its live/project dir when the session moved (/cd), the statusline's
+ * added_dirs (runtime /add-dir only), and the tab-level record (which also
+ * carries settings-sourced additionalDirectories: those never appear in the
+ * payload, so both sources are merged).
  */
 export function statusFolders(status: TabStatus | null | undefined): {
   home: FolderChip | null
@@ -28,7 +28,8 @@ export function statusFolders(status: TabStatus | null | undefined): {
   const candidates = [
     p?.workspace?.current_dir ?? p?.cwd,
     p?.workspace?.project_dir,
-    ...(p?.workspace?.added_dirs ?? status?.addedDirs ?? [])
+    ...(p?.workspace?.added_dirs ?? []),
+    ...(status?.addedDirs ?? [])
   ]
   const seen = new Set([strip(cwd)])
   const others: FolderChip[] = []
