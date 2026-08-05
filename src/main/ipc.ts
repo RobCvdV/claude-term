@@ -163,6 +163,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
 
+  ipcMain.handle('shell:openFolder', (_e, dir: string) => {
+    if (existsSync(dir)) void shell.openPath(dir)
+  })
+
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))
 
   // Activity-hours overview: aggregate the global heartbeat log (written by
