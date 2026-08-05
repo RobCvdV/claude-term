@@ -15,6 +15,8 @@ import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles, readConfigFile, writeConfigFile } from './config-files'
 import { closeConfigWindowForTab, openOrFocusConfigWindow } from './config-window'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
+import { sessionHomeDir } from './session-home'
+import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { getVolume, setVolume } from './volume'
 import type { VolumeOp, WorklogPlan } from '../shared/types'
@@ -74,9 +76,8 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     'tab:create',
     async (_e, cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
-      const dir = cwd && existsSync(cwd) ? cwd : homedir()
+      let dir = cwd && existsSync(cwd) ? cwd : homedir()
       const tabId: TabId = randomUUID()
-      status.registerTab(tabId, dir, (addedDirs ?? []).filter(existsSync))
       // Resolve how to restore a persisted session (only when `resume` is set):
       //  - live daemon-managed background agent → `claude attach` (--resume
       //    refuses a live bg session);
@@ -85,9 +86,25 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       //    shell, so we don't dump "No conversation found" into the tab.
       // Waits for the daemon to be answerable first (see warmLiveAgents): asking
       // too early reports no agents and we'd pick a --resume the daemon refuses.
+      let target: Awaited<ReturnType<typeof resolveRevive>> | null = null
       if (resume) {
         await awaitAgentWarmup()
-        const target = await resolveRevive(resume)
+        target = await resolveRevive(resume)
+        // Revive from the conversation's own home: `--resume` from any other
+        // directory re-homes the conversation (the CLI moves its transcript to
+        // the launch dir), silently dragging it into whatever folder the tab
+        // spawned in. The tab follows its conversation, spawn dir included.
+        if (target.mode !== 'shell') {
+          const home = sessionHomeDir(resume)
+          if (home && existsSync(home)) dir = home
+        }
+      }
+      // added dirs: the persisted tab record plus the project's own settings
+      // (additionalDirectories) — the latter never show up in /add-dir prompts
+      // or statusline added_dirs, so this is their only way into the UI
+      const seeded = [...new Set([...(addedDirs ?? []), ...settingsAddedDirs(dir)])]
+      status.registerTab(tabId, dir, seeded.filter(existsSync))
+      if (target) {
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)
         } else if (target.mode === 'resume') {
