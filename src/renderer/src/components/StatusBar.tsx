@@ -8,6 +8,7 @@ import {
   releasesUrl
 } from '../../../shared/repo-links'
 import { VolumeControl } from './VolumeControl'
+import { statusFolders } from '../status-folders'
 
 interface Props {
   status: TabStatus | null
@@ -19,10 +20,6 @@ interface Props {
 }
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
-
-const stripSlash = (p: string): string => p.replace(/\/+$/, '')
-const lastSegment = (p: string | undefined): string | undefined =>
-  p ? p.split('/').filter(Boolean).pop() : undefined
 
 /** Colour class for a rate-limit percentage: dim <40, white ≥40, orange ≥60,
  *  red ≥80. `active=false` keeps it dim regardless (used to hold the weekly
@@ -87,18 +84,11 @@ export function StatusBar({
   const payload = status?.payload
   const git = status?.git
   // The tab's folder is where it was created (status.cwd — never re-homed).
-  // The session's own location can differ: current_dir follows its shell
-  // during cross-repo work, and project_dir moves when the session is
-  // relocated (/cd). Whichever differs shows as a secondary folder chip,
-  // preferring the live current_dir.
+  // Every other place the session works in — a /cd move, added dirs — shows
+  // as a light-green secondary chip (see status-folders).
   const cwd = status?.cwd
-  const folder = lastSegment(cwd)
-  const currentDir = payload?.workspace?.current_dir ?? payload?.cwd
-  const projectDir = payload?.workspace?.project_dir
-  const driftDir = [currentDir, projectDir].find(
-    (d) => cwd && d && stripSlash(d) !== stripSlash(cwd)
-  )
-  const driftFolder = lastSegment(driftDir)
+  const { home, others } = statusFolders(status)
+  const folder = home?.name
 
   // plan/roadmap/docs available for this tab's project — drives the labels below.
   // Re-fetched on activity changes too, so a plan or docs written mid-session
@@ -191,11 +181,11 @@ export function StatusBar({
     <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
       {activityEl}
       {folder && <span className="folder">{folder}</span>}
-      {driftFolder && (
-        <span className="folder folder-drift" title={driftDir}>
-          ▸ {driftFolder}
+      {others.map((f) => (
+        <span key={f.path} className="folder folder-drift" title={f.path}>
+          ▸ {f.name}
         </span>
-      )}
+      ))}
       {branchEl}
       {git && (
         <span className="git-stats">

@@ -22,6 +22,7 @@ export interface StatuslinePayload {
   workspace?: {
     current_dir?: string
     project_dir?: string
+    added_dirs?: string[]
     git_worktree?: string
     repo?: { host?: string; owner?: string; name?: string }
   }
