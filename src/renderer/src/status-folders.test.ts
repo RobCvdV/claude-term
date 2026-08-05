@@ -74,4 +74,23 @@ describe('statusFolders', () => {
     const s = status({ payload: null, addedDirs: ['/dev/mmxlib'] })
     expect(statusFolders(s).others).toEqual([{ path: '/dev/mmxlib', name: 'mmxlib' }])
   })
+
+  // settings-sourced additionalDirectories never appear in the payload's
+  // added_dirs (verified on CLI 2.1.221) — they reach the UI via the tab-level
+  // record, merged alongside the payload's runtime /add-dir entries
+  it('merges tab-level (settings-sourced) dirs with payload added_dirs', () => {
+    const s = status({
+      addedDirs: ['/dev/mmxlib', '/dev/qedit'],
+      payload: payload({
+        current_dir: '/dev/cordova',
+        project_dir: '/dev/cordova',
+        added_dirs: ['/dev/qedit', '/dev/extra']
+      })
+    })
+    expect(statusFolders(s).others).toEqual([
+      { path: '/dev/qedit', name: 'qedit' },
+      { path: '/dev/extra', name: 'extra' },
+      { path: '/dev/mmxlib', name: 'mmxlib' }
+    ])
+  })
 })
