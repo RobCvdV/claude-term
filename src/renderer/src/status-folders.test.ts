@@ -75,6 +75,29 @@ describe('statusFolders', () => {
     expect(statusFolders(s).others).toEqual([{ path: '/dev/mmxlib', name: 'mmxlib' }])
   })
 
+  it('strips noisy repo-name prefixes from display names, not paths', () => {
+    const s = status({
+      cwd: '/dev/mendrix-mobile-cordova',
+      payload: payload({
+        current_dir: '/dev/mendrix-mobile-cordova',
+        project_dir: '/dev/mendrix-mobile-cordova',
+        added_dirs: ['/dev/mendrix-mobile-mmxlib', '/dev/eyo-cordova-background-geolocation']
+      })
+    })
+    expect(statusFolders(s)).toEqual({
+      home: { path: '/dev/mendrix-mobile-cordova', name: 'cordova' },
+      others: [
+        { path: '/dev/mendrix-mobile-mmxlib', name: 'mmxlib' },
+        { path: '/dev/eyo-cordova-background-geolocation', name: 'background-geolocation' }
+      ]
+    })
+  })
+
+  it('keeps a name that IS just a prefix intact', () => {
+    const s = status({ cwd: '/dev/mendrix-', payload: null })
+    expect(statusFolders(s).home).toEqual({ path: '/dev/mendrix-', name: 'mendrix-' })
+  })
+
   // settings-sourced additionalDirectories never appear in the payload's
   // added_dirs (verified on CLI 2.1.221) — they reach the UI via the tab-level
   // record, merged alongside the payload's runtime /add-dir entries

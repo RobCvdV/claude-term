@@ -144,7 +144,6 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
   // into the "(+N)" dropdown (see status-folders).
   const cwd = status?.cwd
   const { home, others } = statusFolders(status)
-  const folder = home?.name
 
   // plan/roadmap/docs available for this tab's project — drives the labels below.
   // Re-fetched on activity changes too, so a plan or docs written mid-session
@@ -215,8 +214,9 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
       <span className="activity idle">● idle</span>
     )
 
+  // match on the real folder name — display names have prefixes stripped
   const jenkins =
-    folder?.startsWith('mendrix-tms') && git?.branch
+    cwd?.split('/').pop()?.startsWith('mendrix-tms') && git?.branch
       ? `https://ci.mendrix.nl/job/${git.branch.startsWith('feature/') ? 'FeatureBuild' : 'BugfixBuild'}/job/${encodeURIComponent(git.branch.replace(/\//g, '%2F'))}/`
       : null
 
