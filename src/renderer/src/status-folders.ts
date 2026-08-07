@@ -8,7 +8,17 @@ export interface FolderChip {
 }
 
 const strip = (p: string): string => p.replace(/\/+$/, '')
-const nameOf = (p: string): string => p.split('/').filter(Boolean).pop() ?? p
+
+/** noisy repo-name prefixes to drop in the display name (longest first) */
+const PREFIXES = ['mendrix-mobile-', 'mendrix-', 'eyo-cordova-']
+
+const nameOf = (p: string): string => {
+  const base = p.split('/').filter(Boolean).pop() ?? p
+  for (const pre of PREFIXES) {
+    if (base.startsWith(pre) && base.length > pre.length) return base.slice(pre.length)
+  }
+  return base
+}
 
 /**
  * Folders for the status bar: `home` is the tab's own folder (its identity —

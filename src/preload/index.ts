@@ -23,6 +23,8 @@ export interface ClaudeTermApi {
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   openExternal(url: string): Promise<void>
+  /** reveal a folder in Finder */
+  openFolder(dir: string): Promise<void>
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
@@ -101,6 +103,7 @@ const api: ClaudeTermApi = {
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  openFolder: (dir) => ipcRenderer.invoke('shell:openFolder', dir),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { DocGroup, ProjectDocs, TabStatus } from '../../../shared/types'
 import {
   actionsUrl,
@@ -8,7 +8,7 @@ import {
   releasesUrl
 } from '../../../shared/repo-links'
 import { VolumeControl } from './VolumeControl'
-import { statusFolders } from '../status-folders'
+import { statusFolders, type FolderChip } from '../status-folders'
 
 interface Props {
   status: TabStatus | null
@@ -55,6 +55,67 @@ function ExternalLink({
   )
 }
 
+/** Home folder + a "(+N)" badge; hovering/clicking the badge drops down the
+ *  extra folders. Every entry opens in Finder. The dropdown is fixed-positioned
+ *  because the status bar clips overflow. */
+function FolderMenu({
+  home,
+  others
+}: {
+  home: FolderChip
+  others: FolderChip[]
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ left: 0, bottom: 0 })
+  const anchor = useRef<HTMLSpanElement>(null)
+
+  const show = (): void => {
+    const r = anchor.current?.getBoundingClientRect()
+    // bottom edge flush with the chip's top, so the pointer never leaves the
+    // hover area on its way up into the list
+    if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top })
+    setOpen(true)
+  }
+
+  return (
+    <span
+      ref={anchor}
+      className="folder-menu"
+      onMouseEnter={others.length > 0 ? show : undefined}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span
+        className="folder folder-open"
+        title={home.path}
+        onClick={() => window.claudeTerm.openFolder(home.path)}
+      >
+        {home.name}
+      </span>
+      {others.length > 0 && (
+        <span className="folder-more" onClick={() => (open ? setOpen(false) : show())}>
+          (+{others.length})
+        </span>
+      )}
+      {open && others.length > 0 && (
+        <div className="folder-dropdown" style={{ left: pos.left, bottom: pos.bottom }}>
+          {others.map((f) => (
+            <button
+              key={f.path}
+              title={f.path}
+              onClick={() => {
+                window.claudeTerm.openFolder(f.path)
+                setOpen(false)
+              }}
+            >
+              {f.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
 function fmtCountdown(resetsAt: number, now: number): string {
   const secs = Math.max(0, Math.floor(resetsAt - now / 1000))
   const h = Math.floor(secs / 3600)
@@ -69,12 +130,7 @@ function fmtElapsed(sinceMs: number, now: number): string {
   return m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`
 }
 
-export function StatusBar({
-  status,
-  color,
-  onOpenDocs,
-  onOpenSettings
-}: Props): React.JSX.Element {
+export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -84,11 +140,10 @@ export function StatusBar({
   const payload = status?.payload
   const git = status?.git
   // The tab's folder is where it was created (status.cwd — never re-homed).
-  // Every other place the session works in — a /cd move, added dirs — shows
-  // as a light-green secondary chip (see status-folders).
+  // Every other place the session works in — a /cd move, added dirs — folds
+  // into the "(+N)" dropdown (see status-folders).
   const cwd = status?.cwd
   const { home, others } = statusFolders(status)
-  const folder = home?.name
 
   // plan/roadmap/docs available for this tab's project — drives the labels below.
   // Re-fetched on activity changes too, so a plan or docs written mid-session
@@ -159,8 +214,9 @@ export function StatusBar({
       <span className="activity idle">● idle</span>
     )
 
+  // match on the real folder name — display names have prefixes stripped
   const jenkins =
-    folder?.startsWith('mendrix-tms') && git?.branch
+    cwd?.split('/').pop()?.startsWith('mendrix-tms') && git?.branch
       ? `https://ci.mendrix.nl/job/${git.branch.startsWith('feature/') ? 'FeatureBuild' : 'BugfixBuild'}/job/${encodeURIComponent(git.branch.replace(/\//g, '%2F'))}/`
       : null
 
@@ -180,12 +236,7 @@ export function StatusBar({
   return (
     <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
       {activityEl}
-      {folder && <span className="folder">{folder}</span>}
-      {others.map((f) => (
-        <span key={f.path} className="folder folder-drift" title={f.path}>
-          ▸ {f.name}
-        </span>
-      ))}
+      {home && <FolderMenu home={home} others={others} />}
       {branchEl}
       {git && (
         <span className="git-stats">

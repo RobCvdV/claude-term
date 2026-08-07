@@ -334,9 +334,53 @@ body {
   color: #fff;
 }
 
-/* where the session's shell has cd'd to, when outside the workspace */
-.status-bar .folder-drift {
+.status-bar .folder-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-bar .folder-open {
+  cursor: pointer;
+}
+
+.status-bar .folder-open:hover {
+  text-decoration: underline;
+}
+
+/* count of extra folders (added dirs / where the session cd'd to) */
+.status-bar .folder-more {
   color: #c9edc4;
+  cursor: pointer;
+}
+
+.folder-dropdown {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.folder-dropdown button {
+  background: none;
+  border: none;
+  color: #c9edc4;
+  font: inherit;
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.folder-dropdown button:hover {
+  background: var(--bg-input);
 }
 
 .status-bar .dim {
