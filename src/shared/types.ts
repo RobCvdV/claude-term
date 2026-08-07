@@ -276,6 +276,31 @@ export interface LoggedWorklog {
   at: number
 }
 
+/** Whether the app has stored Jira credentials (and for whom). */
+export interface JiraStatus {
+  connected: boolean
+  email?: string
+}
+
+/** A worklog that already exists in Jira (mine, within the panel's range). */
+export interface BookedWorklog {
+  /** local YYYY-MM-DD derived from the worklog's `started` */
+  date: string
+  issueKey: string
+  hours: number
+  worklogId: string
+  comment?: string
+}
+
+/** Outcome of posting one WorklogPlanEntry straight to Jira. */
+export interface BookResult {
+  date: string
+  issueKey: string
+  hours: number
+  ok: boolean
+  error?: string
+}
+
 /** Aggregated activity for the requested trailing window. */
 export interface ActivityReport {
   /** number of days the window spans (1 = today, 7, 30) */

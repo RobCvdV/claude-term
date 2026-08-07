@@ -1,11 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ActivityReport, LoggedWorklog, WorklogActivity, WorklogPlanEntry } from '../../../shared/types'
-import { dispatchHours, snapToStep } from '../../../shared/worklog'
+import type {
+  ActivityReport,
+  BookResult,
+  BookedWorklog,
+  LoggedWorklog,
+  WorklogActivity,
+  WorklogPlanEntry
+} from '../../../shared/types'
+import { dispatchRemaining, snapToStep } from '../../../shared/worklog'
+import { bookedKey, defaultDayChecked } from '../../../shared/worklog-booked'
 
 interface Props {
   report: ActivityReport
   logged: LoggedWorklog[]
-  onSaved: (count: number) => void
+  /** my worklogs straight from Jira, null while loading / not connected */
+  booked: BookedWorklog[] | null
+  jiraConnected: boolean
+  onRefreshBooked: () => void
+  onMessage: (text: string) => void
   onFillPrompt: (text: string) => void
   onClose: () => void
 }
@@ -31,60 +43,112 @@ function fmtDate(iso: string): string {
   })
 }
 
-export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose }: Props): React.JSX.Element {
+interface Row {
+  ticket: string
+  branches: string[]
+  project: string
+  actual: number
+  booked: number
+  toBook: number
+}
+
+export function WorklogPrepare({
+  report,
+  logged,
+  booked,
+  jiraConnected,
+  onRefreshBooked,
+  onMessage,
+  onFillPrompt,
+  onClose
+}: Props): React.JSX.Element {
   const [dayTotals, setDayTotals] = useState<Record<string, number>>({})
   const [activities, setActivities] = useState<Record<string, WorklogActivity>>({})
-  // true once the current split has been written to the plan file; any edit
-  // (or a range change) invalidates it back to false.
+  const [checkedDays, setCheckedDays] = useState<Record<string, boolean>>({})
+  /** per date|ticket user override of the hours to book */
+  const [pins, setPins] = useState<Record<string, number>>({})
+  /** per date|ticket outcome of the last direct-booking run */
+  const [results, setResults] = useState<Record<string, BookResult>>({})
+  const [booking, setBooking] = useState(false)
+  // legacy hand-to-Claude flow (used while Jira isn't connected)
   const [prepared, setPrepared] = useState(false)
 
-  // Reset the editable totals to the per-day suggestion whenever the report
-  // (i.e. the range) changes.
-  useEffect(() => {
-    const init: Record<string, number> = {}
-    for (const d of report.days) init[d.date] = d.suggestedHours
-    setDayTotals(init)
-    setActivities({})
-    setPrepared(false)
-  }, [report])
+  // Hours already in Jira per date|issue. Falls back to the local posted-log
+  // while not connected so ✓ badges keep working offline.
+  const bookedByKey = useMemo(() => {
+    const out: Record<string, number> = {}
+    if (booked) {
+      for (const w of booked) {
+        const k = bookedKey(w.date, w.issueKey)
+        out[k] = (out[k] ?? 0) + w.hours
+      }
+    } else {
+      for (const l of logged) {
+        const k = bookedKey(l.date, l.issueKey)
+        out[k] = (out[k] ?? 0) + l.hours
+      }
+    }
+    return out
+  }, [booked, logged])
 
-  const loggedSet = useMemo(
-    () => new Set(logged.map((l) => `${l.date}|${l.issueKey}`)),
-    [logged]
-  )
-
-  const actKey = (date: string, ticket: string): string => `${date}|${ticket}`
-  const getActivity = (date: string, ticket: string): WorklogActivity =>
-    activities[actKey(date, ticket)] ?? 'coding'
-
-  /** Ticket buckets of a day, with their live-dispatched hours. */
-  const dispatchFor = (
-    date: string
-  ): { ticket: string; branches: string[]; project: string; actual: number; hours: number }[] => {
+  const rowsFor = (
+    date: string,
+    totals: Record<string, number>,
+    pinned: Record<string, number>
+  ): Row[] => {
     const day = report.days.find((d) => d.date === date)
     if (!day) return []
     const tickets = day.buckets.filter((b) => b.ticket)
-    const total = dayTotals[date] ?? day.suggestedHours
-    const split = dispatchHours(total, tickets.map((b) => ({ id: b.key, actual: b.hours })))
-    const byId = new Map(split.map((s) => [s.id, s.hours]))
+    const total = totals[date] ?? day.suggestedHours
+    const split = dispatchRemaining(
+      total,
+      tickets.map((b) => ({
+        id: b.key,
+        actual: b.hours,
+        booked: bookedByKey[bookedKey(date, b.ticket as string)] ?? 0,
+        pinned: pinned[bookedKey(date, b.ticket as string)]
+      }))
+    )
+    const byId = new Map(split.map((s) => [s.id, s]))
     return tickets.map((b) => ({
       ticket: b.ticket as string,
       branches: b.branches,
       project: b.project,
       actual: b.hours,
-      hours: byId.get(b.key) ?? 0
+      booked: bookedByKey[bookedKey(date, b.ticket as string)] ?? 0,
+      toBook: byId.get(b.key)?.toBook ?? 0
     }))
   }
+
+  // Reset the editable state whenever the report (range) or the booked data
+  // changes; day checkboxes default to "has hours left to book".
+  useEffect(() => {
+    const totals: Record<string, number> = {}
+    for (const d of report.days) totals[d.date] = d.suggestedHours
+    setDayTotals(totals)
+    setActivities({})
+    setPins({})
+    setPrepared(false)
+    const checked: Record<string, boolean> = {}
+    for (const d of report.days) checked[d.date] = defaultDayChecked(rowsFor(d.date, totals, {}))
+    setCheckedDays(checked)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rowsFor reads only report + bookedByKey
+  }, [report, bookedByKey])
+
+  const actKey = (date: string, ticket: string): string => `${date}|${ticket}`
+  const getActivity = (date: string, ticket: string): WorklogActivity =>
+    activities[actKey(date, ticket)] ?? 'coding'
 
   const buildEntries = (): WorklogPlanEntry[] => {
     const entries: WorklogPlanEntry[] = []
     for (const day of report.days) {
-      for (const row of dispatchFor(day.date)) {
-        if (row.hours <= 0) continue
+      if (!checkedDays[day.date]) continue
+      for (const row of rowsFor(day.date, dayTotals, pins)) {
+        if (row.toBook <= 0) continue
         entries.push({
           date: day.date,
           issueKey: row.ticket,
-          hours: row.hours,
+          hours: row.toBook,
           activity: getActivity(day.date, row.ticket)
         })
       }
@@ -92,19 +156,40 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
     return entries
   }
 
-  // First press: write the plan file and flip the button to "Done".
+  const bookNow = (): void => {
+    const entries = buildEntries()
+    if (entries.length === 0 || booking) return
+    setBooking(true)
+    setResults({})
+    window.claudeTerm.jiraBook(entries).then((res) => {
+      setBooking(false)
+      const map: Record<string, BookResult> = {}
+      for (const r of res) map[bookedKey(r.date, r.issueKey)] = r
+      setResults(map)
+      const okCount = res.filter((r) => r.ok).length
+      const failed = res.filter((r) => !r.ok)
+      onMessage(
+        failed.length === 0
+          ? `Booked ${okCount} worklog${okCount === 1 ? '' : 's'} to Jira.`
+          : `Booked ${okCount} of ${res.length} worklogs — ${failed.length} failed (see rows).`
+      )
+      onRefreshBooked()
+    })
+  }
+
+  // Legacy flow: write the plan file, then tee up the "log my hours" prompt.
   const prepare = (): void => {
     const entries = buildEntries()
     window.claudeTerm.saveWorklogPlan({ generatedAt: Date.now(), entries }).then(() => {
       setPrepared(true)
-      onSaved(entries.length)
+      onMessage(
+        entries.length > 0
+          ? `Prepared ${entries.length} worklog line${entries.length === 1 ? '' : 's'} — ask Claude to “log my hours”.`
+          : 'Nothing to prepare.'
+      )
     })
   }
 
-  // Second press ("Done"): tee up the follow-up prompt and close the panel so
-  // it's sitting in the box ready to send to Claude. The prompt points Claude
-  // straight at the plan we just wrote so it posts those entries instead of
-  // re-deriving the activity from scratch.
   const finish = (): void => {
     onFillPrompt(
       'Log my hours — post the prepared worklog at ~/.claude/activity-worklog-plan.json ' +
@@ -114,23 +199,38 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
     onClose()
   }
 
-  const totalToLog = buildEntries().reduce((s, e) => s + e.hours, 0)
+  const totalToBook = buildEntries().reduce((s, e) => s + e.hours, 0)
+  const daysToBook = report.days.filter(
+    (d) => checkedDays[d.date] && rowsFor(d.date, dayTotals, pins).some((r) => r.toBook > 0)
+  ).length
 
   return (
     <div className="wl">
       <div className="wl-intro">
-        Review the split, then prepare it — the hours are handed to Claude to post to Jira.
+        {jiraConnected
+          ? 'Tick the days to book, review the split, then book straight to Jira. Already-booked hours are subtracted.'
+          : 'Review the split, then prepare it — the hours are handed to Claude to post to Jira.'}
       </div>
 
       {report.days.map((day) => {
-        const rows = dispatchFor(day.date)
+        const rows = rowsFor(day.date, dayTotals, pins)
         const nonTicket = day.buckets.filter((b) => !b.ticket)
         const span = day.lastTs > day.firstTs ? (day.lastTs - day.firstTs) / 3600 : 0
         const total = dayTotals[day.date] ?? day.suggestedHours
         const hasTickets = rows.length > 0
+        const checked = checkedDays[day.date] ?? false
+        const dayBooked = rows.reduce((s, r) => s + r.booked, 0)
         return (
-          <div className="wl-day" key={day.date}>
+          <div className={`wl-day ${checked ? '' : 'off'}`} key={day.date}>
             <div className="wl-day-head">
+              <input
+                type="checkbox"
+                className="wl-day-check"
+                checked={checked}
+                disabled={!hasTickets}
+                title={hasTickets ? 'Include this day when booking' : 'No tickets to log this day'}
+                onChange={(e) => setCheckedDays((p) => ({ ...p, [day.date]: e.target.checked }))}
+              />
               <span className="day-date">{fmtDate(day.date)}</span>
               <label className="wl-total">
                 Day total
@@ -139,6 +239,7 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
                   min={0}
                   step={0.5}
                   value={total}
+                  disabled={!checked}
                   onChange={(e) => {
                     const v = parseFloat(e.target.value)
                     setDayTotals((p) => ({ ...p, [day.date]: isNaN(v) ? 0 : v }))
@@ -153,12 +254,17 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
               <span className="wl-meta">
                 tracked {fmtHours(day.totalHours)}
                 {span > 0 && ` · span ${fmtHours(span)}`}
+                {dayBooked > 0 && (
+                  <span className="wl-booked-meta"> · booked {fmtHours(dayBooked)}</span>
+                )}
               </span>
             </div>
 
             {hasTickets ? (
               rows.map((row) => {
-                const done = loggedSet.has(`${day.date}|${row.ticket}`)
+                const key = bookedKey(day.date, row.ticket)
+                const done = row.booked > 0 && row.toBook <= 0
+                const result = results[key]
                 return (
                   <div className={`wl-row ${done ? 'done' : ''}`} key={row.ticket}>
                     <span className="wl-ticket">
@@ -171,9 +277,15 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
                       <span className="wl-project">{row.project}</span>
                     </span>
                     <span className="wl-actual-h">{fmtHours(row.actual)}</span>
+                    {row.booked > 0 && (
+                      <span className="wl-booked" title="Already booked in Jira">
+                        ✓ {fmtHours(row.booked)}
+                      </span>
+                    )}
                     <select
                       className="wl-activity"
                       value={getActivity(day.date, row.ticket)}
+                      disabled={!checked}
                       onChange={(e) => {
                         setActivities((p) => ({
                           ...p,
@@ -188,8 +300,35 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
                         </option>
                       ))}
                     </select>
-                    <span className="wl-dispatch">{fmtHours(row.hours)}</span>
-                    {done && <span className="wl-badge" title="Already logged">✓</span>}
+                    <input
+                      type="number"
+                      className={`wl-tobook ${pins[key] !== undefined ? 'pinned' : ''}`}
+                      min={0}
+                      step={0.5}
+                      value={row.toBook}
+                      disabled={!checked || booking}
+                      title="Hours to book now — edit to override the calculated split"
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value)
+                        setPins((p) => ({ ...p, [key]: isNaN(v) ? 0 : v }))
+                        setPrepared(false)
+                      }}
+                      onBlur={() =>
+                        setPins((p) =>
+                          p[key] === undefined ? p : { ...p, [key]: snapToStep(p[key]) }
+                        )
+                      }
+                    />
+                    {result &&
+                      (result.ok ? (
+                        <span className="wl-badge" title="Booked">
+                          ✓
+                        </span>
+                      ) : (
+                        <span className="wl-badge fail" title={result.error}>
+                          ✗
+                        </span>
+                      ))}
                   </div>
                 )
               })
@@ -212,14 +351,22 @@ export function WorklogPrepare({ report, logged, onSaved, onFillPrompt, onClose 
       })}
 
       <div className="wl-foot">
-        <span className="wl-meta">{fmtHours(totalToLog)} across all days</span>
-        <button
-          className={`wl-prepare ${prepared ? 'done' : ''}`}
-          onClick={prepared ? finish : prepare}
-          disabled={totalToLog <= 0}
-        >
-          {prepared ? 'Done' : 'Prepare worklog →'}
-        </button>
+        <span className="wl-meta">
+          {fmtHours(totalToBook)} across {daysToBook} day{daysToBook === 1 ? '' : 's'}
+        </span>
+        {jiraConnected ? (
+          <button className="wl-prepare" onClick={bookNow} disabled={totalToBook <= 0 || booking}>
+            {booking ? 'Booking…' : `Book ${fmtHours(totalToBook)} to Jira →`}
+          </button>
+        ) : (
+          <button
+            className={`wl-prepare ${prepared ? 'done' : ''}`}
+            onClick={prepared ? finish : prepare}
+            disabled={totalToBook <= 0}
+          >
+            {prepared ? 'Done' : 'Prepare worklog →'}
+          </button>
+        )}
       </div>
     </div>
   )

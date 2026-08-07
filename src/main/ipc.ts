@@ -18,8 +18,9 @@ import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
 import { sessionHomeDir } from './session-home'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
+import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } from './jira-client'
 import { getVolume, setVolume } from './volume'
-import type { VolumeOp, WorklogPlan } from '../shared/types'
+import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
   ptys: PtyManager
@@ -173,6 +174,14 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   // via the Atlassian MCP; the log of what's already been posted drives ✓ badges.
   ipcMain.handle('worklog:savePlan', (_e, plan: WorklogPlan) => saveWorklogPlan(plan))
   ipcMain.handle('worklog:logged', () => readLoggedWorklogs())
+
+  // Direct Jira REST: read what's already booked, post new worklogs — no
+  // assistant round-trip needed once a token is connected.
+  ipcMain.handle('jira:status', () => jiraStatus())
+  ipcMain.handle('jira:connect', (_e, email: string, token: string) => jiraConnect(email, token))
+  ipcMain.handle('jira:disconnect', () => jiraDisconnect())
+  ipcMain.handle('jira:booked', (_e, rangeDays: number) => fetchBooked(rangeDays))
+  ipcMain.handle('jira:book', (_e, entries: WorklogPlanEntry[]) => bookWorklogs(entries))
 
   // Notification volume: reflects/controls the audio-notifications plugin's live
   // scale knob (shared across all Claude sessions).
