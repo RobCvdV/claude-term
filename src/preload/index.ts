@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ActivityReport,
+  BookedWorklog,
+  BookResult,
   BranchSwitchResult,
   DocGroup,
+  JiraStatus,
   LoggedWorklog,
   PersistedSession,
   ProjectConfigFiles,
@@ -13,7 +16,8 @@ import type {
   TabStatus,
   VolumeOp,
   VolumeState,
-  WorklogPlan
+  WorklogPlan,
+  WorklogPlanEntry
 } from '../shared/types'
 
 export interface ClaudeTermApi {
@@ -29,6 +33,15 @@ export interface ClaudeTermApi {
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
   worklogLogged(): Promise<LoggedWorklog[]>
+  jiraStatus(): Promise<JiraStatus>
+  jiraConnect(email: string, token: string): Promise<{ ok: boolean; error?: string }>
+  jiraDisconnect(): Promise<void>
+  /** my Jira worklogs within the trailing window (needs a connected token) */
+  jiraBooked(
+    rangeDays: number
+  ): Promise<{ ok: true; booked: BookedWorklog[] } | { ok: false; error: string }>
+  /** post worklogs straight to Jira; per-entry results, failures don't abort */
+  jiraBook(entries: WorklogPlanEntry[]): Promise<BookResult[]>
   volumeGet(): Promise<VolumeState>
   volumeSet(op: VolumeOp): Promise<VolumeState>
   /** Harper's wasm bytes for the grammar checker; null when not installed */
@@ -108,6 +121,11 @@ const api: ClaudeTermApi = {
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
   worklogLogged: () => ipcRenderer.invoke('worklog:logged'),
+  jiraStatus: () => ipcRenderer.invoke('jira:status'),
+  jiraConnect: (email, token) => ipcRenderer.invoke('jira:connect', email, token),
+  jiraDisconnect: () => ipcRenderer.invoke('jira:disconnect'),
+  jiraBooked: (rangeDays) => ipcRenderer.invoke('jira:booked', rangeDays),
+  jiraBook: (entries) => ipcRenderer.invoke('jira:book', entries),
   volumeGet: () => ipcRenderer.invoke('volume:get'),
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   grammarWasm: () => ipcRenderer.invoke('grammar:wasm'),

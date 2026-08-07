@@ -1,5 +1,16 @@
-import { useEffect, useState } from 'react'
-import type { ActivityReport, LoggedWorklog } from '../../../shared/types'
+import { useCallback, useEffect, useState } from 'react'
+import type {
+  ActivityReport,
+  BookedWorklog,
+  JiraStatus,
+  LoggedWorklog
+} from '../../../shared/types'
+import {
+  dayBookedState,
+  sumBookedByDate,
+  sumBookedByKey,
+  bookedKey
+} from '../../../shared/worklog-booked'
 import { WorklogPrepare } from './WorklogPrepare'
 
 interface Props {
@@ -11,7 +22,14 @@ type Range = 'today' | '7d' | '30d'
 type Mode = 'overview' | 'worklog'
 
 const RANGE_DAYS: Record<Range, number> = { today: 1, '7d': 7, '30d': 30 }
-const RANGE_LABEL: Record<Range, string> = { today: 'Today', '7d': 'Past 7 days', '30d': 'Past 30 days' }
+const RANGE_LABEL: Record<Range, string> = {
+  today: 'Today',
+  '7d': 'Past 7 days',
+  '30d': 'Past 30 days'
+}
+
+const TOKEN_URL = 'https://id.atlassian.com/manage-profile/security/api-tokens'
+const DEFAULT_EMAIL = 'r.coenen@mendrix.nl'
 
 function fmtHours(h: number): string {
   if (h <= 0) return '0h'
@@ -30,6 +48,68 @@ function fmtDate(iso: string): string {
   return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
+/** Inline email+token form shown while no Jira token is stored. */
+function JiraConnectBar({
+  onConnected
+}: {
+  onConnected: (s: JiraStatus) => void
+}): React.JSX.Element {
+  const [email, setEmail] = useState(DEFAULT_EMAIL)
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const connect = (): void => {
+    if (!email.trim() || !token.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    window.claudeTerm.jiraConnect(email, token).then((r) => {
+      setBusy(false)
+      if (r.ok) onConnected({ connected: true, email: email.trim() })
+      else setError(r.error ?? 'Could not connect')
+    })
+  }
+
+  return (
+    <div className="jira-connect">
+      <div className="jira-connect-row">
+        <span className="jira-connect-label">
+          Connect Jira to see &amp; book hours directly (
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault()
+              void window.claudeTerm.openExternal(TOKEN_URL)
+            }}
+          >
+            create an API token
+          </a>
+          )
+        </span>
+      </div>
+      <div className="jira-connect-row">
+        <input
+          type="email"
+          placeholder="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder="API token"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && connect()}
+        />
+        <button onClick={connect} disabled={busy || !email.trim() || !token.trim()}>
+          {busy ? 'Connecting…' : 'Connect'}
+        </button>
+      </div>
+      {error && <div className="jira-connect-error">{error}</div>}
+    </div>
+  )
+}
+
 export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.Element {
   const [mode, setMode] = useState<Mode>('overview')
   const [range, setRange] = useState<Range>('today')
@@ -37,6 +117,9 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
   const [logged, setLogged] = useState<LoggedWorklog[]>([])
   const [loading, setLoading] = useState(true)
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
+  const [jira, setJira] = useState<JiraStatus | null>(null)
+  const [booked, setBooked] = useState<BookedWorklog[] | null>(null)
+  const [bookedErr, setBookedErr] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
@@ -57,6 +140,34 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
     }
   }, [range])
 
+  useEffect(() => {
+    void window.claudeTerm.jiraStatus().then(setJira)
+  }, [])
+
+  // What's already in Jira for this range; non-blocking (report renders first).
+  const refreshBooked = useCallback((): void => {
+    if (!jira?.connected) return
+    window.claudeTerm.jiraBooked(RANGE_DAYS[range]).then((r) => {
+      if (r.ok) {
+        setBooked(r.booked)
+        setBookedErr(null)
+      } else {
+        setBooked(null)
+        setBookedErr(r.error)
+      }
+    })
+  }, [jira?.connected, range])
+
+  useEffect(() => refreshBooked(), [refreshBooked])
+
+  const disconnect = (): void => {
+    void window.claudeTerm.jiraDisconnect().then(() => {
+      setJira({ connected: false })
+      setBooked(null)
+      setBookedErr(null)
+    })
+  }
+
   // Escape closes; overlay is modal so grab focus off the terminal.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -68,6 +179,22 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
 
   const maxHours = report?.totals.reduce((m, t) => Math.max(m, t.hours), 0) ?? 0
   const empty = !report || report.days.length === 0
+  const bookedByDate = booked ? sumBookedByDate(booked) : null
+  const bookedByKey = booked ? sumBookedByKey(booked) : null
+
+  const dayBadge = (date: string, ticketTracked: number): React.JSX.Element | null => {
+    if (!bookedByDate) return null
+    const b = bookedByDate[date] ?? 0
+    const state = dayBookedState(ticketTracked, b)
+    if (state === 'full' && ticketTracked <= 0) return null
+    if (state === 'none') return <span className="booked-badge none">not booked</span>
+    return (
+      <span className={`booked-badge ${state}`}>
+        booked {fmtHours(b)}
+        {state === 'partial' ? ' · partial' : ''}
+      </span>
+    )
+  }
 
   return (
     <div className="activity-backdrop" onMouseDown={onClose}>
@@ -105,9 +232,24 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
               </button>
             ))}
           </div>
+          {jira?.connected && (
+            <span className="jira-status" title={jira.email}>
+              Jira ✓
+              <button
+                className="jira-disconnect"
+                onClick={disconnect}
+                title={`Disconnect ${jira.email}`}
+              >
+                disconnect
+              </button>
+            </span>
+          )}
         </div>
 
         <div className="activity-body">
+          {jira !== null && !jira.connected && <JiraConnectBar onConnected={setJira} />}
+          {bookedErr && <div className="jira-connect-error">Jira: {bookedErr}</div>}
+
           {loading ? (
             <p className="activity-empty">Loading…</p>
           ) : empty ? (
@@ -118,15 +260,12 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
               <WorklogPrepare
                 report={report!}
                 logged={logged}
+                booked={booked}
+                jiraConnected={jira?.connected ?? false}
+                onRefreshBooked={refreshBooked}
                 onFillPrompt={onFillPrompt}
                 onClose={onClose}
-                onSaved={(n) =>
-                  setSavedMsg(
-                    n > 0
-                      ? `Prepared ${n} worklog line${n === 1 ? '' : 's'} — ask Claude to “log my hours”.`
-                      : 'Nothing to prepare.'
-                  )
-                }
+                onMessage={setSavedMsg}
               />
             </>
           ) : (
@@ -162,28 +301,39 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
               )}
 
               <div className="activity-days">
-                {report!.days.map((day) => (
-                  <div className="day-block" key={day.date}>
-                    <div className="day-head">
-                      <span className="day-date">{fmtDate(day.date)}</span>
-                      <span className="day-total">{fmtHours(day.totalHours)}</span>
-                    </div>
-                    {day.buckets.map((b) => (
-                      <div className="day-row" key={b.key}>
-                        <span className="day-label">
-                          {b.ticket ? <span className="ticket">{b.ticket}</span> : b.label}
-                          {b.ticket && b.branches.length > 0 && (
-                            <span className="bucket-branch" title={b.branches.join('\n')}>
-                              {b.branches.join(', ')}
-                            </span>
-                          )}
-                          <span className="day-project">{b.project}</span>
-                        </span>
-                        <span className="day-hours">{fmtHours(b.hours)}</span>
+                {report!.days.map((day) => {
+                  const ticketTracked = day.buckets
+                    .filter((b) => b.ticket)
+                    .reduce((s, b) => s + b.hours, 0)
+                  return (
+                    <div className="day-block" key={day.date}>
+                      <div className="day-head">
+                        <span className="day-date">{fmtDate(day.date)}</span>
+                        {dayBadge(day.date, ticketTracked)}
+                        <span className="day-total">{fmtHours(day.totalHours)}</span>
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {day.buckets.map((b) => (
+                        <div className="day-row" key={b.key}>
+                          <span className="day-label">
+                            {b.ticket ? <span className="ticket">{b.ticket}</span> : b.label}
+                            {b.ticket && b.branches.length > 0 && (
+                              <span className="bucket-branch" title={b.branches.join('\n')}>
+                                {b.branches.join(', ')}
+                              </span>
+                            )}
+                            <span className="day-project">{b.project}</span>
+                          </span>
+                          {b.ticket && bookedByKey && bookedByKey[bookedKey(day.date, b.ticket)] ? (
+                            <span className="day-booked" title="Already booked in Jira">
+                              ✓ {fmtHours(bookedByKey[bookedKey(day.date, b.ticket)])}
+                            </span>
+                          ) : null}
+                          <span className="day-hours">{fmtHours(b.hours)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
               </div>
             </>
           )}

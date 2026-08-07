@@ -26,3 +26,16 @@ export function readLoggedWorklogs(): LoggedWorklog[] {
     return []
   }
 }
+
+/** Record worklogs the app itself posted to Jira (same file the Claude flow uses). */
+export function appendLoggedWorklogs(entries: LoggedWorklog[]): void {
+  if (entries.length === 0) return
+  try {
+    writeFileSync(
+      LOG_PATH,
+      JSON.stringify({ logged: [...readLoggedWorklogs(), ...entries] }, null, 2)
+    )
+  } catch {
+    /* best effort — Jira already has the worklog, only the local trail is lost */
+  }
+}
