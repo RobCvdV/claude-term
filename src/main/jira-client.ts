@@ -15,12 +15,16 @@ interface StoredCreds {
   token: string
   enc: boolean
   accountId: string
+  /** REST base that accepted the token — the site URL for classic API tokens,
+   *  api.atlassian.com/ex/jira/<cloudId> for tokens created with scopes */
+  base: string
 }
 
 interface Creds {
   email: string
   token: string
   accountId: string
+  base: string
 }
 
 function credsPath(): string {
@@ -34,13 +38,13 @@ function readCreds(): Creds | null {
     const s = JSON.parse(readFileSync(p, 'utf8')) as StoredCreds
     const buf = Buffer.from(s.token, 'base64')
     const token = s.enc ? safeStorage.decryptString(buf) : buf.toString('utf8')
-    return { email: s.email, token, accountId: s.accountId }
+    return { email: s.email, token, accountId: s.accountId, base: s.base || SITE }
   } catch {
     return null
   }
 }
 
-function writeCreds(email: string, token: string, accountId: string): void {
+function writeCreds(email: string, token: string, accountId: string, base: string): void {
   const enc = safeStorage.isEncryptionAvailable()
   const stored: StoredCreds = {
     email,
@@ -48,7 +52,8 @@ function writeCreds(email: string, token: string, accountId: string): void {
       ? safeStorage.encryptString(token).toString('base64')
       : Buffer.from(token, 'utf8').toString('base64'),
     enc,
-    accountId
+    accountId,
+    base
   }
   writeFileSync(credsPath(), JSON.stringify(stored), { mode: 0o600 })
 }
@@ -58,7 +63,7 @@ async function jiraFetch(
   path: string,
   init?: { method?: string; body?: object }
 ): Promise<Response> {
-  return fetch(`${SITE}${path}`, {
+  return fetch(`${creds.base}${path}`, {
     method: init?.method ?? 'GET',
     headers: {
       Authorization: basicAuth(creds.email, creds.token),
@@ -85,19 +90,50 @@ export function jiraStatus(): JiraStatus {
   return creds ? { connected: true, email: creds.email } : { connected: false }
 }
 
-/** Validate the token against /myself, then persist it (encrypted). */
+/** api.atlassian.com REST base for this site — the only base scoped tokens accept. */
+async function gatewayBase(): Promise<string> {
+  const res = await fetch(`${SITE}/_edge/tenant_info`)
+  if (!res.ok) throw new Error(`could not resolve cloud id (${res.status})`)
+  const info = (await res.json()) as { cloudId?: string }
+  if (!info.cloudId) throw new Error('could not resolve cloud id')
+  return `https://api.atlassian.com/ex/jira/${info.cloudId}`
+}
+
+/**
+ * Validate the token against /myself and persist it (encrypted). Classic API
+ * tokens authenticate on the site URL; tokens created WITH scopes only work on
+ * the api.atlassian.com gateway — try the site first, then the gateway.
+ */
 export async function jiraConnect(
   email: string,
   token: string
 ): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${SITE}/rest/api/3/myself`, {
-      headers: { Authorization: basicAuth(email.trim(), token.trim()), Accept: 'application/json' }
+  const auth = basicAuth(email.trim(), token.trim())
+  const tryBase = async (base: string): Promise<{ res: Response; me?: { accountId?: string } }> => {
+    const res = await fetch(`${base}/rest/api/3/myself`, {
+      headers: { Authorization: auth, Accept: 'application/json' }
     })
-    if (!res.ok) return { ok: false, error: await errorText(res) }
-    const me = (await res.json()) as { accountId?: string }
-    if (!me.accountId) return { ok: false, error: 'Jira did not return an account id' }
-    writeCreds(email.trim(), token.trim(), me.accountId)
+    return res.ok ? { res, me: (await res.json()) as { accountId?: string } } : { res }
+  }
+  try {
+    let base = SITE
+    let attempt = await tryBase(base)
+    if (!attempt.me) {
+      base = await gatewayBase()
+      attempt = await tryBase(base)
+    }
+    if (!attempt.me) {
+      const detail = await errorText(attempt.res)
+      const hint =
+        attempt.res.status === 401
+          ? ' — check the email and token'
+          : attempt.res.status === 403
+            ? ' — a scoped token also needs the read:jira-user scope'
+            : ''
+      return { ok: false, error: `${detail}${hint}` }
+    }
+    if (!attempt.me.accountId) return { ok: false, error: 'Jira did not return an account id' }
+    writeCreds(email.trim(), token.trim(), attempt.me.accountId, base)
     bookedCache = null
     return { ok: true }
   } catch (e) {
