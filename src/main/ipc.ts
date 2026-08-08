@@ -20,6 +20,7 @@ import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } from './jira-client'
 import { getVolume, setVolume } from './volume'
+import { showFolderContextMenu } from './folder-context-menu'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
@@ -166,6 +167,12 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   ipcMain.handle('shell:openFolder', (_e, dir: string) => {
     if (existsSync(dir)) void shell.openPath(dir)
+  })
+
+  ipcMain.on('folder:contextMenu', (e, dir: string) => {
+    if (!existsSync(dir)) return
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (win) showFolderContextMenu(win, dir)
   })
 
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))

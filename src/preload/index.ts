@@ -29,6 +29,10 @@ export interface ClaudeTermApi {
   openExternal(url: string): Promise<void>
   /** reveal a folder in Finder */
   openFolder(dir: string): Promise<void>
+  /** native right-click menu for a folder chip (WebStorm / VS Code / Finder / iTerm2 / new tab) */
+  folderContextMenu(dir: string): void
+  /** "Open in New Tab…" was picked in the folder context menu */
+  onOpenFolderTab(cb: (dir: string) => void): () => void
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
@@ -117,6 +121,8 @@ const api: ClaudeTermApi = {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openFolder: (dir) => ipcRenderer.invoke('shell:openFolder', dir),
+  folderContextMenu: (dir) => ipcRenderer.send('folder:contextMenu', dir),
+  onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),

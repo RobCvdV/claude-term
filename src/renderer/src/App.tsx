@@ -237,6 +237,11 @@ export default function App(): React.JSX.Element {
     setStatuses((prev) => ({ ...prev, [tab.tabId]: snapshot }))
   }, [])
 
+  // "Open in New Tab…" picked in a folder chip's context menu
+  useEffect(() => {
+    return window.claudeTerm.onOpenFolderTab((dir) => void openTab(dir))
+  }, [openTab])
+
   // ⌘T opens a plain terminal in the home dir; ⌘O opens one in a chosen folder.
   const newTab = useCallback((): void => void openTab(), [openTab])
   const openFolder = useCallback(async (): Promise<void> => {
