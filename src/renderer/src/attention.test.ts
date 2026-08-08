@@ -13,6 +13,7 @@ const status = (overrides: Partial<TabStatus>): TabStatus => ({
   addedDirs: [],
   payload: null,
   git: null,
+  ci: null,
   ...overrides
 })
 

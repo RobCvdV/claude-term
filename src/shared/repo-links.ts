@@ -53,6 +53,14 @@ export function circleCiUrl(repo: RepoRef, branch: string): string | null {
   return `https://app.circleci.com/pipelines/bitbucket/${repo.owner}?filter=branch:equals:${branch}&useNewPipelines=true`
 }
 
+/** Jenkins job for this branch — MendriX TMS repos only (matched on the real
+ *  folder name; display names have prefixes stripped). */
+export function jenkinsJobUrl(folderName: string, branch: string): string | null {
+  if (!folderName.startsWith('mendrix-tms')) return null
+  const job = branch.startsWith('feature/') ? 'FeatureBuild' : 'BugfixBuild'
+  return `https://ci.mendrix.nl/job/${job}/job/${encodeURIComponent(branch.replace(/\//g, '%2F'))}/`
+}
+
 /** GitHub Actions runs for this branch. */
 export function actionsUrl(repo: RepoRef, branch: string): string | null {
   if (repo.host !== 'github') return null

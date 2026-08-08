@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DocGroup, PrInfo, ProjectDocs, TabId, TabStatus } from '../../../shared/types'
+import type {
+  CiInfo,
+  CiProvider,
+  DocGroup,
+  PrInfo,
+  ProjectDocs,
+  RateForecast,
+  TabId,
+  TabStatus,
+  WindowForecast
+} from '../../../shared/types'
 import {
   actionsUrl,
   branchUrl,
   circleCiUrl,
+  jenkinsJobUrl,
   parseRemote,
   releasesUrl
 } from '../../../shared/repo-links'
@@ -35,16 +46,19 @@ function limitClass(pct: number | undefined, active = true): string {
 function ExternalLink({
   url,
   children,
-  className
+  className,
+  title
 }: {
   url: string
   children: React.ReactNode
   className?: string
+  title?: string
 }): React.JSX.Element {
   return (
     <a
       href={url}
       className={className}
+      title={title}
       onClick={(e) => {
         e.preventDefault()
         window.open(url)
@@ -187,6 +201,26 @@ function PrMenu({
   )
 }
 
+/** Live-CI dot shown inside a CI link when the poller knows this provider. */
+function CiDot({ ci, provider }: { ci: CiInfo | null; provider: CiProvider }): React.ReactNode {
+  if (!ci || ci.provider !== provider) return null
+  return <span className={`ci-dot ci-${ci.state}`}>●</span>
+}
+
+/** "~14:32" within a day, "~Wed 14:32" beyond. */
+function fmtEta(hitsAtSec: number, now: number): string {
+  const d = new Date(hitsAtSec * 1000)
+  const time = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+  if (hitsAtSec * 1000 - now < 22 * 3600 * 1000) return `~${time}`
+  return `~${d.toLocaleDateString('en', { weekday: 'short' })} ${time}`
+}
+
+/** Tooltip suffix for a rate-limit window's burn forecast. */
+function forecastNote(f: WindowForecast | undefined, now: number): string {
+  if (!f?.hitsAt) return ''
+  return ` — at this pace 100% ${fmtEta(f.hitsAt, now)}${f.beforeReset ? ', before reset' : ''}`
+}
+
 function fmtCountdown(resetsAt: number, now: number): string {
   const secs = Math.max(0, Math.floor(resetsAt - now / 1000))
   const h = Math.floor(secs / 3600)
@@ -285,17 +319,32 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
       <span className="activity idle">● idle</span>
     )
 
-  // match on the real folder name — display names have prefixes stripped
-  const jenkins =
-    cwd?.split('/').pop()?.startsWith('mendrix-tms') && git?.branch
-      ? `https://ci.mendrix.nl/job/${git.branch.startsWith('feature/') ? 'FeatureBuild' : 'BugfixBuild'}/job/${encodeURIComponent(git.branch.replace(/\//g, '%2F'))}/`
-      : null
+  const jenkins = cwd && git?.branch ? jenkinsJobUrl(cwd.split('/').pop() ?? '', git.branch) : null
+  const ci = status?.ci ?? null
 
   const rl5 = payload?.rate_limits?.five_hour
   const rl7 = payload?.rate_limits?.seven_day
   // Colour the weekly window only in its last 2 days (before reset); stay dim
   // otherwise so normal weekly burn doesn't read as alarming.
   const rl7Near = rl7?.resets_at != null && rl7.resets_at - now / 1000 <= 2 * 24 * 3600
+
+  // burn forecast for the tooltips; refreshed when the used percentages move
+  const [forecast, setForecast] = useState<RateForecast | null>(null)
+  const pct5 = rl5?.used_percentage
+  const pct7 = rl7?.used_percentage
+  useEffect(() => {
+    if (pct5 == null && pct7 == null) return
+    let live = true
+    void window.claudeTerm.rateForecast().then((f) => {
+      if (live) setForecast(f)
+    })
+    return () => {
+      live = false
+    }
+  }, [pct5, pct7])
+  // projected to hit 100% before its reset → turn orange early (red still wins)
+  const warn5 = forecast?.fiveHour.beforeReset && (pct5 ?? 0) < 80
+  const warn7 = forecast?.sevenDay.beforeReset && (pct7 ?? 0) < 80
 
   // Session cost is only meaningful when paying per token. We can't tell
   // subscription-vs-API from the statusline payload, so fall back to: show cost
@@ -331,12 +380,18 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
       {usedPct != null && <span className={`ctx ${ctxClass}`}>{usedPct}%</span>}
       {showCost && <span className="dim">${payload!.cost!.total_cost_usd!.toFixed(2)}</span>}
       {rl5?.used_percentage != null && rl5.resets_at != null && (
-        <span className={limitClass(rl5.used_percentage)} title="5-hour rate limit window">
+        <span
+          className={warn5 ? 'rl-orange' : limitClass(rl5.used_percentage)}
+          title={`5-hour rate limit window${forecastNote(forecast?.fiveHour, now)}`}
+        >
           5h {Math.round(rl5.used_percentage)}% ({fmtCountdown(rl5.resets_at, now)})
         </span>
       )}
       {rl7?.used_percentage != null && (
-        <span className={limitClass(rl7.used_percentage, rl7Near)} title="7-day rate limit window">
+        <span
+          className={warn7 ? 'rl-orange' : limitClass(rl7.used_percentage, rl7Near)}
+          title={`7-day rate limit window${forecastNote(forecast?.sevenDay, now)}`}
+        >
           7d {Math.round(rl7.used_percentage)}%
         </span>
       )}
@@ -375,18 +430,33 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
         </ExternalLink>
       )}
       {jenkins && (
-        <ExternalLink url={jenkins} className="ext-link">
+        <ExternalLink
+          url={jenkins}
+          className="ext-link"
+          title={ci?.provider === 'jenkins' ? `build: ${ci.state}` : undefined}
+        >
+          <CiDot ci={ci} provider="jenkins" />
           Jenkins
         </ExternalLink>
       )}
       {circleci && (
-        <ExternalLink url={circleci} className="ext-link">
+        <ExternalLink
+          url={circleci}
+          className="ext-link"
+          title={ci?.provider === 'circleci' ? `pipeline: ${ci.state}` : undefined}
+        >
+          <CiDot ci={ci} provider="circleci" />
           CircleCI
         </ExternalLink>
       )}
       {repo && tabId && <PrMenu tabId={tabId} currentPrUrl={git?.prUrl ?? null} />}
       {actions && (
-        <ExternalLink url={actions} className="ext-link">
+        <ExternalLink
+          url={actions}
+          className="ext-link"
+          title={ci?.provider === 'actions' ? `run: ${ci.state}` : undefined}
+        >
+          <CiDot ci={ci} provider="actions" />
           Actions
         </ExternalLink>
       )}

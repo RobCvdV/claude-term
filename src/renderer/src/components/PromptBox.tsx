@@ -30,6 +30,8 @@ interface Props {
   onOpenPalette: () => void
   /** ⌘F — likewise; terminal scrollback search, never Monaco's find widget */
   onFindInTerminal: () => void
+  /** ⌘E — likewise; mission control, never Monaco's find-with-selection */
+  onOpenMission: () => void
 }
 
 // One dropped attachment: `mention` is what actually gets submitted to claude
@@ -60,7 +62,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     onColor,
     color,
     onOpenPalette,
-    onFindInTerminal
+    onFindInTerminal,
+    onOpenMission
   },
   ref
 ): React.JSX.Element {
@@ -84,6 +87,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   openPaletteRef.current = onOpenPalette
   const findInTerminalRef = useRef(onFindInTerminal)
   findInTerminalRef.current = onFindInTerminal
+  const openMissionRef = useRef(onOpenMission)
+  openMissionRef.current = onOpenMission
   const colorRef = useRef(onColor)
   colorRef.current = onColor
   const autoFocusRef = useRef(autoFocus)
@@ -492,6 +497,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () =>
       findInTerminalRef.current()
     )
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => openMissionRef.current())
 
     // Monaco never auto-triggers suggest on deletions (its quick-suggest path
     // only fires when the cursor moves right). Re-open the popup ourselves

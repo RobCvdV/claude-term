@@ -39,6 +39,7 @@ function HowTo(): React.JSX.Element {
       <section>
         <h3>Getting around</h3>
         <Keys k="⌘K">Command palette — fuzzy-jump to a tab or run an action</Keys>
+        <Keys k="⌘E">Mission control — every tab at a glance</Keys>
         <Keys k="⌘⇧A">Jump to the next tab waiting for input</Keys>
         <Keys k="⌘F">Search the terminal scrollback</Keys>
         <Keys k="⌘L">Focus the prompt box</Keys>
@@ -73,6 +74,7 @@ function HowTo(): React.JSX.Element {
         </Keys>
         <Keys k="PRs">Open PRs of the repo — click opens, right-click: Open / Merge</Keys>
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
+        <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
       </section>
     </div>
@@ -114,15 +116,26 @@ function Guide(): React.JSX.Element {
         </p>
       </section>
       <section>
+        <h3>Mission control</h3>
+        <p>
+          <b>⌘E</b> shows every tab at a glance: activity and elapsed time, folder and branch,
+          context usage, live CI state and a one-line summary of what each session is doing (long
+          turns are compressed by the local Bonsai model when one is running — plain truncation
+          otherwise). Click a card to jump there.
+        </p>
+      </section>
+      <section>
         <h3>Status bar anatomy</h3>
         <p>
           Left to right: activity dot (busy timer, needs-input, idle), the tab&apos;s folder plus
           every other folder the session works in, git branch (ticket linked to Jira, branch to the
           repo) with changed/ahead/behind counts, the model and its reasoning effort, context usage
           (orange from 60%, red from 78%), and the 5-hour / 7-day rate-limit windows with
-          time-to-reset. On the right: plan / roadmap / docs / settings editor windows for the
-          project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions), the open-PRs
-          dropdown, Releases, notification volume, and the clock.
+          time-to-reset — hover them for a burn forecast, and they turn orange early when the
+          current pace hits 100% before the reset. On the right: plan / roadmap / docs / settings
+          editor windows for the project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions)
+          with a live build-state dot, the open-PRs dropdown, Releases, notification volume, and the
+          clock.
         </p>
       </section>
       <section>

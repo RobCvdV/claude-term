@@ -22,6 +22,8 @@ import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } fr
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
+import { sessionDoing } from './session-summary'
+import { RateStore } from './rate-store'
 import { parseRemote } from '../shared/repo-links'
 import type { PrInfo } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
@@ -29,10 +31,13 @@ import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 export interface AppServices {
   ptys: PtyManager
   status: StatusServer
+  rate: RateStore
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
   const status = new StatusServer()
+  // rate limits are account-global: every tab's payload feeds one shared store
+  const rate = new RateStore(() => join(app.getPath('userData'), 'rate-samples.jsonl'))
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()
@@ -58,13 +63,16 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     // A statusline arrived → the tab has a real session rendering, so a
     // background-agent refusal can no longer be ahead of us (see
     // PtyManager.stopRefusalWatch).
-    if (tabStatus.payload) ptys.stopRefusalWatch(tabStatus.tabId)
+    if (tabStatus.payload) {
+      ptys.stopRefusalWatch(tabStatus.tabId)
+      rate.record(tabStatus.payload)
+    }
     send('status:update', tabStatus)
   }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // A branch switch renames the live session (name has no spaces → no quoting).
   status.onRenameSession = (tabId, name) => ptys.injectPrompt(tabId, `/rename ${name}`)
-  return { ptys, status }
+  return { ptys, status, rate }
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
@@ -197,6 +205,17 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   })
 
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))
+
+  // Mission control: one-line "doing" snippet from the tab session's transcript
+  // tail. `wanted` drops a queued Bonsai job once the tab is gone.
+  ipcMain.handle('mission:doing', (_e, tabId: TabId): Promise<string | null> => {
+    const sessionId = status.snapshot(tabId)?.sessionId
+    if (!sessionId) return Promise.resolve(null)
+    return sessionDoing(sessionId, () => status.snapshot(tabId) !== null)
+  })
+
+  // Rate-limit burn forecast, from the shared sample store (see createServices).
+  ipcMain.handle('rate:forecast', () => services.rate.forecast())
 
   // Activity-hours overview: aggregate the global heartbeat log (written by
   // ~/.claude/hooks/log-activity.sh) into engaged hours per ticket per day.

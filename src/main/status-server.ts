@@ -5,6 +5,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import type {
   ActivityState,
+  CiInfo,
   GitInfo,
   HookEvent,
   StatuslinePayload,
@@ -134,7 +135,8 @@ export class StatusServer {
         cwd,
         addedDirs,
         payload: null,
-        git: null
+        git: null,
+        ci: null
       }
     })
     void this.refreshGit(tabId)
@@ -146,6 +148,25 @@ export class StatusServer {
 
   snapshot(tabId: TabId): TabStatus | null {
     return this.tabs.get(tabId)?.status ?? null
+  }
+
+  /** Every tab's current status — the CI poller derives its targets from this. */
+  allSnapshots(): TabStatus[] {
+    return [...this.tabs.values()].map((t) => t.status)
+  }
+
+  /** CI poller result for a tab. A success→failed flip pings attention so the
+   *  renderer can surface the break. */
+  setCi(tabId: TabId, ci: CiInfo | null): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen) return
+    const prev = tab.status.ci
+    if (JSON.stringify(prev) === JSON.stringify(ci)) return
+    tab.status.ci = ci
+    this.onUpdate(tab.status)
+    if (prev?.state === 'success' && ci?.state === 'failed') {
+      this.onAttention(tabId, 'CiFailed')
+    }
   }
 
   getCwd(tabId: TabId): string | null {
