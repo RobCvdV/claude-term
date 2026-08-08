@@ -17,6 +17,9 @@ interface Props {
   /** version of a downloaded update, or null — shows the "update ready" pill */
   updateVersion: string | null
   onInstallUpdate: () => void
+  /** tabs blocked on a dialog — drives the ⚠ pill; click jumps to the next one */
+  attentionCount: number
+  onJumpAttention: () => void
 }
 
 interface Drag {
@@ -64,7 +67,9 @@ export function TabBar({
   onReorder,
   onOpenActivity,
   updateVersion,
-  onInstallUpdate
+  onInstallUpdate,
+  attentionCount,
+  onJumpAttention
 }: Props): React.JSX.Element {
   const [editingId, setEditingId] = useState<TabId | null>(null)
   const [draft, setDraft] = useState('')
@@ -182,6 +187,15 @@ export function TabBar({
       <button className="new-tab" onClick={onNewTab} title="New session (⌘T)">
         +
       </button>
+      {attentionCount > 0 && (
+        <button
+          className="attention-pill"
+          onClick={onJumpAttention}
+          title="Jump to the next tab waiting for input (⇧⌘A)"
+        >
+          {attentionCount} waiting
+        </button>
+      )}
       {updateVersion && (
         <button
           className="update-pill"
