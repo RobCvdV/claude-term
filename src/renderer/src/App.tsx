@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DocGroup, PersistedSession, TabId, TabInfo, TabStatus } from '../../shared/types'
+import type {
+  DocGroup,
+  HelpSection,
+  PersistedSession,
+  TabId,
+  TabInfo,
+  TabStatus
+} from '../../shared/types'
 import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
+import { HelpOverlay } from './components/HelpOverlay'
 import { composeWindowTitle } from './tab-title'
 import { moveItem } from './tab-reorder'
 import { needsInput, nextAttentionTab } from './attention'
@@ -69,6 +77,8 @@ export default function App(): React.JSX.Element {
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
+  // help overlay: which section to show, or null when closed (Help menu / ⌘/)
+  const [helpSection, setHelpSection] = useState<HelpSection | null>(null)
   // per-tab ⌘F counter: >0 shows the find bar, each bump refocuses its input
   const [searchNonces, setSearchNonces] = useState<Record<TabId, number>>({})
   // version of a downloaded update waiting to install (drives the header pill)
@@ -132,6 +142,11 @@ export default function App(): React.JSX.Element {
   // again when a newer release turned up and that download became obsolete)
   useEffect(() => {
     return window.claudeTerm.onUpdateDownloaded((version) => setUpdateVersion(version))
+  }, [])
+
+  // Help menu (or its ⌘/ accelerator) picked a section
+  useEffect(() => {
+    return window.claudeTerm.onShowHelp((section) => setHelpSection(section))
   }, [])
 
   // plain terminals: adopt the shell's OSC title unless the user renamed the tab.
@@ -511,6 +526,8 @@ export default function App(): React.JSX.Element {
     },
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
+    { id: 'howto', label: 'Quick How-To', shortcut: '⌘/', run: () => setHelpSection('howto') },
+    { id: 'guide', label: 'User Guide', run: () => setHelpSection('guide') },
     ...(activeId
       ? [{ id: 'restart-tab', label: 'Restart current tab', run: () => restartTab(activeId) }]
       : []),
@@ -571,6 +588,16 @@ export default function App(): React.JSX.Element {
       />
       {showActivity && (
         <ActivityOverview onClose={() => setShowActivity(false)} onFillPrompt={fillPromptIfEmpty} />
+      )}
+      {helpSection && (
+        <HelpOverlay
+          key={helpSection}
+          section={helpSection}
+          onClose={() => {
+            setHelpSection(null)
+            if (activeId) restoreFocus(activeId)
+          }}
+        />
       )}
       {showPalette && (
         <CommandPalette

@@ -117,7 +117,10 @@ app.whenReady().then(async () => {
 
   // Native menu with a manual "Check for Updates…" item (app menu on macOS,
   // Help menu elsewhere) alongside the standard Edit/View/Window roles.
-  installAppMenu(() => void checkForUpdatesInteractive(() => mainWindow, prepareUpdateQuit))
+  installAppMenu(
+    () => void checkForUpdatesInteractive(() => mainWindow, prepareUpdateQuit),
+    (section) => mainWindow?.webContents.send('help:show', section)
+  )
 
   // First-run: offer to install the global activity-logging hook (feeds the
   // 🕐 Activity hours view). Idempotent + merge-only; never blocks startup.

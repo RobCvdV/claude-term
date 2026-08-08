@@ -5,6 +5,7 @@ import type {
   BookResult,
   BranchSwitchResult,
   DocGroup,
+  HelpSection,
   JiraStatus,
   LoggedWorklog,
   PersistedSession,
@@ -36,6 +37,8 @@ export interface ClaudeTermApi {
   onOpenFolderTab(cb: (dir: string) => void): () => void
   /** open PRs of the tab's repo, most recent first (max 10) */
   listPrs(tabId: TabId): Promise<PrInfo[]>
+  /** Help menu picked Quick How-To / User Guide — open the help overlay */
+  onShowHelp(cb: (section: HelpSection) => void): () => void
   /** native right-click menu for a PR entry (Open / Merge where allowed) */
   prContextMenu(tabId: TabId, pr: PrInfo): void
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
@@ -129,6 +132,7 @@ const api: ClaudeTermApi = {
   folderContextMenu: (dir) => ipcRenderer.send('folder:contextMenu', dir),
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
+  onShowHelp: (cb) => subscribe('help:show', cb),
   prContextMenu: (tabId, pr) => ipcRenderer.send('prs:contextMenu', tabId, pr),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
