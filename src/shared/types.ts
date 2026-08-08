@@ -94,6 +94,15 @@ export interface TabStatus {
   git: GitInfo | null
 }
 
+/** One open pull request in the status bar's PR dropdown. */
+export interface PrInfo {
+  number: number
+  title: string
+  url: string
+  /** the PR context menu may offer "Merge" (GitHub repo with push access) */
+  canMerge: boolean
+}
+
 /** A markdown document surfaced in the status-bar Docs overlay. */
 export interface DocEntry {
   /** absolute path on disk */

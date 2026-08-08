@@ -1689,3 +1689,61 @@ body {
   padding: 14px;
   text-align: center;
 }
+
+/* ---- open-PRs dropdown (status bar) ---- */
+.pr-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.pr-dropdown {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-width: 440px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.pr-dropdown button {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pr-dropdown button:hover {
+  background: var(--bg-input);
+}
+
+.pr-dropdown .pr-number {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.pr-dropdown .pr-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pr-dropdown .pr-current .pr-title {
+  font-weight: 600;
+}
+
+.pr-note {
+  color: var(--fg-dim);
+  padding: 4px 8px;
+}

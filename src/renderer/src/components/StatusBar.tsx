@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DocGroup, ProjectDocs, TabStatus } from '../../../shared/types'
+import type { DocGroup, PrInfo, ProjectDocs, TabId, TabStatus } from '../../../shared/types'
 import {
   actionsUrl,
   branchUrl,
@@ -120,6 +120,67 @@ function FolderMenu({
               {f.name}
             </button>
           ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** "PRs" link + dropdown of the repo's open PRs (most recent 10). Click an
+ *  entry to open it in the browser; right-click for Open/Merge. Fetched lazily
+ *  on open, served from a main-process cache. Fixed-positioned like the folder
+ *  dropdown because the status bar clips overflow. */
+function PrMenu({
+  tabId,
+  currentPrUrl
+}: {
+  tabId: TabId
+  currentPrUrl: string | null
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [prs, setPrs] = useState<PrInfo[] | null>(null)
+  const [pos, setPos] = useState({ right: 0, bottom: 0 })
+  const anchor = useRef<HTMLSpanElement>(null)
+
+  const show = (): void => {
+    const r = anchor.current?.getBoundingClientRect()
+    if (r) setPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top })
+    setOpen(true)
+    void window.claudeTerm.listPrs(tabId).then(setPrs)
+  }
+
+  return (
+    <span ref={anchor} className="pr-menu" onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+      <span className="ext-link" onClick={() => (open ? setOpen(false) : show())}>
+        PRs
+      </span>
+      {open && (
+        <div className="pr-dropdown" style={{ right: pos.right, bottom: pos.bottom }}>
+          {prs === null ? (
+            <div className="pr-note">loading…</div>
+          ) : prs.length === 0 ? (
+            <div className="pr-note">no open PRs</div>
+          ) : (
+            prs.map((pr) => (
+              <button
+                key={pr.url}
+                className={pr.url === currentPrUrl ? 'pr-current' : undefined}
+                title={pr.title}
+                onClick={() => {
+                  window.open(pr.url)
+                  setOpen(false)
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setOpen(false)
+                  window.claudeTerm.prContextMenu(tabId, pr)
+                }}
+              >
+                <span className="pr-number">#{pr.number}</span>
+                <span className="pr-title">{pr.title}</span>
+              </button>
+            ))
+          )}
         </div>
       )}
     </span>
@@ -323,11 +384,7 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
           CircleCI
         </ExternalLink>
       )}
-      {git?.prUrl && (
-        <ExternalLink url={git.prUrl} className="ext-link">
-          PR
-        </ExternalLink>
-      )}
+      {repo && tabId && <PrMenu tabId={tabId} currentPrUrl={git?.prUrl ?? null} />}
       {actions && (
         <ExternalLink url={actions} className="ext-link">
           Actions
