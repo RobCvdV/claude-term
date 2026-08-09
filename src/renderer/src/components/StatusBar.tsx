@@ -56,8 +56,9 @@ function ExternalLink({
 }
 
 /** Home folder + a "(+N)" badge; hovering/clicking the badge drops down the
- *  extra folders. Every entry opens in Finder. The dropdown is fixed-positioned
- *  because the status bar clips overflow. */
+ *  extra folders. Every entry opens in Finder; right-click shows the open-in
+ *  menu. The dropdown is fixed-positioned because the status bar clips
+ *  overflow. */
 function FolderMenu({
   home,
   others
@@ -88,6 +89,10 @@ function FolderMenu({
         className="folder folder-open"
         title={home.path}
         onClick={() => window.claudeTerm.openFolder(home.path)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          window.claudeTerm.folderContextMenu(home.path)
+        }}
       >
         {home.name}
       </span>
@@ -105,6 +110,11 @@ function FolderMenu({
               onClick={() => {
                 window.claudeTerm.openFolder(f.path)
                 setOpen(false)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setOpen(false)
+                window.claudeTerm.folderContextMenu(f.path)
               }}
             >
               {f.name}
