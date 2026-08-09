@@ -94,6 +94,9 @@ export interface TabStatus {
   git: GitInfo | null
 }
 
+/** Which tab of the Help overlay to open (Help menu / ⌘/). */
+export type HelpSection = 'howto' | 'guide'
+
 /** One open pull request in the status bar's PR dropdown. */
 export interface PrInfo {
   number: number

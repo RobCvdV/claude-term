@@ -1747,3 +1747,98 @@ body {
   color: var(--fg-dim);
   padding: 4px 8px;
 }
+
+/* ---- help overlay (Help menu / ⌘/) ---- */
+.help-panel {
+  width: min(980px, 94vw);
+}
+
+.help-close {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.help-close:hover {
+  background: var(--bg-input);
+  color: var(--fg);
+}
+
+.help-body {
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.help-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 8px 28px;
+}
+
+.help-columns h3,
+.help-guide h3 {
+  margin: 10px 0 6px;
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+}
+
+.help-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.help-keys {
+  display: flex;
+  gap: 3px;
+  flex: 0 0 92px;
+  justify-content: flex-end;
+}
+
+.help-keys kbd {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.help-desc {
+  color: var(--fg);
+}
+
+.help-note {
+  color: var(--fg-dim);
+  padding: 6px 0 2px;
+  font-size: 11.5px;
+}
+
+.help-note code,
+.help-guide code {
+  background: var(--bg-input);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.help-guide {
+  max-width: 720px;
+}
+
+.help-guide p {
+  margin: 0 0 6px;
+  color: var(--fg);
+  line-height: 1.55;
+}

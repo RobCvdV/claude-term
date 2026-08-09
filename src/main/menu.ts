@@ -1,17 +1,29 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
+import type { HelpSection } from '../shared/types'
 
 /**
  * Install the application menu. This mirrors Electron's default menu (standard
  * Edit/View/Window roles, so clipboard, zoom, devtools etc. keep working) and
  * adds a "Check for Updates…" item — under the app menu on macOS, under Help
- * elsewhere.
+ * elsewhere — plus a Help menu opening the in-app Quick How-To / User Guide.
  */
-export function installAppMenu(onCheckForUpdates: () => void): void {
+export function installAppMenu(
+  onCheckForUpdates: () => void,
+  onShowHelp: (section: HelpSection) => void
+): void {
   const isMac = process.platform === 'darwin'
   const checkForUpdates: MenuItemConstructorOptions = {
     label: 'Check for Updates…',
     click: () => onCheckForUpdates()
   }
+  const helpItems: MenuItemConstructorOptions[] = [
+    {
+      label: 'Quick How-To',
+      accelerator: 'CommandOrControl+/',
+      click: () => onShowHelp('howto')
+    },
+    { label: 'User Guide', click: () => onShowHelp('guide') }
+  ]
 
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -37,7 +49,10 @@ export function installAppMenu(onCheckForUpdates: () => void): void {
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
-    ...(!isMac ? [{ role: 'help', submenu: [checkForUpdates] } as MenuItemConstructorOptions] : [])
+    {
+      role: 'help',
+      submenu: isMac ? helpItems : [...helpItems, { type: 'separator' }, checkForUpdates]
+    } as MenuItemConstructorOptions
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
