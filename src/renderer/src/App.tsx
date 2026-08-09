@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PersistedSession, TabId, TabInfo, TabStatus } from '../../shared/types'
+import type { DocGroup, PersistedSession, TabId, TabInfo, TabStatus } from '../../shared/types'
 import { TabBar } from './components/TabBar'
 import { TerminalPane } from './components/TerminalPane'
 import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
+import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { composeWindowTitle } from './tab-title'
 import { moveItem } from './tab-reorder'
+import { needsInput, nextAttentionTab } from './attention'
 import { closeTabConfirmMessage } from './close-guard'
 import { persistedSessionOf, type RestoredSession } from './session-persist'
 import { forgetPromptHistory, persistedHistoryFor, restorePromptHistory } from './prompt-history'
@@ -66,6 +68,9 @@ export default function App(): React.JSX.Element {
   const [colors, setColors] = useState<Record<TabId, string>>({})
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [showPalette, setShowPalette] = useState(false)
+  // per-tab ⌘F counter: >0 shows the find bar, each bump refocuses its input
+  const [searchNonces, setSearchNonces] = useState<Record<TabId, number>>({})
   // version of a downloaded update waiting to install (drives the header pill)
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
@@ -107,11 +112,13 @@ export default function App(): React.JSX.Element {
   // Put focus where it's most useful for the tab's *current* state. Deferred a
   // frame so it lands after the DOM change that prompted it (tab switch, an
   // overlay closing) — otherwise the element we focus may not be visible yet.
-  const restoreFocus = (tabId: TabId): void => {
+  const restoreFocus = useCallback((tabId: TabId): void => {
     requestAnimationFrame(() => {
-      applyFocus(tabId, focusForTab(focusStateOf(statusesRef.current[tabId])))
+      const target = focusForTab(focusStateOf(statusesRef.current[tabId]))
+      if (target === 'box') promptRefs.current.get(tabId)?.focus()
+      else focusTerm(tabId)
     })
-  }
+  }, [])
 
   // a dialog (permission prompt / question picker) appeared: focus the active
   // tab's terminal so arrows+Enter work immediately. Never steal across tabs.
@@ -407,6 +414,23 @@ export default function App(): React.JSX.Element {
     [tabs]
   )
 
+  // ⌘⇧A: jump to the next tab blocked on a permission prompt / picker
+  const jumpAttention = useCallback((): void => {
+    const target = nextAttentionTab(tabs, statuses, activeId)
+    if (target) setActiveId(target)
+  }, [tabs, statuses, activeId])
+
+  // ⌘F: open (or refocus) the active tab's scrollback search
+  const openSearch = useCallback((): void => {
+    const tabId = activeIdRef.current
+    if (tabId) setSearchNonces((prev) => ({ ...prev, [tabId]: (prev[tabId] ?? 0) + 1 }))
+  }, [])
+  const closeSearch = useCallback((tabId: TabId): void => {
+    setSearchNonces((prev) => ({ ...prev, [tabId]: 0 }))
+  }, [])
+
+  const openPalette = useCallback((): void => setShowPalette(true), [])
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!e.metaKey) return
@@ -420,8 +444,18 @@ export default function App(): React.JSX.Element {
         e.preventDefault()
         if (activeId) closeTab(activeId)
       } else if (e.key === 'k') {
+        // palette toggle (the old ⌘K "focus prompt box" moved to ⌘L)
+        e.preventDefault()
+        setShowPalette((v) => !v)
+      } else if (e.key === 'l') {
         e.preventDefault()
         if (activeId) promptRefs.current.get(activeId)?.focus()
+      } else if (e.key === 'f') {
+        e.preventDefault()
+        openSearch()
+      } else if (e.key.toLowerCase() === 'a' && e.shiftKey) {
+        e.preventDefault()
+        jumpAttention()
       } else if (e.key === '[' || e.key === ']') {
         // ⌘[ / ⌘] walk through tabs (wraps around); ⌘←/⌘→ stay line-start/end
         if (tabs.length === 0) return
@@ -437,10 +471,71 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [tabs, activeId, newTab, openFolder, closeTab, stepTab])
+  }, [tabs, activeId, newTab, openFolder, closeTab, stepTab, jumpAttention, openSearch])
 
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
   const showClaudeUi = !!activeStatus?.claudeActive
+
+  const openDocsFor = useCallback(
+    (group: DocGroup): void => {
+      if (!activeId) return
+      const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Docs'
+      window.claudeTerm.openDocsWindow(activeId, group, composeWindowTitle(title, activeStatus))
+      // the docs window takes OS focus; leave the main window's focus on the
+      // prompt/terminal so it's usable the moment you return
+      restoreFocus(activeId)
+    },
+    [activeId, tabs, activeStatus, restoreFocus]
+  )
+
+  const openSettingsFor = useCallback((): void => {
+    if (!activeId) return
+    const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Settings'
+    window.claudeTerm.openConfigWindow(
+      activeId,
+      `${composeWindowTitle(title, activeStatus)} — settings`
+    )
+    restoreFocus(activeId)
+  }, [activeId, tabs, activeStatus, restoreFocus])
+
+  const attentionCount = tabs.filter((t) => needsInput(statuses[t.tabId])).length
+
+  const paletteActions: PaletteAction[] = [
+    { id: 'new-tab', label: 'New tab', shortcut: '⌘T', run: newTab },
+    { id: 'open-folder', label: 'Open folder…', shortcut: '⌘O', run: () => void openFolder() },
+    {
+      id: 'next-attention',
+      label: 'Jump to tab waiting for input',
+      shortcut: '⇧⌘A',
+      run: jumpAttention
+    },
+    { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
+    { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
+    ...(activeId
+      ? [{ id: 'restart-tab', label: 'Restart current tab', run: () => restartTab(activeId) }]
+      : []),
+    ...(showClaudeUi
+      ? [
+          { id: 'docs', label: 'Open docs window', run: () => openDocsFor('docs' as DocGroup) },
+          { id: 'plan', label: 'Open plans window', run: () => openDocsFor('plan' as DocGroup) },
+          {
+            id: 'roadmap',
+            label: 'Open roadmap window',
+            run: () => openDocsFor('roadmap' as DocGroup)
+          },
+          { id: 'settings', label: 'Open settings window', run: openSettingsFor }
+        ]
+      : []),
+    ...(updateVersion
+      ? [
+          {
+            id: 'update',
+            label: `Install update ${updateVersion}`,
+            run: () => void window.claudeTerm.installUpdate()
+          }
+        ]
+      : [])
+  ]
 
   // Fill the active tab's prompt (only if empty) — used by the worklog panel to
   // tee up "Log my hours" after preparing a dispatch.
@@ -471,9 +566,24 @@ export default function App(): React.JSX.Element {
         onOpenActivity={() => setShowActivity(true)}
         updateVersion={updateVersion}
         onInstallUpdate={() => void window.claudeTerm.installUpdate()}
+        attentionCount={attentionCount}
+        onJumpAttention={jumpAttention}
       />
       {showActivity && (
         <ActivityOverview onClose={() => setShowActivity(false)} onFillPrompt={fillPromptIfEmpty} />
+      )}
+      {showPalette && (
+        <CommandPalette
+          tabs={tabs}
+          statuses={statuses}
+          activeId={activeId}
+          actions={paletteActions}
+          onSelectTab={setActiveId}
+          onClose={() => {
+            setShowPalette(false)
+            if (activeId) restoreFocus(activeId)
+          }}
+        />
       )}
       {tabs.length === 0 ? (
         <div className="empty-state">
@@ -488,6 +598,8 @@ export default function App(): React.JSX.Element {
               tabId={tab.tabId}
               active={tab.tabId === activeId}
               status={statuses[tab.tabId] ?? null}
+              searchNonce={searchNonces[tab.tabId] ?? 0}
+              onCloseSearch={() => closeSearch(tab.tabId)}
               onRestart={() => restartTab(tab.tabId)}
               onClose={() => closeTab(tab.tabId)}
             />
@@ -496,27 +608,8 @@ export default function App(): React.JSX.Element {
             <StatusBar
               status={activeStatus}
               color={activeId ? colors[activeId] : undefined}
-              onOpenDocs={(group) => {
-                if (!activeId) return
-                const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Docs'
-                window.claudeTerm.openDocsWindow(
-                  activeId,
-                  group,
-                  composeWindowTitle(title, activeStatus)
-                )
-                // the docs window takes OS focus; leave the main window's focus
-                // on the prompt/terminal so it's usable the moment you return
-                restoreFocus(activeId)
-              }}
-              onOpenSettings={() => {
-                if (!activeId) return
-                const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Settings'
-                window.claudeTerm.openConfigWindow(
-                  activeId,
-                  `${composeWindowTitle(title, activeStatus)} — settings`
-                )
-                restoreFocus(activeId)
-              }}
+              onOpenDocs={openDocsFor}
+              onOpenSettings={openSettingsFor}
             />
           )}
           {showClaudeUi && activeId && (
@@ -533,6 +626,8 @@ export default function App(): React.JSX.Element {
               onStepTab={stepTab}
               onColor={(color) => setTabColor(activeId, color)}
               color={colors[activeId]}
+              onOpenPalette={openPalette}
+              onFindInTerminal={openSearch}
             />
           )}
         </>

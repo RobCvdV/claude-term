@@ -26,6 +26,10 @@ interface Props {
   onStepTab: (delta: number) => void
   onColor: (color: string) => void
   color?: string
+  /** ⌘K — Monaco owns the key while the box has focus, so bind it here too */
+  onOpenPalette: () => void
+  /** ⌘F — likewise; terminal scrollback search, never Monaco's find widget */
+  onFindInTerminal: () => void
 }
 
 // One dropped attachment: `mention` is what actually gets submitted to claude
@@ -47,7 +51,17 @@ export interface PromptBoxHandle {
 const IMAGE_TOKEN_RE = /\[image\d+\]/g
 
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
-  { tabId, disabled, autoFocus, focusState, onStepTab, onColor, color },
+  {
+    tabId,
+    disabled,
+    autoFocus,
+    focusState,
+    onStepTab,
+    onColor,
+    color,
+    onOpenPalette,
+    onFindInTerminal
+  },
   ref
 ): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -66,6 +80,10 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   // keep the latest handlers for the addCommand/closure below (bound once)
   const stepTabRef = useRef(onStepTab)
   stepTabRef.current = onStepTab
+  const openPaletteRef = useRef(onOpenPalette)
+  openPaletteRef.current = onOpenPalette
+  const findInTerminalRef = useRef(onFindInTerminal)
+  findInTerminalRef.current = onFindInTerminal
   const colorRef = useRef(onColor)
   colorRef.current = onColor
   const autoFocusRef = useRef(autoFocus)
@@ -468,6 +486,12 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.BracketRight, () =>
       stepTabRef.current(1)
     )
+    // ⌘K / ⌘F are Monaco commands (chord prefix, find widget) — rebind them to
+    // the app's palette and the terminal's scrollback search.
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => openPaletteRef.current())
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () =>
+      findInTerminalRef.current()
+    )
 
     // Monaco never auto-triggers suggest on deletions (its quick-suggest path
     // only fires when the cursor moves right). Re-open the popup ourselves
@@ -546,7 +570,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           <div className="editor-placeholder">
             {disabled
               ? 'session ended'
-              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘K here)'}
+              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘L here)'}
           </div>
         )}
       </div>

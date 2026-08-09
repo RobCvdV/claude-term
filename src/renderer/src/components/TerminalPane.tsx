@@ -1,16 +1,28 @@
 import { useEffect, useRef } from 'react'
 import type { TabId, TabStatus } from '../../../shared/types'
 import { createTerm, fitTerm } from '../term-registry'
+import { TermSearchBar } from './TermSearchBar'
 
 interface Props {
   tabId: TabId
   active: boolean
   status: TabStatus | null
+  /** >0 = search bar open; bumped on every ⌘F to refocus its input */
+  searchNonce: number
+  onCloseSearch: () => void
   onRestart: () => void
   onClose: () => void
 }
 
-export function TerminalPane({ tabId, active, status, onRestart, onClose }: Props): React.JSX.Element {
+export function TerminalPane({
+  tabId,
+  active,
+  status,
+  searchNonce,
+  onCloseSearch,
+  onRestart,
+  onClose
+}: Props): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -44,6 +56,12 @@ export function TerminalPane({ tabId, active, status, onRestart, onClose }: Prop
   return (
     <div className="terminal-pane" style={{ display: active ? 'flex' : 'none' }}>
       <div className="terminal-host" ref={hostRef} />
+      <TermSearchBar
+        tabId={tabId}
+        open={searchNonce > 0}
+        focusNonce={searchNonce}
+        onClose={onCloseSearch}
+      />
       {exited && (
         <div className="exit-overlay">
           <span>
