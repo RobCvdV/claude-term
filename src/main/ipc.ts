@@ -21,6 +21,9 @@ import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } from './jira-client'
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
+import { listOpenPrs, showPrContextMenu } from './pr-list'
+import { parseRemote } from '../shared/repo-links'
+import type { PrInfo } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
@@ -173,6 +176,24 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     if (!existsSync(dir)) return
     const win = BrowserWindow.fromWebContents(e.sender)
     if (win) showFolderContextMenu(win, dir)
+  })
+
+  // Status-bar PR dropdown: open PRs of the tab repo, and per-PR context menu.
+  const tabRepo = (tabId: TabId): { cwd: string; repo: ReturnType<typeof parseRemote> } | null => {
+    const snap = status.snapshot(tabId)
+    const repo = snap?.git?.remoteUrl ? parseRemote(snap.git.remoteUrl) : null
+    return repo && snap ? { cwd: snap.cwd, repo } : null
+  }
+
+  ipcMain.handle('prs:list', async (_e, tabId: TabId): Promise<PrInfo[]> => {
+    const target = tabRepo(tabId)
+    return target?.repo ? listOpenPrs(target.cwd, target.repo) : []
+  })
+
+  ipcMain.on('prs:contextMenu', (e, tabId: TabId, pr: PrInfo) => {
+    const target = tabRepo(tabId)
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (target?.repo && win) showPrContextMenu(win, target.cwd, target.repo, pr)
   })
 
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))

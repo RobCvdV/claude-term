@@ -8,6 +8,7 @@ import type {
   JiraStatus,
   LoggedWorklog,
   PersistedSession,
+  PrInfo,
   ProjectConfigFiles,
   ProjectDocs,
   SlashCommand,
@@ -33,6 +34,10 @@ export interface ClaudeTermApi {
   folderContextMenu(dir: string): void
   /** "Open in New Tab…" was picked in the folder context menu */
   onOpenFolderTab(cb: (dir: string) => void): () => void
+  /** open PRs of the tab's repo, most recent first (max 10) */
+  listPrs(tabId: TabId): Promise<PrInfo[]>
+  /** native right-click menu for a PR entry (Open / Merge where allowed) */
+  prContextMenu(tabId: TabId, pr: PrInfo): void
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
@@ -123,6 +128,8 @@ const api: ClaudeTermApi = {
   openFolder: (dir) => ipcRenderer.invoke('shell:openFolder', dir),
   folderContextMenu: (dir) => ipcRenderer.send('folder:contextMenu', dir),
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
+  listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
+  prContextMenu: (tabId, pr) => ipcRenderer.send('prs:contextMenu', tabId, pr),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
