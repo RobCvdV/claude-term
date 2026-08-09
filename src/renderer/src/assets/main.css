@@ -1842,3 +1842,103 @@ body {
   color: var(--fg);
   line-height: 1.55;
 }
+
+/* ---- mission control (⌘E) ---- */
+.mission-panel {
+  width: min(1100px, 94vw);
+}
+
+.mission-panel .help-close {
+  margin-left: auto;
+}
+
+.mission-grid {
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.mission-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--fg);
+}
+
+.mission-card:hover {
+  border-color: var(--fg-dim);
+}
+
+.mission-card.mission-active {
+  outline: 1px solid var(--accent);
+}
+
+.mission-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mission-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-activity {
+  margin-left: auto;
+  color: var(--fg-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mission-meta {
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  flex-wrap: wrap;
+}
+
+.mission-doing {
+  color: var(--fg);
+  font-size: 11.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- live CI state dot on status-bar links ---- */
+.ci-dot {
+  margin-right: 3px;
+  font-size: 8px;
+  vertical-align: 1px;
+}
+
+.ci-success {
+  color: var(--green);
+}
+
+.ci-failed {
+  color: var(--red);
+}
+
+.ci-running {
+  color: var(--orange);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.ci-unknown {
+  color: var(--fg-dim);
+}

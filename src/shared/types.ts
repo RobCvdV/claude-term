@@ -72,6 +72,30 @@ export interface GitInfo {
   hasWorkflows: boolean
 }
 
+export type CiState = 'success' | 'failed' | 'running' | 'unknown'
+export type CiProvider = 'jenkins' | 'circleci' | 'actions'
+
+/** Latest CI build state for a tab's repo+branch, from the background poller. */
+export interface CiInfo {
+  provider: CiProvider
+  state: CiState
+  /** the build/run this state came from (falls back to the branch overview) */
+  url: string
+}
+
+/** Projected time one rate-limit window hits 100% at the current pace. */
+export interface WindowForecast {
+  /** epoch seconds of the projected hit, null when pace ≈ 0 or data too thin */
+  hitsAt: number | null
+  /** the projected hit lands before the window resets — worth flagging */
+  beforeReset: boolean
+}
+
+export interface RateForecast {
+  fiveHour: WindowForecast
+  sevenDay: WindowForecast
+}
+
 /** Everything the renderer needs to draw one tab's status bar. */
 export interface TabStatus {
   tabId: TabId
@@ -92,6 +116,8 @@ export interface TabStatus {
   addedDirs: string[]
   payload: StatuslinePayload | null
   git: GitInfo | null
+  /** live CI state for this tab's repo+branch (null until the poller knows) */
+  ci: CiInfo | null
 }
 
 /** Which tab of the Help overlay to open (Help menu / ⌘/). */

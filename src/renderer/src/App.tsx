@@ -14,6 +14,7 @@ import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { HelpOverlay } from './components/HelpOverlay'
+import { MissionControl } from './components/MissionControl'
 import { composeWindowTitle } from './tab-title'
 import { moveItem } from './tab-reorder'
 import { needsInput, nextAttentionTab } from './attention'
@@ -77,6 +78,7 @@ export default function App(): React.JSX.Element {
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
+  const [showMission, setShowMission] = useState(false)
   // help overlay: which section to show, or null when closed (Help menu / ⌘/)
   const [helpSection, setHelpSection] = useState<HelpSection | null>(null)
   // per-tab ⌘F counter: >0 shows the find bar, each bump refocuses its input
@@ -132,8 +134,10 @@ export default function App(): React.JSX.Element {
 
   // a dialog (permission prompt / question picker) appeared: focus the active
   // tab's terminal so arrows+Enter work immediately. Never steal across tabs.
+  // CiFailed is informational (a build broke) — it must not move focus.
   useEffect(() => {
-    return window.claudeTerm.onAttention((tabId) => {
+    return window.claudeTerm.onAttention((tabId, hookEvent) => {
+      if (hookEvent === 'CiFailed') return
       if (tabId === activeIdRef.current) focusTerm(tabId)
     })
   }, [])
@@ -468,6 +472,9 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'f') {
         e.preventDefault()
         openSearch()
+      } else if (e.key === 'e') {
+        e.preventDefault()
+        setShowMission((v) => !v)
       } else if (e.key.toLowerCase() === 'a' && e.shiftKey) {
         e.preventDefault()
         jumpAttention()
@@ -525,6 +532,7 @@ export default function App(): React.JSX.Element {
       run: jumpAttention
     },
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
+    { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
     { id: 'howto', label: 'Quick How-To', shortcut: '⌘/', run: () => setHelpSection('howto') },
     { id: 'guide', label: 'User Guide', run: () => setHelpSection('guide') },
@@ -599,6 +607,19 @@ export default function App(): React.JSX.Element {
           }}
         />
       )}
+      {showMission && (
+        <MissionControl
+          tabs={tabs}
+          statuses={statuses}
+          colors={colors}
+          activeId={activeId}
+          onSelectTab={setActiveId}
+          onClose={() => {
+            setShowMission(false)
+            if (activeId) restoreFocus(activeId)
+          }}
+        />
+      )}
       {showPalette && (
         <CommandPalette
           tabs={tabs}
@@ -655,6 +676,7 @@ export default function App(): React.JSX.Element {
               color={colors[activeId]}
               onOpenPalette={openPalette}
               onFindInTerminal={openSearch}
+              onOpenMission={() => setShowMission(true)}
             />
           )}
         </>

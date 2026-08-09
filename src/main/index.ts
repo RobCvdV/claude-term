@@ -10,6 +10,7 @@ import { setupUpdater, installUpdate, checkForUpdatesInteractive } from './updat
 import { installAppMenu } from './menu'
 import { closeAllDocsWindows } from './docs-window'
 import { closeAllConfigWindows } from './config-window'
+import { CiPoller } from './ci-status'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
 // anything reads app.getPath('userData').
@@ -49,6 +50,15 @@ app.on('second-instance', () => {
 
 let mainWindow: BrowserWindow | null = null
 const services = createServices(() => mainWindow)
+
+// Live CI state per repo+branch (Jenkins / Actions / CircleCI) — polls only
+// while the window is actually on screen; results ride status:update.
+const ciPoller = new CiPoller(
+  () => services.status.allSnapshots(),
+  (tabId, ci) => services.status.setCi(tabId, ci),
+  () =>
+    !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()
+)
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
 // unless the env var is set, so normal runs are unaffected. Must be set before
@@ -107,6 +117,7 @@ app.whenReady().then(async () => {
   await services.status.start()
   registerIpc(services, () => mainWindow)
   createWindow()
+  ciPoller.start()
 
   // Background auto-update: check on launch + daily, download silently, and let
   // the user install on their say-so (renderer pill → 'update:install'). The
@@ -220,6 +231,7 @@ async function confirmQuit(): Promise<void> {
 }
 
 function shutdown(): void {
+  ciPoller.stop()
   // Freeze *first*: killing the PTYs makes every tab report its Claude session
   // gone, and those updates would otherwise reach the renderer before its final
   // save — persisting live conversations as "no session" (see StatusServer.freeze).

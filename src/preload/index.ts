@@ -12,6 +12,7 @@ import type {
   PrInfo,
   ProjectConfigFiles,
   ProjectDocs,
+  RateForecast,
   SlashCommand,
   TabId,
   TabInfo,
@@ -42,6 +43,10 @@ export interface ClaudeTermApi {
   /** native right-click menu for a PR entry (Open / Merge where allowed) */
   prContextMenu(tabId: TabId, pr: PrInfo): void
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
+  /** one-line "doing" snippet for a tab's session (mission control) */
+  missionDoing(tabId: TabId): Promise<string | null>
+  /** projected time-to-100% of the 5h/7d rate-limit windows */
+  rateForecast(): Promise<RateForecast>
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
   worklogLogged(): Promise<LoggedWorklog[]>
@@ -135,6 +140,8 @@ const api: ClaudeTermApi = {
   onShowHelp: (cb) => subscribe('help:show', cb),
   prContextMenu: (tabId, pr) => ipcRenderer.send('prs:contextMenu', tabId, pr),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
+  missionDoing: (tabId) => ipcRenderer.invoke('mission:doing', tabId),
+  rateForecast: () => ipcRenderer.invoke('rate:forecast'),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
   worklogLogged: () => ipcRenderer.invoke('worklog:logged'),
