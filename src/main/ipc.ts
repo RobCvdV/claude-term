@@ -7,6 +7,7 @@ import type { DocGroup, PersistedSession, TabId, TabInfo } from '../shared/types
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listBranches, listCommands, listDirs, searchFiles } from './completions'
+import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { buildActivityReport } from './activity-log'
@@ -370,6 +371,11 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('completions:dirs', (_e, tabId: TabId, query: string) => {
     const cwd = status.getCwd(tabId)
     return cwd ? listDirs(cwd, query) : []
+  })
+
+  ipcMain.handle('completions:npmScripts', (_e, tabId: TabId, query: string) => {
+    const cwd = status.getCwd(tabId)
+    return cwd ? listNpmScripts(cwd, query) : []
   })
 
   ipcMain.handle('git:switch', (_e, tabId: TabId, branch: string) => {

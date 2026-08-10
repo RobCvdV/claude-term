@@ -102,8 +102,10 @@ function Guide(): React.JSX.Element {
           app-local ones) and <code>@</code> file mentions fed by the project&apos;s git files. App
           commands run inside the app — <code>/color orange</code> tints the tab,{' '}
           <code>/switch</code> completes local branches and renames the session to match,{' '}
-          <code>/add-dir</code> completes directories. When Claude shows a grayed-out suggested next
-          prompt in the terminal, <b>Tab</b> in the empty box runs it.
+          <code>/npm</code> lists the project&apos;s npm scripts (root + one folder deep) — Enter
+          runs one, Tab fills <code>!npm run …</code> to add params — and <code>/add-dir</code>{' '}
+          completes directories. When Claude shows a grayed-out suggested next prompt in the
+          terminal, <b>Tab</b> in the empty box runs it.
         </p>
       </section>
       <section>

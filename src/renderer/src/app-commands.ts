@@ -1,4 +1,4 @@
-import type { SlashCommand, TabId } from '../../shared/types'
+import type { NpmScript, SlashCommand, TabId } from '../../shared/types'
 import { getSpellConfig, setSpellConfig, type SpellConfig, type SpellLang } from './spell'
 
 // App-local commands: intercepted in the prompt box and handled inside the app,
@@ -11,6 +11,8 @@ export interface AppCompletion {
   detail?: string
   /** a directory: insert without a trailing space and reopen the popup to descend */
   isDir?: boolean
+  /** accept replaces the WHOLE line with this text (Tab fills it, Enter runs it) */
+  lineText?: string
 }
 
 export interface AppCommandCtx {
@@ -71,6 +73,29 @@ export const APP_COMMANDS: AppCommand[] = [
     }
   },
   {
+    name: 'npm',
+    description: 'Run an npm script (root package.json or one folder deep)',
+    hint: '<script>',
+    runOnPick: true,
+    validate: (arg) => arg.trim().length > 0,
+    complete: async (tabId, query) => {
+      const scripts = await window.claudeTerm.listNpmScripts(tabId, query)
+      return scripts.map((s) => {
+        const key = s.dir ? `${s.dir}/${s.name}` : s.name
+        return { label: key, value: key, detail: s.command, lineText: npmRunLine(s) }
+      })
+    },
+    run: async ({ tabId, arg }) => {
+      // hand-typed arg: first token may be a "dir/script" key; the rest is params
+      const [head, ...params] = arg.trim().split(/\s+/)
+      const scripts = await window.claudeTerm.listNpmScripts(tabId, head)
+      const hit = scripts.find((s) => (s.dir ? `${s.dir}/${s.name}` : s.name) === head)
+      const base = hit ? npmRunLine(hit).trimEnd() : `!npm run ${head}`
+      window.claudeTerm.submitPrompt(tabId, [base, ...params].join(' '), 0)
+      return true
+    }
+  },
+  {
     name: 'spell',
     description: 'Text checking: spelling languages, or grammar in the docs editor',
     hint: '<off|en|nl|en+nl|grammar>',
@@ -91,6 +116,16 @@ export const APP_COMMANDS: AppCommand[] = [
     }
   }
 ]
+
+/** The runnable `!npm …` line for a script (trailing space invites params). */
+function npmRunLine(s: NpmScript): string {
+  const prefix = s.dir ? `--prefix ${quoteArg(s.dir)} ` : ''
+  return `!npm ${prefix}run ${quoteArg(s.name)} `
+}
+
+function quoteArg(v: string): string {
+  return /[^\w./:@-]/.test(v) ? JSON.stringify(v) : v
+}
 
 const SPELL_CHOICES = [
   { label: 'en+nl', value: 'en+nl', detail: 'Spelling: English and Dutch' },

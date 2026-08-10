@@ -175,7 +175,9 @@ export function setupMonaco(): typeof monaco {
           const query = argMatch[2]
           const items = await completer(tabId, query)
           const argStart = position.column - query.length
-          const range = new monaco.Range(1, argStart, 1, position.column)
+          const argRange = new monaco.Range(1, argStart, 1, position.column)
+          // lineText items (e.g. /npm) swap the whole line for a runnable command
+          const lineRange = new monaco.Range(1, 1, 1, position.column)
           return {
             suggestions: items.map((it, i) => ({
               label: it.label,
@@ -183,10 +185,10 @@ export function setupMonaco(): typeof monaco {
                 ? monaco.languages.CompletionItemKind.Folder
                 : monaco.languages.CompletionItemKind.Value,
               detail: it.detail,
-              insertText: it.value,
-              filterText: it.value,
+              insertText: it.lineText ?? it.value,
+              filterText: it.lineText ? `/${argMatch[1]} ${it.value}` : it.value,
               sortText: String(i).padStart(4, '0'),
-              range,
+              range: it.lineText ? lineRange : argRange,
               // dirs: reopen the popup on accept so the user descends a level
               command: it.isDir
                 ? { id: 'editor.action.triggerSuggest', title: 'descend' }
