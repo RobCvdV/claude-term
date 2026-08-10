@@ -8,6 +8,10 @@ import { buildSettingsOverlay, setupClaudeLauncher } from './settings-overlay'
  *  ingests the paste as prompt text before Enter arrives. */
 const SUBMIT_DELAY_MS = 50
 
+/** After a bash-mode "!" keystroke, give the TUI a beat to switch modes before
+ *  the pasted command arrives. */
+const BANG_MODE_DELAY_MS = 100
+
 /** Claude Code reads each pasted image path from disk *asynchronously* to build
  *  its [Image #N] chip; an Enter that arrives mid-read is dropped and the prompt
  *  never sends. Give image prompts a base grace period plus per-image slack. */
@@ -227,15 +231,30 @@ export class PtyManager {
   injectPrompt(tabId: TabId, text: string, imageCount = 0): void {
     const tab = this.tabs.get(tabId)
     if (!tab || tab.exited || !text) return
-    tab.proc.write(`\x1b[200~${text}\x1b[201~`)
-    const delay =
-      imageCount > 0
-        ? IMAGE_SUBMIT_BASE_MS + imageCount * IMAGE_SUBMIT_PER_IMAGE_MS
-        : SUBMIT_DELAY_MS
-    setTimeout(() => {
+    // A leading "!" only enters bash mode as a real keystroke — inside a
+    // bracketed paste it stays literal text and the line goes to Claude as a
+    // message instead of running.
+    const bang = text.startsWith('!') && !text.includes('\n')
+    const body = bang ? text.slice(1) : text
+    const paste = (): void => {
       const current = this.tabs.get(tabId)
-      if (current && !current.exited) current.proc.write('\r')
-    }, delay)
+      if (!current || current.exited) return
+      current.proc.write(`\x1b[200~${body}\x1b[201~`)
+      const delay =
+        imageCount > 0
+          ? IMAGE_SUBMIT_BASE_MS + imageCount * IMAGE_SUBMIT_PER_IMAGE_MS
+          : SUBMIT_DELAY_MS
+      setTimeout(() => {
+        const cur = this.tabs.get(tabId)
+        if (cur && !cur.exited) cur.proc.write('\r')
+      }, delay)
+    }
+    if (bang) {
+      tab.proc.write('!')
+      setTimeout(paste, BANG_MODE_DELAY_MS)
+    } else {
+      paste()
+    }
   }
 
   resize(tabId: TabId, cols: number, rows: number): void {

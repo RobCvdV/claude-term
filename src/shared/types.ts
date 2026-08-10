@@ -208,6 +208,14 @@ export interface SlashCommand {
   source: 'built-in' | 'user' | 'project' | 'plugin' | 'app'
 }
 
+/** One runnable package.json script, for the `/npm` picker. */
+export interface NpmScript {
+  /** '' for the root package.json, else the one-level-deep subfolder name */
+  dir: string
+  name: string
+  command: string
+}
+
 /** Result of an in-app `git switch` triggered by the `/switch` command. */
 export interface BranchSwitchResult {
   ok: boolean

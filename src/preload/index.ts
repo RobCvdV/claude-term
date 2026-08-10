@@ -8,6 +8,7 @@ import type {
   HelpSection,
   JiraStatus,
   LoggedWorklog,
+  NpmScript,
   PersistedSession,
   PrInfo,
   ProjectConfigFiles,
@@ -69,6 +70,8 @@ export interface ClaudeTermApi {
   listBranches(tabId: TabId, query: string): Promise<string[]>
   /** directories under cwd matching `query` (single level), for /add-dir */
   listDirs(tabId: TabId, query: string): Promise<string[]>
+  /** package.json scripts (root + one level deep) matching `query`, for /npm */
+  listNpmScripts(tabId: TabId, query: string): Promise<NpmScript[]>
   /** run `git switch <branch>` in the tab's cwd */
   switchBranch(tabId: TabId, branch: string): Promise<BranchSwitchResult>
   listDocs(tabId: TabId): Promise<ProjectDocs>
@@ -157,6 +160,7 @@ const api: ClaudeTermApi = {
   searchFiles: (tabId, query) => ipcRenderer.invoke('completions:files', tabId, query),
   listBranches: (tabId, query) => ipcRenderer.invoke('completions:branches', tabId, query),
   listDirs: (tabId, query) => ipcRenderer.invoke('completions:dirs', tabId, query),
+  listNpmScripts: (tabId, query) => ipcRenderer.invoke('completions:npmScripts', tabId, query),
   switchBranch: (tabId, branch) => ipcRenderer.invoke('git:switch', tabId, branch),
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
   readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
