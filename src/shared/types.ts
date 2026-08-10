@@ -236,6 +236,15 @@ export interface NpmScript {
 }
 
 /** Result of an in-app `git switch` triggered by the `/switch` command. */
+/** One branch the user worked on, for the ⌘K palette's recent-branch recall. */
+export interface BranchHistoryEntry {
+  /** workspace folder the branch was seen checked out in */
+  root: string
+  branch: string
+  /** epoch ms the branch was last seen checked out */
+  lastUsed: number
+}
+
 export interface BranchSwitchResult {
   ok: boolean
   error?: string

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ActivityState, TabId, TabInfo, TabStatus } from '../../../shared/types'
+import type {
+  ActivityState,
+  BranchHistoryEntry,
+  TabId,
+  TabInfo,
+  TabStatus
+} from '../../../shared/types'
 import { bestScore } from '../palette-match'
+import { agoLabel, branchKey, rankBranches } from '../branch-recall'
 import { needsInput } from '../attention'
 
 export interface PaletteAction {
@@ -16,13 +23,14 @@ interface Props {
   statuses: Record<TabId, TabStatus | null>
   activeId: TabId | null
   actions: PaletteAction[]
+  branches: BranchHistoryEntry[]
   onSelectTab: (tabId: TabId) => void
   onClose: () => void
 }
 
 interface Item {
   key: string
-  kind: 'tab' | 'action'
+  kind: 'tab' | 'action' | 'branch'
   label: string
   detail?: string
   shortcut?: string
@@ -41,12 +49,14 @@ function dotFor(status: TabStatus | null | undefined): string {
   return map[status.activity] ?? 'dot idle'
 }
 
-/** ⌘K palette: fuzzy-jump to a tab (by title/folder/branch) or run an app action. */
+/** ⌘K palette: fuzzy-jump to a tab (by title/folder/branch), recall a recently
+ *  worked-on branch (Enter copies its name), or run an app action. */
 export function CommandPalette({
   tabs,
   statuses,
   activeId,
   actions,
+  branches,
   onSelectTab,
   onClose
 }: Props): React.JSX.Element {
@@ -89,8 +99,25 @@ export function CommandPalette({
       actionItems.push({ key: `act:${a.id}`, kind: 'action', score, ...a })
     }
     if (query) actionItems.sort((a, b) => b.score - a.score)
-    return [...tabItems, ...actionItems]
-  }, [tabs, statuses, activeId, actions, query, onSelectTab])
+    // branches currently on an open tab are covered by their tab row above
+    const openKeys = new Set<string>()
+    for (const tab of tabs) {
+      const st = statuses[tab.tabId]
+      if (st?.git?.branch) openKeys.add(branchKey(st.cwd, st.git.branch))
+      for (const repo of st?.extraRepos ?? []) openKeys.add(branchKey(repo.root, repo.git.branch))
+    }
+    const branchItems: Item[] = rankBranches(query, branches, openKeys).map((entry) => ({
+      key: `branch:${entry.root}:${entry.branch}`,
+      kind: 'branch',
+      label: entry.branch,
+      detail: [entry.root.split('/').filter(Boolean).pop(), agoLabel(entry.lastUsed)]
+        .filter(Boolean)
+        .join(' · '),
+      shortcut: '⏎ copy',
+      run: () => void navigator.clipboard.writeText(entry.branch)
+    }))
+    return [...tabItems, ...branchItems, ...actionItems]
+  }, [tabs, statuses, activeId, actions, branches, query, onSelectTab])
 
   // the list can shrink under the highlight (e.g. a status change) — clamp it
   const sel = Math.min(selected, Math.max(0, items.length - 1))
@@ -111,7 +138,7 @@ export function CommandPalette({
           ref={inputRef}
           className="palette-input"
           value={query}
-          placeholder="Jump to tab or run a command…"
+          placeholder="Jump to tab, recall a branch, or run a command…"
           spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -136,6 +163,8 @@ export function CommandPalette({
             >
               {item.kind === 'tab' ? (
                 <span className={item.dot} />
+              ) : item.kind === 'branch' ? (
+                <span className="palette-action-mark">⎇</span>
               ) : (
                 <span className="palette-action-mark">›</span>
               )}

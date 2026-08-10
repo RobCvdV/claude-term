@@ -38,7 +38,10 @@ function HowTo(): React.JSX.Element {
       </section>
       <section>
         <h3>Getting around</h3>
-        <Keys k="⌘K">Command palette — fuzzy-jump to a tab or run an action</Keys>
+        <Keys k="⌘K">
+          Command palette — fuzzy-jump to a tab, recall a recent branch (Enter copies its name), or
+          run an action
+        </Keys>
         <Keys k="⌘E">Mission control — every tab at a glance</Keys>
         <Keys k="⌘⇧A">Jump to the next tab waiting for input</Keys>
         <Keys k="⌘F">Search the terminal scrollback</Keys>

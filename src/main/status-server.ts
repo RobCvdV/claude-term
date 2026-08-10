@@ -57,6 +57,10 @@ export class StatusServer {
    *  (permission prompt, question picker) — not for idle notifications. */
   onAttention: (tabId: TabId, hookEvent: string) => void = () => {}
 
+  /** Set by ipc.ts; feeds the branch-history store — fired for every branch
+   *  seen checked out in a tab's workspace (own repo + extra repos). */
+  onBranchSeen: (root: string, branch: string) => void = () => {}
+
   /** Set by ipc.ts; injects `/rename <name>` into the tab's live Claude session
    *  when the git branch changes, so the Claude app's session name tracks the
    *  branch (matching the launch-time `--name`). Only fired while idle. */
@@ -375,6 +379,10 @@ export class StatusServer {
     const current = this.tabs.get(tabId)
     if (!current) return
     const extras = await extraRepoStatuses(current.status, git)
+    // recency feed for the ⌘K recent-branches list; before the change check so
+    // an unchanged checkout still counts as "worked on today"
+    if (git?.branch) this.onBranchSeen(current.cwd, git.branch)
+    for (const extra of extras) this.onBranchSeen(extra.root, extra.git.branch)
     const gitChanged = JSON.stringify(current.status.git) !== JSON.stringify(git)
     const extrasChanged = JSON.stringify(current.status.extraRepos) !== JSON.stringify(extras)
     if (!gitChanged && !extrasChanged) return
