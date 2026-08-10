@@ -1,4 +1,4 @@
-import type { TabStatus } from '../../shared/types'
+import type { TabStatus } from './types'
 
 export interface FolderChip {
   /** full path, for the tooltip */
@@ -12,7 +12,8 @@ const strip = (p: string): string => p.replace(/\/+$/, '')
 /** noisy repo-name prefixes to drop in the display name (longest first) */
 const PREFIXES = ['mendrix-mobile-', 'mendrix-', 'eyo-cordova-']
 
-const nameOf = (p: string): string => {
+/** Display name for a workspace folder: last segment, noisy prefixes dropped. */
+export const nameOf = (p: string): string => {
   const base = p.split('/').filter(Boolean).pop() ?? p
   for (const pre of PREFIXES) {
     if (base.startsWith(pre) && base.length > pre.length) return base.slice(pre.length)

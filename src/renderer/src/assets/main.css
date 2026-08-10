@@ -1942,3 +1942,29 @@ body {
 .ci-unknown {
   color: var(--fg-dim);
 }
+
+/* ---- multi-repo groups: PR dropdown titles + extra repo CI links ---- */
+.pr-dropdown .pr-group {
+  padding: 5px 8px 1px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fg-dim);
+}
+
+.pr-dropdown .pr-group:not(:first-child) {
+  margin-top: 3px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.repo-ci {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.repo-ci-name {
+  font-size: 9px;
+  color: var(--fg-dim);
+}

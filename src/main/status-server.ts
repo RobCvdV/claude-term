@@ -8,11 +8,13 @@ import type {
   CiInfo,
   GitInfo,
   HookEvent,
+  RepoStatus,
   StatuslinePayload,
   TabId,
   TabStatus
 } from '../shared/types'
 import { parseRemote } from '../shared/repo-links'
+import { statusFolders } from '../shared/status-folders'
 import { pullRequestUrl } from './pr-links'
 import { sessionNameForBranch } from './session-name'
 
@@ -136,7 +138,8 @@ export class StatusServer {
         addedDirs,
         payload: null,
         git: null,
-        ci: null
+        ci: null,
+        extraRepos: []
       }
     })
     void this.refreshGit(tabId)
@@ -163,6 +166,20 @@ export class StatusServer {
     const prev = tab.status.ci
     if (JSON.stringify(prev) === JSON.stringify(ci)) return
     tab.status.ci = ci
+    this.onUpdate(tab.status)
+    if (prev?.state === 'success' && ci?.state === 'failed') {
+      this.onAttention(tabId, 'CiFailed')
+    }
+  }
+
+  /** CI poller result for one of a tab's extra workspace repos. */
+  setRepoCi(tabId: TabId, root: string, ci: CiInfo | null): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen) return
+    const entry = tab.status.extraRepos.find((r) => r.root === root)
+    if (!entry || JSON.stringify(entry.ci) === JSON.stringify(ci)) return
+    const prev = entry.ci
+    entry.ci = ci
     this.onUpdate(tab.status)
     if (prev?.state === 'success' && ci?.state === 'failed') {
       this.onAttention(tabId, 'CiFailed')
@@ -357,16 +374,19 @@ export class StatusServer {
     const git = await gitInfo(tab.cwd)
     const current = this.tabs.get(tabId)
     if (!current) return
-    if (JSON.stringify(current.status.git) !== JSON.stringify(git)) {
-      const prevBranch = current.status.git?.branch ?? null
-      current.status.git = git
-      this.onUpdate(current.status)
-      // A real branch switch (not the initial populate) on a live session:
-      // rename the Claude session to match. The launch-time `--name` already
-      // covered the branch the session started on, so prevBranch must be set.
-      if (prevBranch && git?.branch && git.branch !== prevBranch) {
-        this.queueRename(tabId, current, sessionNameForBranch(git.branch))
-      }
+    const extras = await extraRepoStatuses(current.status, git)
+    const gitChanged = JSON.stringify(current.status.git) !== JSON.stringify(git)
+    const extrasChanged = JSON.stringify(current.status.extraRepos) !== JSON.stringify(extras)
+    if (!gitChanged && !extrasChanged) return
+    const prevBranch = current.status.git?.branch ?? null
+    current.status.git = git
+    current.status.extraRepos = extras
+    this.onUpdate(current.status)
+    // A real branch switch (not the initial populate) on a live session:
+    // rename the Claude session to match. The launch-time `--name` already
+    // covered the branch the session started on, so prevBranch must be set.
+    if (gitChanged && prevBranch && git?.branch && git.branch !== prevBranch) {
+      this.queueRename(tabId, current, sessionNameForBranch(git.branch))
     }
   }
 
@@ -395,6 +415,33 @@ export class StatusServer {
     tab.lastRenamedName = name
     this.onRenameSession(tabId, name)
   }
+}
+
+/** identity for de-duping workspace folders that live in the same repo */
+function remoteKey(git: GitInfo | null): string | null {
+  const repo = git?.remoteUrl ? parseRemote(git.remoteUrl) : null
+  return repo ? `${repo.host}/${repo.owner}/${repo.repo}` : null
+}
+
+/**
+ * Git state of the tab's OTHER workspace repos: every extra folder (added dirs,
+ * a /cd move) that is a git repo with a remote different from the tab's own.
+ * Existing CI results are carried over so a git refresh doesn't blank the dot.
+ */
+async function extraRepoStatuses(status: TabStatus, cwdGit: GitInfo | null): Promise<RepoStatus[]> {
+  const cwdKey = remoteKey(cwdGit)
+  const seen = new Set(cwdKey ? [cwdKey] : [])
+  const prevCi = new Map(status.extraRepos.map((r) => [r.root, r.ci]))
+  const out: RepoStatus[] = []
+  for (const { path } of statusFolders(status).others) {
+    if (!existsSync(path)) continue
+    const git = await gitInfo(path)
+    const key = remoteKey(git)
+    if (!git || !key || seen.has(key)) continue
+    seen.add(key)
+    out.push({ root: path, git, ci: prevCi.get(path) ?? null })
+  }
+  return out
 }
 
 function runGit(cwd: string, args: string[]): Promise<string | null> {

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type {
   CiInfo,
   CiProvider,
   DocGroup,
-  PrInfo,
+  PrGroup,
   ProjectDocs,
   RateForecast,
+  RepoStatus,
   TabId,
   TabStatus,
   WindowForecast
@@ -19,7 +20,7 @@ import {
   releasesUrl
 } from '../../../shared/repo-links'
 import { VolumeControl } from './VolumeControl'
-import { statusFolders, type FolderChip } from '../status-folders'
+import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
 
 interface Props {
   status: TabStatus | null
@@ -140,19 +141,21 @@ function FolderMenu({
   )
 }
 
-/** "PRs" link + dropdown of the repo's open PRs (most recent 10). Click an
- *  entry to open it in the browser; right-click for Open/Merge. Fetched lazily
- *  on open, served from a main-process cache. Fixed-positioned like the folder
- *  dropdown because the status bar clips overflow. */
+/** "PRs" link + dropdown of every workspace repo's open PRs (most recent 10
+ *  each). With several repos the entries are grouped under small folder-name
+ *  titles. Click an entry to open it in the browser; right-click for
+ *  Open/Merge. Fetched lazily on open, served from a main-process cache.
+ *  Fixed-positioned like the folder dropdown because the status bar clips
+ *  overflow. */
 function PrMenu({
   tabId,
-  currentPrUrl
+  prUrlByRoot
 }: {
   tabId: TabId
-  currentPrUrl: string | null
+  prUrlByRoot: Map<string, string | null>
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const [prs, setPrs] = useState<PrInfo[] | null>(null)
+  const [groups, setGroups] = useState<PrGroup[] | null>(null)
   const [pos, setPos] = useState({ right: 0, bottom: 0 })
   const anchor = useRef<HTMLSpanElement>(null)
 
@@ -160,9 +163,10 @@ function PrMenu({
     const r = anchor.current?.getBoundingClientRect()
     if (r) setPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top })
     setOpen(true)
-    void window.claudeTerm.listPrs(tabId).then(setPrs)
+    void window.claudeTerm.listPrs(tabId).then(setGroups)
   }
 
+  const multi = (groups?.length ?? 0) > 1
   return (
     <span ref={anchor} className="pr-menu" onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
       <span className="ext-link" onClick={() => (open ? setOpen(false) : show())}>
@@ -170,35 +174,60 @@ function PrMenu({
       </span>
       {open && (
         <div className="pr-dropdown" style={{ right: pos.right, bottom: pos.bottom }}>
-          {prs === null ? (
+          {groups === null ? (
             <div className="pr-note">loading…</div>
-          ) : prs.length === 0 ? (
+          ) : groups.length === 0 || groups.every((g) => g.prs.length === 0) ? (
             <div className="pr-note">no open PRs</div>
           ) : (
-            prs.map((pr) => (
-              <button
-                key={pr.url}
-                className={pr.url === currentPrUrl ? 'pr-current' : undefined}
-                title={pr.title}
-                onClick={() => {
-                  window.open(pr.url)
-                  setOpen(false)
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  setOpen(false)
-                  window.claudeTerm.prContextMenu(tabId, pr)
-                }}
-              >
-                <span className="pr-number">#{pr.number}</span>
-                <span className="pr-title">{pr.title}</span>
-              </button>
+            groups.map((g) => (
+              <Fragment key={g.root}>
+                {multi && (
+                  <div className="pr-group" title={g.root}>
+                    {nameOf(g.root)}
+                  </div>
+                )}
+                {multi && g.prs.length === 0 && <div className="pr-note">no open PRs</div>}
+                {g.prs.map((pr) => (
+                  <button
+                    key={pr.url}
+                    className={pr.url === prUrlByRoot.get(g.root) ? 'pr-current' : undefined}
+                    title={pr.title}
+                    onClick={() => {
+                      window.open(pr.url)
+                      setOpen(false)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setOpen(false)
+                      window.claudeTerm.prContextMenu(tabId, pr, g.root)
+                    }}
+                  >
+                    <span className="pr-number">#{pr.number}</span>
+                    <span className="pr-title">{pr.title}</span>
+                  </button>
+                ))}
+              </Fragment>
             ))
           )}
         </div>
       )}
     </span>
   )
+}
+
+/** The one CI link an extra workspace repo gets, mirroring the poller's
+ *  provider priority (jenkins → actions → circleci). */
+function extraCiLink(r: RepoStatus): { url: string; provider: CiProvider; label: string } | null {
+  const branch = r.git.branch
+  if (!branch) return null
+  const jenkins = jenkinsJobUrl(r.root.split('/').filter(Boolean).pop() ?? '', branch)
+  if (jenkins) return { url: jenkins, provider: 'jenkins', label: 'Jenkins' }
+  const repo = r.git.remoteUrl ? parseRemote(r.git.remoteUrl) : null
+  const actions = repo && r.git.hasWorkflows ? actionsUrl(repo, branch) : null
+  if (actions) return { url: actions, provider: 'actions', label: 'Actions' }
+  const circle = repo ? circleCiUrl(repo, branch) : null
+  if (circle) return { url: circle, provider: 'circleci', label: 'CircleCI' }
+  return null
 }
 
 /** Live-CI dot shown inside a CI link when the poller knows this provider. */
@@ -321,6 +350,12 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
 
   const jenkins = cwd && git?.branch ? jenkinsJobUrl(cwd.split('/').pop() ?? '', git.branch) : null
   const ci = status?.ci ?? null
+  const extraRepos = status?.extraRepos ?? []
+  // current-branch PR per workspace repo, for the dropdown's bold highlight
+  const prUrlByRoot = new Map<string, string | null>([
+    ...(cwd ? [[cwd, git?.prUrl ?? null] as const] : []),
+    ...extraRepos.map((r) => [r.root, r.git.prUrl] as const)
+  ])
 
   const rl5 = payload?.rate_limits?.five_hour
   const rl7 = payload?.rate_limits?.seven_day
@@ -449,7 +484,9 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
           CircleCI
         </ExternalLink>
       )}
-      {repo && tabId && <PrMenu tabId={tabId} currentPrUrl={git?.prUrl ?? null} />}
+      {(repo || extraRepos.length > 0) && tabId && (
+        <PrMenu tabId={tabId} prUrlByRoot={prUrlByRoot} />
+      )}
       {actions && (
         <ExternalLink
           url={actions}
@@ -460,6 +497,25 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
           Actions
         </ExternalLink>
       )}
+      {extraRepos.map((r) => {
+        const link = extraCiLink(r)
+        if (!link) return null
+        return (
+          <span key={r.root} className="repo-ci">
+            <span className="repo-ci-name" title={r.root}>
+              {nameOf(r.root)}
+            </span>
+            <ExternalLink
+              url={link.url}
+              className="ext-link"
+              title={r.ci ? `build: ${r.ci.state}` : undefined}
+            >
+              <CiDot ci={r.ci} provider={link.provider} />
+              {link.label}
+            </ExternalLink>
+          </span>
+        )
+      })}
       {releases && (
         <ExternalLink url={releases} className="ext-link">
           Releases

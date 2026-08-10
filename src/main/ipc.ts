@@ -25,8 +25,8 @@ import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { sessionDoing } from './session-summary'
 import { RateStore } from './rate-store'
-import { parseRemote } from '../shared/repo-links'
-import type { PrInfo } from '../shared/types'
+import { parseRemote, type RepoRef } from '../shared/repo-links'
+import type { PrGroup, PrInfo } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
@@ -187,22 +187,36 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     if (win) showFolderContextMenu(win, dir)
   })
 
-  // Status-bar PR dropdown: open PRs of the tab repo, and per-PR context menu.
-  const tabRepo = (tabId: TabId): { cwd: string; repo: ReturnType<typeof parseRemote> } | null => {
+  // Status-bar PR dropdown: open PRs of every workspace repo (the tab's own
+  // plus added dirs living in other repos), and the per-PR context menu.
+  const repoTargets = (tabId: TabId): Array<{ root: string; repo: RepoRef }> => {
     const snap = status.snapshot(tabId)
-    const repo = snap?.git?.remoteUrl ? parseRemote(snap.git.remoteUrl) : null
-    return repo && snap ? { cwd: snap.cwd, repo } : null
+    if (!snap) return []
+    const out: Array<{ root: string; repo: RepoRef }> = []
+    const add = (root: string, remoteUrl: string | undefined): void => {
+      const repo = remoteUrl ? parseRemote(remoteUrl) : null
+      if (repo) out.push({ root, repo })
+    }
+    add(snap.cwd, snap.git?.remoteUrl)
+    for (const r of snap.extraRepos) add(r.root, r.git.remoteUrl)
+    return out
   }
 
-  ipcMain.handle('prs:list', async (_e, tabId: TabId): Promise<PrInfo[]> => {
-    const target = tabRepo(tabId)
-    return target?.repo ? listOpenPrs(target.cwd, target.repo) : []
+  ipcMain.handle('prs:list', async (_e, tabId: TabId): Promise<PrGroup[]> => {
+    return Promise.all(
+      repoTargets(tabId).map(async ({ root, repo }) => ({
+        root,
+        prs: await listOpenPrs(root, repo)
+      }))
+    )
   })
 
-  ipcMain.on('prs:contextMenu', (e, tabId: TabId, pr: PrInfo) => {
-    const target = tabRepo(tabId)
+  ipcMain.on('prs:contextMenu', (e, tabId: TabId, pr: PrInfo, root?: string) => {
+    const targets = repoTargets(tabId)
+    // root comes from the renderer — only ever act on a root we resolved here
+    const target = targets.find((t) => t.root === root) ?? targets[0]
     const win = BrowserWindow.fromWebContents(e.sender)
-    if (target?.repo && win) showPrContextMenu(win, target.cwd, target.repo, pr)
+    if (target && win) showPrContextMenu(win, target.root, target.repo, pr)
   })
 
   ipcMain.handle('status:snapshot', (_e, tabId: TabId) => status.snapshot(tabId))
