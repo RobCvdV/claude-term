@@ -6,6 +6,9 @@ export default defineConfig({
   main: {},
   preload: {},
   renderer: {
+    // off Vite's default 5173 — electron-vite doesn't detect a foreign server
+    // there and would load its page; strictPort makes a collision fail loudly
+    server: { port: 5199, strictPort: true },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),

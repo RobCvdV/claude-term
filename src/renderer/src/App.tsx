@@ -26,7 +26,8 @@ import {
   disposeTerm,
   focusTerm,
   setTerminalEscapeHandler,
-  setTerminalTitleHandler
+  setTerminalTitleHandler,
+  terminalAtNormalInput
 } from './term-registry'
 import {
   focusForTab,
@@ -186,13 +187,16 @@ export default function App(): React.JSX.Element {
   }, [statuses])
 
   // Esc in the terminal dismisses a client-side overlay (/usage, /config, …) and
-  // should hand focus back to the box (see focusOnTerminalEscape). The delay
-  // lets the overlay finish closing and lets a rapid double-Esc still land in
-  // the terminal before we take focus.
+  // should hand focus back to the box (see focusOnTerminalEscape). At the plain
+  // prompt there is nothing to dismiss — Esc belongs to Claude Code (double-Esc
+  // rewind), so focus stays in the terminal. The handler runs before the PTY
+  // redraws, so the scrape sees the pre-Esc screen. The delay lets the overlay
+  // finish closing before we take focus.
   useEffect(() => {
     setTerminalEscapeHandler((tabId) => {
       if (tabId !== activeIdRef.current) return
       if (focusOnTerminalEscape(focusStateOf(statusesRef.current[tabId])) !== 'box') return
+      if (terminalAtNormalInput(tabId)) return
       setTimeout(() => {
         if (activeIdRef.current !== tabId) return
         applyFocus(tabId, focusOnTerminalEscape(focusStateOf(statusesRef.current[tabId])))
@@ -465,6 +469,8 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'k') {
         // palette toggle (the old ⌘K "focus prompt box" moved to ⌘L)
         e.preventDefault()
+        // toggling closed unmounts the focused palette input — put focus back
+        if (showPalette && activeId) restoreFocus(activeId)
         setShowPalette((v) => !v)
       } else if (e.key === 'l') {
         e.preventDefault()
@@ -493,7 +499,18 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [tabs, activeId, newTab, openFolder, closeTab, stepTab, jumpAttention, openSearch])
+  }, [
+    tabs,
+    activeId,
+    newTab,
+    openFolder,
+    closeTab,
+    stepTab,
+    jumpAttention,
+    openSearch,
+    showPalette,
+    restoreFocus
+  ])
 
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
   const showClaudeUi = !!activeStatus?.claudeActive
@@ -677,6 +694,7 @@ export default function App(): React.JSX.Element {
               onOpenPalette={openPalette}
               onFindInTerminal={openSearch}
               onOpenMission={() => setShowMission(true)}
+              onShowHelp={() => setHelpSection('howto')}
             />
           )}
         </>

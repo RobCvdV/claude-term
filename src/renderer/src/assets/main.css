@@ -138,6 +138,7 @@ body {
 }
 
 .tab-close {
+  margin-left: auto;
   background: none;
   border: none;
   color: var(--fg-dim);

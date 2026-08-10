@@ -4,7 +4,12 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { TabId } from '../../shared/types'
-import { agentsOverviewInRows, dialogOpenInRows, PROMPT_MARKERS } from './terminal-scan'
+import {
+  agentsOverviewInRows,
+  dialogOpenInRows,
+  hasPromptInputRow,
+  PROMPT_MARKERS
+} from './terminal-scan'
 
 export interface TermEntry {
   term: Terminal
@@ -236,6 +241,16 @@ export function agentsOverviewOpen(tabId: TabId): boolean {
  */
 export function terminalDialogOpen(tabId: TabId): boolean {
   return dialogOpenInRows(bottomRows(tabId))
+}
+
+/**
+ * Is the terminal at Claude Code's plain prompt — input line rendered, no
+ * dialog/overlay? Esc pressed here is meant for Claude Code itself (clear
+ * input, double-Esc rewind), not for dismissing anything.
+ */
+export function terminalAtNormalInput(tabId: TabId): boolean {
+  const rows = bottomRows(tabId)
+  return hasPromptInputRow(rows) && !dialogOpenInRows(rows)
 }
 
 // test hooks (CDP/DevTools): what the TUI scrapers see for a tab right now.

@@ -32,6 +32,8 @@ interface Props {
   onFindInTerminal: () => void
   /** ⌘E — likewise; mission control, never Monaco's find-with-selection */
   onOpenMission: () => void
+  /** ⌘/ — likewise; the help overlay, never Monaco's toggle-comment */
+  onShowHelp: () => void
 }
 
 // One dropped attachment: `mention` is what actually gets submitted to claude
@@ -63,7 +65,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     color,
     onOpenPalette,
     onFindInTerminal,
-    onOpenMission
+    onOpenMission,
+    onShowHelp
   },
   ref
 ): React.JSX.Element {
@@ -89,6 +92,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   findInTerminalRef.current = onFindInTerminal
   const openMissionRef = useRef(onOpenMission)
   openMissionRef.current = onOpenMission
+  const showHelpRef = useRef(onShowHelp)
+  showHelpRef.current = onShowHelp
   const colorRef = useRef(onColor)
   colorRef.current = onColor
   const autoFocusRef = useRef(autoFocus)
@@ -498,6 +503,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       findInTerminalRef.current()
     )
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => openMissionRef.current())
+    // ⌘/ is Monaco's toggle-comment — rebind to the Quick How-To overlay
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => showHelpRef.current())
 
     // Monaco never auto-triggers suggest on deletions (its quick-suggest path
     // only fires when the cursor moves right). Re-open the popup ourselves
