@@ -21,21 +21,22 @@
     <rect x="106" y="106" width="812" height="812" rx="180" fill="url(#bg)"/>
   </g>
 
-  <!-- traffic lights -->
-  <g opacity="0.9">
-    <circle cx="212" cy="218" r="26" fill="#ff5f57"/>
-    <circle cx="292" cy="218" r="26" fill="#febc2e"/>
-    <circle cx="372" cy="218" r="26" fill="#28c840"/>
-  </g>
-  <!-- title bar divider -->
-  <line x1="118" y1="304" x2="906" y2="304" stroke="#ffffff" stroke-opacity="0.07" stroke-width="4"/>
+  <!-- tab bar divider, broken under the active tab -->
+  <line x1="118" y1="310" x2="252" y2="310" stroke="#ffffff" stroke-opacity="0.2" stroke-width="18"/>
+  <line x1="550" y1="310" x2="906" y2="310" stroke="#ffffff" stroke-opacity="0.2" stroke-width="18"/>
+  <!-- active tab: left/top/right borderlines, rounded top corners, open bottom -->
+  <path d="M 252 310 L 252 206 Q 252 176 282 176 L 520 176 Q 550 176 550 206 L 550 310"
+        fill="#ffffff" fill-opacity="0"
+        stroke="#bbbbbb" stroke-opacity="0.9" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="310" cy="240" r="24" fill="#ff4422" stroke-width="8"/>
+  <circle cx="630" cy="240" r="24" fill="#99ff22" stroke-width="8"/>
 
   <!-- prompt chevron -->
-  <path d="M 210 500 L 320 610 L 210 720" fill="none" stroke="#b8bcc8" stroke-width="52"
+  <path d="M 240 500 L 350 610 L 240 720" fill="none" stroke="#b8bcc8" stroke-width="52"
         stroke-linecap="round" stroke-linejoin="round"/>
 
   <!-- Claude starburst -->
-  <g transform="translate(568 610)" stroke="#d97757" stroke-width="40" stroke-linecap="round">
+  <g transform="translate(600 610)" stroke="#d97757" stroke-width="40" stroke-linecap="round">
     <line x1="0" y1="0" x2="178" y2="0" transform="rotate(0)"/>
     <line x1="0" y1="0" x2="106" y2="0" transform="rotate(33)"/>
     <line x1="0" y1="0" x2="176" y2="0" transform="rotate(63)"/>
@@ -48,7 +49,4 @@
     <line x1="0" y1="0" x2="104" y2="0" transform="rotate(285)"/>
     <line x1="0" y1="0" x2="174" y2="0" transform="rotate(318)"/>
   </g>
-
-  <!-- block cursor -->
-  <rect x="806" y="548" width="64" height="124" rx="10" fill="#d97757" opacity="0.85"/>
 </svg>
