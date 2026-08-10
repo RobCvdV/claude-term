@@ -1,6 +1,7 @@
 node_modules
 dist
 out
+tmp
 
 # copied from node_modules by postinstall (scripts/copy-harper-wasm.mjs)
 resources/harper-grammar.wasm
@@ -9,3 +10,6 @@ resources/harper-grammar.wasm
 *.log*
 
 *.tsbuildinfo
+/ROADMAP.md
+
+.idea
