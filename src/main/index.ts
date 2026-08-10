@@ -144,19 +144,26 @@ app.whenReady().then(async () => {
 
 // Set when quitting to install an update: the user already consented via the
 // update prompt, so skip the normal "quit?" / background-agent dialogs and let
-// the quit proceed straight into the installer.
+// the quit proceed straight into the installer. Shutdown is awaited *before*
+// autoUpdater.quitAndInstall — its quit must not be preventDefault'ed, or the
+// staged install can be dropped.
 let updateQuit = false
-function prepareUpdateQuit(): void {
+async function prepareUpdateQuit(): Promise<void> {
   updateQuit = true
-  shutdown()
+  await shutdown()
 }
 
 let quitConfirmed = false
 app.on('before-quit', (e) => {
-  if (quitConfirmed || updateQuit || !mainWindow) return
-  // Fast path: no Claude session ever ran this session → nothing to guard.
-  if (services.status.activeClaudeCount() === 0 && services.status.seenSessionIds().length === 0) {
-    shutdown()
+  if (quitConfirmed || updateQuit) return
+  // No window (closed before quit) or no Claude session ever ran → nothing to
+  // ask, but the ptys still need draining before the quit may proceed.
+  if (
+    !mainWindow ||
+    (services.status.activeClaudeCount() === 0 && services.status.seenSessionIds().length === 0)
+  ) {
+    e.preventDefault()
+    finishQuit()
     return
   }
   // Otherwise defer: we may need to look up daemon background agents (async).
@@ -166,15 +173,9 @@ app.on('before-quit', (e) => {
 
 function finishQuit(stopAgents: LiveAgent[] = []): void {
   quitConfirmed = true
-  shutdown()
-  if (stopAgents.length === 0) {
-    app.quit()
-    return
-  }
-  // Stop our daemon background agents (best-effort) before we go.
-  void Promise.all(stopAgents.map((a) => stopBackgroundAgent(a.id ?? a.sessionId))).finally(() =>
-    app.quit()
-  )
+  // Stop our daemon background agents (best-effort) alongside shutdown.
+  const stop = Promise.all(stopAgents.map((a) => stopBackgroundAgent(a.id ?? a.sessionId)))
+  void Promise.allSettled([shutdown(), stop]).then(() => app.quit())
 }
 
 async function confirmQuit(): Promise<void> {
@@ -230,14 +231,22 @@ async function confirmQuit(): Promise<void> {
   if (choice === 0) finishQuit()
 }
 
-function shutdown(): void {
-  ciPoller.stop()
-  // Freeze *first*: killing the PTYs makes every tab report its Claude session
-  // gone, and those updates would otherwise reach the renderer before its final
-  // save — persisting live conversations as "no session" (see StatusServer.freeze).
-  services.status.freeze()
-  services.ptys.killAll()
-  services.status.stop()
+// Kill the ptys and wait for node-pty to deliver their exit callbacks before
+// the quit proceeds: an exit callback landing during Node teardown aborts the
+// process (SIGABRT in pty.node's ThreadSafeFunction). Idempotent — the quit
+// path can be entered more than once (window close + ⌘Q, update install).
+let shutdownDone: Promise<void> | null = null
+function shutdown(): Promise<void> {
+  shutdownDone ??= (async () => {
+    ciPoller.stop()
+    // Freeze *first*: killing the PTYs makes every tab report its Claude session
+    // gone, and those updates would otherwise reach the renderer before its final
+    // save — persisting live conversations as "no session" (see StatusServer.freeze).
+    services.status.freeze()
+    await services.ptys.disposeAll()
+    services.status.stop()
+  })()
+  return shutdownDone
 }
 
 app.on('window-all-closed', () => {

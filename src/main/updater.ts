@@ -98,10 +98,13 @@ function forget(): void {
   notifyRenderer(null)
 }
 
-/** Ask the user to restart & install the downloaded update. On consent, run
+/** Ask the user to restart & install the downloaded update. On consent, await
  *  `prepareQuit` (so the app tears down cleanly without the normal quit prompts)
  *  and relaunch into the installer. Returns whether the install was started. */
-function promptAndInstall(getWindow: () => BrowserWindow | null, prepareQuit: () => void): boolean {
+async function promptAndInstall(
+  getWindow: () => BrowserWindow | null,
+  prepareQuit: () => Promise<void>
+): Promise<boolean> {
   if (!downloadedVersion) return false
   const win = getWindow()
   const opts: Electron.MessageBoxSyncOptions = {
@@ -114,7 +117,7 @@ function promptAndInstall(getWindow: () => BrowserWindow | null, prepareQuit: ()
   }
   const choice = win ? dialog.showMessageBoxSync(win, opts) : dialog.showMessageBoxSync(opts)
   if (choice !== 0) return false
-  prepareQuit()
+  await prepareQuit()
   // (isSilent=false, isForceRunAfter=true): show the brief installer on Windows
   // but always relaunch afterwards; macOS always relaunches. The relaunched app
   // restores its tabs + resumes/reattaches sessions via the normal startup path.
@@ -132,7 +135,7 @@ function promptAndInstall(getWindow: () => BrowserWindow | null, prepareQuit: ()
  */
 export async function installUpdate(
   getWindow: () => BrowserWindow | null,
-  prepareQuit: () => void
+  prepareQuit: () => Promise<void>
 ): Promise<boolean> {
   const pending = downloadedVersion
   const result = await check()
@@ -164,7 +167,7 @@ export async function installUpdate(
  */
 export async function checkForUpdatesInteractive(
   getWindow: () => BrowserWindow | null,
-  prepareQuit: () => void
+  prepareQuit: () => Promise<void>
 ): Promise<void> {
   if (!app.isPackaged) {
     box(getWindow, {
@@ -196,7 +199,7 @@ export async function checkForUpdatesInteractive(
   }
   // The newest release is the one already sitting on disk — offer to install it.
   if (result.version === pending) {
-    promptAndInstall(getWindow, prepareQuit)
+    await promptAndInstall(getWindow, prepareQuit)
     return
   }
   box(getWindow, {
