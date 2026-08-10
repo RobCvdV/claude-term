@@ -55,7 +55,8 @@ const services = createServices(() => mainWindow)
 // while the window is actually on screen; results ride status:update.
 const ciPoller = new CiPoller(
   () => services.status.allSnapshots(),
-  (tabId, ci) => services.status.setCi(tabId, ci),
+  (tabId, root, ci) =>
+    root === null ? services.status.setCi(tabId, ci) : services.status.setRepoCi(tabId, root, ci),
   () =>
     !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()
 )

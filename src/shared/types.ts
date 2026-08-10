@@ -96,6 +96,15 @@ export interface RateForecast {
   sevenDay: WindowForecast
 }
 
+/** Git + CI state of one additional workspace repo (an added dir whose repo
+ *  differs from the tab's own). Grouped under its folder name in the UI. */
+export interface RepoStatus {
+  /** absolute path of the workspace folder that surfaced this repo */
+  root: string
+  git: GitInfo
+  ci: CiInfo | null
+}
+
 /** Everything the renderer needs to draw one tab's status bar. */
 export interface TabStatus {
   tabId: TabId
@@ -118,6 +127,9 @@ export interface TabStatus {
   git: GitInfo | null
   /** live CI state for this tab's repo+branch (null until the poller knows) */
   ci: CiInfo | null
+  /** other workspace repos (added dirs in a different repo), with their own
+   *  git + CI state — drives the grouped PR dropdown and extra CI links */
+  extraRepos: RepoStatus[]
 }
 
 /** Which tab of the Help overlay to open (Help menu / ⌘/). */
@@ -130,6 +142,13 @@ export interface PrInfo {
   url: string
   /** the PR context menu may offer "Merge" (GitHub repo with push access) */
   canMerge: boolean
+}
+
+/** One workspace repo's open PRs, a group in the status-bar PR dropdown. */
+export interface PrGroup {
+  /** absolute path of the workspace folder this repo belongs to */
+  root: string
+  prs: PrInfo[]
 }
 
 /** A markdown document surfaced in the status-bar Docs overlay. */

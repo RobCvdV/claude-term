@@ -14,6 +14,7 @@ const status = (overrides: Partial<TabStatus>): TabStatus => ({
   payload: null,
   git: null,
   ci: null,
+  extraRepos: [],
   ...overrides
 })
 

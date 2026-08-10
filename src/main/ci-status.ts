@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { basename } from 'path'
-import type { CiInfo, CiProvider, CiState, TabId, TabStatus } from '../shared/types'
+import type { CiInfo, CiProvider, CiState, GitInfo, TabId, TabStatus } from '../shared/types'
 import {
   actionsUrl,
   circleCiUrl,
@@ -42,7 +42,8 @@ export class CiPoller {
 
   constructor(
     private readonly getSnapshots: () => TabStatus[],
-    private readonly setCi: (tabId: TabId, ci: CiInfo | null) => void,
+    /** `root` is null for the tab's own repo, else the extra workspace folder */
+    private readonly setCi: (tabId: TabId, root: string | null, ci: CiInfo | null) => void,
     private readonly isActive: () => boolean
   ) {}
 
@@ -60,17 +61,27 @@ export class CiPoller {
     if (this.sweeping || !this.isActive()) return
     this.sweeping = true
     try {
-      // group tabs by distinct CI target so each is fetched once
-      const jobs = new Map<string, { target: Target; tabs: TabId[] }>()
+      // group (tab, workspace repo) pairs by distinct CI target so each is
+      // fetched once — many tabs/roots on the same repo+branch share the answer
+      const jobs = new Map<
+        string,
+        { target: Target; tabs: Array<{ tabId: TabId; root: string | null }> }
+      >()
       for (const snap of this.getSnapshots()) {
-        const target = targetFor(snap)
-        if (!target) {
-          this.setCi(snap.tabId, null)
-          continue
+        const repos: Array<{ root: string | null; cwd: string; git: GitInfo | null }> = [
+          { root: null, cwd: snap.cwd, git: snap.git },
+          ...snap.extraRepos.map((r) => ({ root: r.root, cwd: r.root, git: r.git }))
+        ]
+        for (const { root, cwd, git } of repos) {
+          const target = targetFor(cwd, git)
+          if (!target) {
+            this.setCi(snap.tabId, root, null)
+            continue
+          }
+          const job = jobs.get(target.key) ?? { target, tabs: [] }
+          job.tabs.push({ tabId: snap.tabId, root })
+          jobs.set(target.key, job)
         }
-        const job = jobs.get(target.key) ?? { target, tabs: [] }
-        job.tabs.push(snap.tabId)
-        jobs.set(target.key, job)
       }
       // sequential fetches: natural stagger, and there are only a few keys
       for (const { target, tabs } of jobs.values()) {
@@ -87,9 +98,10 @@ export class CiPoller {
           this.cache.set(target.key, { state, fetchedAt: Date.now(), failedFetch })
         }
         const state = this.cache.get(target.key)!.state
-        for (const tabId of tabs) {
+        for (const { tabId, root } of tabs) {
           this.setCi(
             tabId,
+            root,
             state === 'unknown' ? null : { provider: target.provider, state, url: target.url }
           )
         }
@@ -100,11 +112,10 @@ export class CiPoller {
   }
 }
 
-function targetFor(snap: TabStatus): Target | null {
-  const git = snap.git
+function targetFor(cwd: string, git: GitInfo | null): Target | null {
   if (!git?.branch) return null
   const branch = git.branch
-  const jenkins = jenkinsJobUrl(basename(snap.cwd), branch)
+  const jenkins = jenkinsJobUrl(basename(cwd), branch)
   if (jenkins) {
     return {
       key: `jenkins:${jenkins}`,
@@ -119,7 +130,7 @@ function targetFor(snap: TabStatus): Target | null {
       key: `actions:${repo.owner}/${repo.repo}#${branch}`,
       provider: 'actions',
       url: actionsUrl(repo, branch) as string,
-      fetch: () => fetchActions(snap.cwd, branch)
+      fetch: () => fetchActions(cwd, branch)
     }
   }
   const circle = repo ? circleCiUrl(repo, branch) : null

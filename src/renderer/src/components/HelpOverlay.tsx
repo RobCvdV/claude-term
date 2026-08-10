@@ -72,7 +72,10 @@ function HowTo(): React.JSX.Element {
         <Keys k="right-click">
           Folder chip: open in WebStorm / VS Code / Finder / iTerm2 / new tab
         </Keys>
-        <Keys k="PRs">Open PRs of the repo — click opens, right-click: Open / Merge</Keys>
+        <Keys k="PRs">
+          Open PRs of every workspace repo, grouped by folder — click opens, right-click: Open /
+          Merge
+        </Keys>
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>

@@ -9,6 +9,7 @@ import type {
   JiraStatus,
   LoggedWorklog,
   PersistedSession,
+  PrGroup,
   PrInfo,
   ProjectConfigFiles,
   ProjectDocs,
@@ -36,12 +37,13 @@ export interface ClaudeTermApi {
   folderContextMenu(dir: string): void
   /** "Open in New Tab…" was picked in the folder context menu */
   onOpenFolderTab(cb: (dir: string) => void): () => void
-  /** open PRs of the tab's repo, most recent first (max 10) */
-  listPrs(tabId: TabId): Promise<PrInfo[]>
+  /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
+  listPrs(tabId: TabId): Promise<PrGroup[]>
   /** Help menu picked Quick How-To / User Guide — open the help overlay */
   onShowHelp(cb: (section: HelpSection) => void): () => void
-  /** native right-click menu for a PR entry (Open / Merge where allowed) */
-  prContextMenu(tabId: TabId, pr: PrInfo): void
+  /** native right-click menu for a PR entry (Open / Merge where allowed);
+   *  `root` is the workspace folder of the PR's repo group */
+  prContextMenu(tabId: TabId, pr: PrInfo, root?: string): void
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   /** one-line "doing" snippet for a tab's session (mission control) */
   missionDoing(tabId: TabId): Promise<string | null>
@@ -138,7 +140,7 @@ const api: ClaudeTermApi = {
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
   onShowHelp: (cb) => subscribe('help:show', cb),
-  prContextMenu: (tabId, pr) => ipcRenderer.send('prs:contextMenu', tabId, pr),
+  prContextMenu: (tabId, pr, root) => ipcRenderer.send('prs:contextMenu', tabId, pr, root),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   missionDoing: (tabId) => ipcRenderer.invoke('mission:doing', tabId),
   rateForecast: () => ipcRenderer.invoke('rate:forecast'),
