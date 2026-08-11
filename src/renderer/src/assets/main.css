@@ -1749,6 +1749,33 @@ body {
   padding: 4px 8px;
 }
 
+/* ---- branch menu (status bar, anchored on the branch chip) ---- */
+.branch-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.branch-dropdown {
+  min-width: 240px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.branch-dropdown .pr-current {
+  font-weight: 600;
+  cursor: default;
+}
+
+.branch-dropdown .branch-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.branch-error {
+  color: var(--red);
+  white-space: normal;
+}
+
 /* ---- help overlay (Help menu / ⌘/) ---- */
 .help-panel {
   width: min(980px, 94vw);

@@ -250,6 +250,15 @@ export interface BranchSwitchResult {
   error?: string
 }
 
+/** Local branches of one workspace repo, for the status bar's branch menu. */
+export interface BranchGroup {
+  root: string
+  /** currently checked-out branch (null when detached) */
+  current: string | null
+  /** other local branches, most-recently-committed first */
+  branches: string[]
+}
+
 export interface TabInfo {
   tabId: TabId
   cwd: string

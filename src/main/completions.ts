@@ -317,7 +317,8 @@ function runGitBranches(cwd: string): Promise<string[]> {
   })
 }
 
-async function listAllBranches(cwd: string): Promise<string[]> {
+/** Non-current local branches, most-recently-committed first (10s cache). */
+export async function listAllBranches(cwd: string): Promise<string[]> {
   const cached = branchCache.get(cwd)
   if (cached && Date.now() - cached.at < BRANCH_CACHE_TTL_MS) return cached.branches
   const branches = await runGitBranches(cwd)

@@ -79,6 +79,10 @@ function HowTo(): React.JSX.Element {
           Open PRs of every workspace repo, grouped by folder — click opens, right-click: Open /
           Merge
         </Keys>
+        <Keys k="branch">
+          Hover the branch chip: every workspace repo&apos;s branches — click switches that repo,
+          right-click opens it on the remote
+        </Keys>
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
