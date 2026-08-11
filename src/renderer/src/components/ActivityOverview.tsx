@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useModalOverlay } from '../modal-overlay'
 import type {
   ActivityReport,
   BookedWorklog,
@@ -169,13 +170,7 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
   }
 
   // Escape closes; overlay is modal so grab focus off the terminal.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const panelRef = useModalOverlay<HTMLDivElement>(onClose)
 
   const maxHours = report?.totals.reduce((m, t) => Math.max(m, t.hours), 0) ?? 0
   const empty = !report || report.days.length === 0
@@ -198,7 +193,12 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
 
   return (
     <div className="activity-backdrop" onMouseDown={onClose}>
-      <div className="activity-panel" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="activity-panel"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="activity-head">
           <span className="activity-title">Activity hours</span>
           <div className="activity-mode">
