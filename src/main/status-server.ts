@@ -463,13 +463,22 @@ function runGit(cwd: string, args: string[]): Promise<string | null> {
   })
 }
 
+/** origin's URL, falling back to the repo's first remote whatever its name —
+ *  a repo remoted as e.g. "BitBucket" is still part of the workspace. */
+export async function firstRemoteUrl(cwd: string): Promise<string | null> {
+  const origin = await runGit(cwd, ['remote', 'get-url', 'origin'])
+  if (origin) return origin
+  const first = (await runGit(cwd, ['remote']))?.split('\n')[0]?.trim()
+  return first ? runGit(cwd, ['remote', 'get-url', first]) : null
+}
+
 async function gitInfo(cwd: string): Promise<GitInfo | null> {
   const branch = await runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
   if (branch === null) return null
   const [porcelain, upstream, remoteUrl, topLevel] = await Promise.all([
     runGit(cwd, ['status', '--porcelain']),
     runGit(cwd, ['rev-parse', '--abbrev-ref', '@{upstream}']),
-    runGit(cwd, ['remote', 'get-url', 'origin']),
+    firstRemoteUrl(cwd),
     runGit(cwd, ['rev-parse', '--show-toplevel'])
   ])
   const changed = porcelain ? porcelain.split('\n').filter(Boolean).length : 0
