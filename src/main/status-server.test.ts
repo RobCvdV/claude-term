@@ -129,6 +129,37 @@ describe('StatusServer', () => {
   })
 })
 
+describe('firstRemoteUrl (real git)', () => {
+  it('prefers origin, falls back to any-named remote, null with none', async () => {
+    const { mkdtempSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const { join } = await import('path')
+    const { execFileSync } = await import('child_process')
+    const { firstRemoteUrl } = await import('./status-server')
+
+    const base = mkdtempSync(join(tmpdir(), 'ct-remote-'))
+    const make = (name: string, remotes: [string, string][]): string => {
+      const dir = join(base, name)
+      execFileSync('git', ['init', '-q', dir])
+      for (const [rname, url] of remotes) {
+        execFileSync('git', ['-C', dir, 'remote', 'add', rname, url])
+      }
+      return dir
+    }
+
+    const withOrigin = make('a', [
+      ['BitBucket', 'git@bitbucket.org:x/other.git'],
+      ['origin', 'git@bitbucket.org:x/a.git']
+    ])
+    const namedOnly = make('b', [['BitBucket', 'git@bitbucket.org:x/b.git']])
+    const bare = make('c', [])
+
+    expect(await firstRemoteUrl(withOrigin)).toBe('git@bitbucket.org:x/a.git')
+    expect(await firstRemoteUrl(namedOnly)).toBe('git@bitbucket.org:x/b.git')
+    expect(await firstRemoteUrl(bare)).toBeNull()
+  })
+})
+
 describe('stale-tab routing (attached agents after an app restart)', () => {
   const route = (server: StatusServer, tabId: string, sessionId?: string): string =>
     (server as unknown as { resolveTab: (t: string, s?: string) => string }).resolveTab(

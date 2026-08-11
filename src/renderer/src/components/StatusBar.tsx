@@ -155,7 +155,8 @@ function BranchLabel({ branch }: { branch: string }): React.JSX.Element {
   )
 }
 
-const BRANCHES_SHOWN = 12
+// 7: the magic/biblical super number — enough recall, no wall of branches
+const BRANCHES_SHOWN = 7
 
 /** The branch chip + dropdown of every workspace repo's local branches
  *  (most-recently-committed first, grouped under folder names with several
