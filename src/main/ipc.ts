@@ -26,6 +26,7 @@ import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { sessionDoing } from './session-summary'
 import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
+import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
 import type { PrGroup, PrInfo } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
@@ -76,7 +77,15 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // A branch switch renames the live session (name has no spaces → no quoting).
   status.onRenameSession = (tabId, name) => ptys.injectPrompt(tabId, `/rename ${name}`)
-  status.onBranchSeen = (root, branch) => branches.record(root, branch)
+  // First sighting of a repo this run: pull its reflog into the history, so
+  // branches from before the app (or this feature) existed are recallable too.
+  const backfilled = new Set<string>()
+  status.onBranchSeen = (root, branch) => {
+    branches.record(root, branch)
+    if (backfilled.has(root)) return
+    backfilled.add(root)
+    void reflogBranches(root).then((found) => branches.backfill(root, found))
+  }
   return { ptys, status, rate, branches }
 }
 

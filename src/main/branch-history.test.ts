@@ -60,6 +60,35 @@ describe('record / recent', () => {
   })
 })
 
+describe('backfill', () => {
+  it('inserts unknown branches with their historical time', () => {
+    store.backfill('/repo/a', [{ branch: 'feature/old', lastUsed: T0 - 86_400_000 }])
+    expect(store.recent()).toEqual([
+      { root: '/repo/a', branch: 'feature/old', lastUsed: T0 - 86_400_000 }
+    ])
+  })
+
+  it('never lowers the recency of a branch the poller already saw', () => {
+    store.record('/repo/a', 'feature/x', T0)
+    store.backfill('/repo/a', [{ branch: 'feature/x', lastUsed: T0 - 1000 }])
+    expect(store.recent()[0].lastUsed).toBe(T0)
+  })
+
+  it('raises recency when the reflog knows a newer sighting', () => {
+    store.record('/repo/a', 'feature/x', T0 - 86_400_000)
+    store.backfill('/repo/a', [{ branch: 'feature/x', lastUsed: T0 }])
+    expect(store.recent()[0].lastUsed).toBe(T0)
+  })
+
+  it('applies the skip list and persists the merge', () => {
+    store.backfill('/repo/a', [
+      { branch: 'main', lastUsed: T0 },
+      { branch: 'feature/x', lastUsed: T0 }
+    ])
+    expect(new BranchHistory(() => file).recent().map((e) => e.branch)).toEqual(['feature/x'])
+  })
+})
+
 describe('persistence', () => {
   it('round-trips through the file', () => {
     store.record('/repo/a', 'feature/x', T0)

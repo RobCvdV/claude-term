@@ -57,6 +57,34 @@ export class BranchHistory {
     }
   }
 
+  /** Merge historical sightings (a repo's reflog): unknown branches are
+   *  inserted with their reflog time, known ones never lose recency. */
+  backfill(root: string, found: { branch: string; lastUsed: number }[]): void {
+    const all = this.load()
+    let changed = false
+    for (const f of found) {
+      if (SKIP.has(f.branch)) continue
+      const existing = all.find((e) => e.root === root && e.branch === f.branch)
+      if (existing) {
+        if (f.lastUsed > existing.lastUsed) {
+          existing.lastUsed = f.lastUsed
+          changed = true
+        }
+      } else {
+        all.push({ root, branch: f.branch, lastUsed: f.lastUsed })
+        changed = true
+      }
+    }
+    if (!changed) return
+    all.sort((a, b) => b.lastUsed - a.lastUsed)
+    this.entries = all.slice(0, KEEP)
+    try {
+      writeFileSync(this.file(), JSON.stringify(this.entries))
+    } catch {
+      /* best effort */
+    }
+  }
+
   /** Most recently used first. */
   recent(limit = 100): BranchHistoryEntry[] {
     return this.load().slice(0, limit)
