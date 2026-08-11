@@ -252,17 +252,30 @@ function navigateDir(cwd: string, query: string, limit: number, dirsOnly = false
   return scored.slice(0, limit).map((e) => dirPart + e.name + (e.isDir ? '/' : ''))
 }
 
+/** Expand a leading `~` to the home dir. Suggestions built from the result
+ *  are absolute — `@/abs` mentions are what Claude Code verifiably parses,
+ *  `@~/…` is not. Null when the query isn't home-relative. */
+export function expandHome(query: string, home = homedir()): string | null {
+  if (query === '~') return home + '/'
+  if (query.startsWith('~/')) return home + query.slice(1)
+  return null
+}
+
 /**
  * Directory-only navigation for the `/add-dir` picker: single level, from cwd
- * (relative, absolute, or ".."-climbing), each dir with a trailing "/" so the
- * renderer can descend level by level. Empty query lists cwd's directories.
+ * (relative, absolute, "~"-home or ".."-climbing), each dir with a trailing
+ * "/" so the renderer can descend level by level. Empty query lists cwd's
+ * directories.
  */
 export function listDirs(cwd: string, query: string, limit = 30): string[] {
-  return navigateDir(cwd, query, limit, true)
+  return navigateDir(cwd, expandHome(query) ?? query, limit, true)
 }
 
 export async function searchFiles(cwd: string, query: string, limit = 30): Promise<string[]> {
-  if (/^\.\.(\/|$)/.test(query)) return navigateDir(cwd, query, limit)
+  // `~`, `/` and `..` leave the project: shell-style one-level navigation
+  const home = expandHome(query)
+  if (home !== null) return navigateDir(cwd, home, limit)
+  if (query.startsWith('/') || /^\.\.(\/|$)/.test(query)) return navigateDir(cwd, query, limit)
   const files = await listFiles(cwd)
   const q = query.toLowerCase()
   if (!q) return files.slice(0, limit)
