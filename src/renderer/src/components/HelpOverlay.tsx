@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { HelpSection } from '../../../shared/types'
+import { useModalOverlay } from '../modal-overlay'
 
 interface Props {
   section: HelpSection
@@ -184,18 +185,16 @@ function Guide(): React.JSX.Element {
  *  App keys the element by `section`, so a menu pick re-mounts on the right tab. */
 export function HelpOverlay({ section, onClose }: Props): React.JSX.Element {
   const [active, setActive] = useState<HelpSection>(section)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const panelRef = useModalOverlay<HTMLDivElement>(onClose)
 
   return (
     <div className="activity-backdrop" onMouseDown={onClose}>
-      <div className="activity-panel help-panel" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="activity-panel help-panel"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="activity-head">
           <span className="activity-title">Help</span>
           <div className="activity-range">

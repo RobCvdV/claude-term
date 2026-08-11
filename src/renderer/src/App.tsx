@@ -152,10 +152,18 @@ export default function App(): React.JSX.Element {
     return window.claudeTerm.onUpdateDownloaded((version) => setUpdateVersion(version))
   }, [])
 
-  // Help menu (or its ⌘/ accelerator) picked a section
+  // Help menu (or its ⌘/ accelerator) picked a section; the same section
+  // again (⌘/ with the overlay open) toggles it closed, like Esc
   useEffect(() => {
-    return window.claudeTerm.onShowHelp((section) => setHelpSection(section))
-  }, [])
+    return window.claudeTerm.onShowHelp((section) =>
+      setHelpSection((prev) => {
+        if (prev !== section) return section
+        const tabId = activeIdRef.current
+        if (tabId) restoreFocus(tabId)
+        return null
+      })
+    )
+  }, [restoreFocus])
 
   // plain terminals: adopt the shell's OSC title unless the user renamed the tab.
   // Strip any leading status emoji (e.g. "🟢 claude-term · main") — our own tab
@@ -487,7 +495,11 @@ export default function App(): React.JSX.Element {
         openSearch()
       } else if (e.key === 'e') {
         e.preventDefault()
-        setShowMission((v) => !v)
+        // the overlay holds focus while open — closing must give it back
+        setShowMission((v) => {
+          if (v && activeId) restoreFocus(activeId)
+          return !v
+        })
       } else if (e.key.toLowerCase() === 'a' && e.shiftKey) {
         e.preventDefault()
         jumpAttention()
@@ -619,7 +631,13 @@ export default function App(): React.JSX.Element {
         onJumpAttention={jumpAttention}
       />
       {showActivity && (
-        <ActivityOverview onClose={() => setShowActivity(false)} onFillPrompt={fillPromptIfEmpty} />
+        <ActivityOverview
+          onClose={() => {
+            setShowActivity(false)
+            if (activeId) restoreFocus(activeId)
+          }}
+          onFillPrompt={fillPromptIfEmpty}
+        />
       )}
       {helpSection && (
         <HelpOverlay
