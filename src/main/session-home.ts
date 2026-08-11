@@ -3,11 +3,18 @@ import { homedir } from 'os'
 import { join } from 'path'
 
 /**
- * The directory a conversation lives in: the cwd of its last transcript
- * record. `claude --resume` from any other directory re-homes the whole
- * conversation (the CLI moves its transcript to the launch dir), so restore
- * must resume from here — not from wherever the tab happens to spawn.
- * Null when the transcript is missing or unreadable.
+ * The directory a conversation lives in — its project dir, which is what the
+ * transcript's parent folder name encodes. `claude --resume` from any other
+ * directory re-homes the whole conversation (the CLI moves its transcript to
+ * the launch dir), so restore must resume from here — not from wherever the
+ * tab happens to spawn.
+ *
+ * Each record's `cwd` is the session's LIVE shell cwd, which visits other
+ * workspace repos as the session works — so the last record's cwd is NOT the
+ * home (a multi-repo session that quit while its shell sat in another repo
+ * used to get re-homed there on restore). The home is the newest record cwd
+ * that encodes to the folder the transcript actually lives in.
+ * Null when the transcript is missing, unreadable, or never mentions it.
  */
 export function sessionHomeDir(
   sessionId: string,
@@ -22,12 +29,17 @@ export function sessionHomeDir(
   const file = `${sessionId}.jsonl`
   for (const d of dirs) {
     const path = join(projectsDir, d, file)
-    if (existsSync(path)) return lastCwd(path)
+    if (existsSync(path)) return homeCwd(path, d)
   }
   return null
 }
 
-function lastCwd(path: string): string | null {
+/** Claude Code's project-folder encoding: every non-alphanumeric char → '-'. */
+export function encodeProjectDir(path: string): string {
+  return path.replace(/[^A-Za-z0-9]/g, '-')
+}
+
+function homeCwd(path: string, folderName: string): string | null {
   let text: string
   try {
     text = readFileSync(path, 'utf8')
@@ -40,7 +52,7 @@ function lastCwd(path: string): string | null {
     if (!line) continue
     try {
       const cwd = (JSON.parse(line) as { cwd?: unknown }).cwd
-      if (typeof cwd === 'string' && cwd) return cwd
+      if (typeof cwd === 'string' && cwd && encodeProjectDir(cwd) === folderName) return cwd
     } catch {
       // partial/corrupt trailing line — keep walking up
     }
