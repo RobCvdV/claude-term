@@ -1,7 +1,7 @@
 import { createServer, Server } from 'http'
 import { randomBytes } from 'crypto'
 import { execFile } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type {
   ActivityState,
@@ -17,9 +17,25 @@ import { parseRemote } from '../shared/repo-links'
 import { statusFolders } from '../shared/status-folders'
 import { pullRequestUrl } from './pr-links'
 import { sessionNameForBranch } from './session-name'
+import { attachedActivity } from './attached-activity'
+import { transcriptPathFor } from './session-home'
+import { readJobState } from './agents'
 
 const GIT_CACHE_MS = 5_000
 const GIT_TIMER_MS = 10_000
+const ATTACH_TIMER_MS = 3_000
+
+/** A tab hosting an attached background agent. Its hooks/statusline carry the
+ *  --settings of the app run that launched it, so unless that endpoint still
+ *  resolves here (see resolveTab) no live feed arrives — activity is then
+ *  synthesized from the transcript file and the daemon's job state. */
+interface AttachedFeed {
+  sessionId: string
+  jobId: string | null
+  transcriptPath: string | null
+  /** a real hook/statusline reached this tab — stop synthesizing */
+  live: boolean
+}
 
 interface TabState {
   status: TabStatus
@@ -39,10 +55,35 @@ interface TabState {
  * a busy/idle activity state, so the renderer can re-render at any time.
  */
 export class StatusServer {
-  readonly token = randomBytes(16).toString('hex')
+  readonly token: string
   private server: Server | null = null
   private tabs = new Map<TabId, TabState>()
+  private attached = new Map<TabId, AttachedFeed>()
   private gitTimer: NodeJS.Timeout | null = null
+  private attachTimer: NodeJS.Timeout | null = null
+
+  /** The endpoint (port + token) is persisted so it survives app restarts:
+   *  a background agent's --settings are baked at its launch and live as long
+   *  as the agent — a fresh ephemeral port would orphan every running one. */
+  constructor(private readonly endpointFile?: () => string) {
+    this.token = this.loadEndpoint()?.token ?? randomBytes(16).toString('hex')
+  }
+
+  private loadEndpoint(): { port: number; token: string } | null {
+    if (!this.endpointFile) return null
+    try {
+      const raw = JSON.parse(readFileSync(this.endpointFile(), 'utf8')) as {
+        port?: unknown
+        token?: unknown
+      }
+      if (typeof raw.port === 'number' && typeof raw.token === 'string' && raw.token) {
+        return { port: raw.port, token: raw.token }
+      }
+    } catch {
+      /* first run or corrupt file */
+    }
+    return null
+  }
   /** Every session id that has POSTed to us this run (tabs + any background
    *  agents dispatched from a tab). Used at quit to find our daemon agents. */
   private seenSessions = new Set<string>()
@@ -85,22 +126,49 @@ export class StatusServer {
         } catch {
           return
         }
+        const target = this.resolveTab(tabId, (body as { session_id?: string }).session_id)
         if (url.pathname === '/statusline') {
-          this.handleStatusline(tabId, body as StatuslinePayload)
+          this.handleStatusline(target, body as StatuslinePayload)
         } else if (url.pathname === '/hook') {
-          this.handleHook(tabId, body as HookEvent)
+          this.handleHook(target, body as HookEvent)
         }
       })
     })
-    await new Promise<void>((resolve, reject) => {
-      this.server!.once('error', reject)
-      this.server!.listen(0, '127.0.0.1', () => {
-        const addr = this.server!.address()
-        if (addr && typeof addr === 'object') this.port = addr.port
-        resolve()
+    const listen = (port: number): Promise<number> =>
+      new Promise((resolve, reject) => {
+        const onError = (err: Error): void => reject(err)
+        this.server!.once('error', onError)
+        this.server!.listen(port, '127.0.0.1', () => {
+          this.server!.removeListener('error', onError)
+          const addr = this.server!.address()
+          resolve(addr && typeof addr === 'object' ? addr.port : 0)
+        })
       })
-    })
+    try {
+      this.port = await listen(this.loadEndpoint()?.port ?? 0)
+    } catch {
+      // persisted port taken (another instance/process) — fall back, re-persist
+      this.port = await listen(0)
+    }
+    if (this.endpointFile) {
+      try {
+        writeFileSync(this.endpointFile(), JSON.stringify({ port: this.port, token: this.token }))
+      } catch {
+        /* best effort */
+      }
+    }
     this.gitTimer = setInterval(() => this.refreshAllGit(), GIT_TIMER_MS)
+    this.attachTimer = setInterval(() => this.pollAttached(), ATTACH_TIMER_MS)
+  }
+
+  /** A POST whose tab id is stale (an attached agent's overlay predates this
+   *  app run) is re-routed to whichever current tab hosts that session. */
+  private resolveTab(tabId: TabId, sessionId?: string): TabId {
+    if (this.tabs.has(tabId) || !sessionId) return tabId
+    for (const [id, tab] of this.tabs) {
+      if (tab.status.sessionId === sessionId) return id
+    }
+    return tabId
   }
 
   /**
@@ -122,7 +190,49 @@ export class StatusServer {
 
   stop(): void {
     if (this.gitTimer) clearInterval(this.gitTimer)
+    if (this.attachTimer) clearInterval(this.attachTimer)
     this.server?.close()
+  }
+
+  /** The tab hosts an attached background agent — synthesize its activity
+   *  (transcript writes → busy, daemon `blocked` → needs-attention) until a
+   *  real hook or statusline proves a live feed reaches us. */
+  markAttached(tabId: TabId, sessionId: string, jobId: string | null): void {
+    this.attached.set(tabId, {
+      sessionId,
+      jobId,
+      transcriptPath: transcriptPathFor(sessionId),
+      live: false
+    })
+  }
+
+  private pollAttached(): void {
+    if (this.frozen) return
+    for (const [tabId, feed] of this.attached) {
+      if (feed.live) continue
+      const tab = this.tabs.get(tabId)
+      if (!tab || !tab.status.claudeActive) continue
+      feed.transcriptPath ??= transcriptPathFor(feed.sessionId)
+      let mtime: number | null = null
+      if (feed.transcriptPath) {
+        try {
+          mtime = statSync(feed.transcriptPath).mtimeMs
+        } catch {
+          feed.transcriptPath = null
+        }
+      }
+      const next = attachedActivity({
+        transcriptMtime: mtime,
+        jobState: feed.jobId ? readJobState(feed.jobId) : null,
+        now: Date.now()
+      })
+      const prev = tab.status.activity
+      if (next === prev) continue
+      tab.status.busySince = next === 'busy' ? Date.now() : null
+      tab.status.activity = next
+      this.onUpdate(tab.status)
+      if (next === 'needs-attention') this.onAttention(tabId, 'AgentBlocked')
+    }
   }
 
   registerTab(tabId: TabId, cwd: string, addedDirs: string[] = []): void {
@@ -151,6 +261,7 @@ export class StatusServer {
 
   removeTab(tabId: TabId): void {
     this.tabs.delete(tabId)
+    this.attached.delete(tabId)
   }
 
   snapshot(tabId: TabId): TabStatus | null {
@@ -283,6 +394,7 @@ export class StatusServer {
   private handleStatusline(tabId: TabId, payload: StatuslinePayload): void {
     const tab = this.tabs.get(tabId)
     if (!tab || this.frozen) return
+    this.markFeedLive(tabId)
     if (payload.session_id) this.seenSessions.add(payload.session_id)
     tab.status.claudeActive = true
     tab.status.payload = payload
@@ -310,6 +422,7 @@ export class StatusServer {
     // SessionEnd arrives for every tab while we're quitting; honoring it would
     // erase the very state we're about to persist (see freeze).
     if (!tab || this.frozen) return
+    this.markFeedLive(tabId)
     if (evt.session_id) this.seenSessions.add(evt.session_id)
     // Note: the generic `Notification` hook is intentionally NOT mapped to an
     // activity state. It fires both for permission needs AND as a "waiting for
@@ -363,6 +476,12 @@ export class StatusServer {
     // Turn just ended — a safe moment to apply a branch-switch rename that
     // arrived mid-turn (see queueRename).
     if (next === 'idle') this.flushPendingRename(tabId, tab)
+  }
+
+  /** A real feed reached this tab — the synthetic attached poll stands down. */
+  private markFeedLive(tabId: TabId): void {
+    const feed = this.attached.get(tabId)
+    if (feed) feed.live = true
   }
 
   private refreshAllGit(): void {

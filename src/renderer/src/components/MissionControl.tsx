@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActivityState, TabId, TabInfo, TabStatus } from '../../../shared/types'
+import { useModalOverlay } from '../modal-overlay'
 
 interface Props {
   tabs: TabInfo[]
@@ -49,13 +50,7 @@ export function MissionControl({
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const panelRef = useModalOverlay<HTMLDivElement>(onClose)
 
   // "doing" snippets: fetched when a card first appears, refreshed when its
   // tab's turn ends (busy → not-busy) — the moment the transcript has news.
@@ -82,7 +77,12 @@ export function MissionControl({
 
   return (
     <div className="activity-backdrop" onMouseDown={onClose}>
-      <div className="activity-panel mission-panel" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="activity-panel mission-panel"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="activity-head">
           <span className="activity-title">Mission control</span>
           <button className="help-close" onClick={onClose} title="Close (Esc)">

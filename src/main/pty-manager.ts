@@ -276,7 +276,28 @@ export class PtyManager {
     this.tabs.delete(tabId)
   }
 
-  killAll(): void {
-    for (const tabId of [...this.tabs.keys()]) this.kill(tabId)
+  /** Kill every pty and resolve once each exit callback has been delivered.
+   *  Quitting while node-pty's exit events are still queued aborts the whole
+   *  process: the ThreadSafeFunction fires into the dying Node environment and
+   *  the resulting napi throw terminates (SIGABRT). */
+  disposeAll(timeoutMs = 1500): Promise<void> {
+    const pending: Promise<void>[] = []
+    for (const [tabId, tab] of this.tabs) {
+      if (!tab.exited) {
+        pending.push(new Promise((resolve) => tab.proc.onExit(() => resolve())))
+        try {
+          tab.proc.kill()
+        } catch {
+          /* already dead — its exit event resolves the waiter */
+        }
+      }
+      this.tabs.delete(tabId)
+    }
+    if (pending.length === 0) return Promise.resolve()
+    // Backstop: a wedged shell must not hold the quit hostage.
+    return Promise.race([
+      Promise.all(pending).then(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+    ])
   }
 }

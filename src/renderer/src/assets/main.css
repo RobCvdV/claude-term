@@ -684,6 +684,11 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
+/* panels grab keyboard focus while open (modal) — no focus ring for that */
+.activity-panel:focus {
+  outline: none;
+}
+
 .activity-head {
   display: flex;
   align-items: center;
