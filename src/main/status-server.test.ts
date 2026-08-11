@@ -128,3 +128,101 @@ describe('StatusServer', () => {
     })
   })
 })
+
+describe('stale-tab routing (attached agents after an app restart)', () => {
+  const route = (server: StatusServer, tabId: string, sessionId?: string): string =>
+    (server as unknown as { resolveTab: (t: string, s?: string) => string }).resolveTab(
+      tabId,
+      sessionId
+    )
+
+  it('re-routes an unknown tab id to the tab hosting that session', () => {
+    const { server, tabId } = withLiveTab()
+    expect(route(server, 'stale-tab-from-old-run', 'sess-1')).toBe(tabId)
+  })
+
+  it('keeps known tab ids and unknown sessions as-is', () => {
+    const { server, tabId } = withLiveTab()
+    expect(route(server, tabId, 'sess-1')).toBe(tabId)
+    expect(route(server, 'stale-tab', 'sess-nobody')).toBe('stale-tab')
+    expect(route(server, 'stale-tab')).toBe('stale-tab')
+  })
+})
+
+describe('attached-agent synthetic activity', () => {
+  const poll = (server: StatusServer): void =>
+    (server as unknown as { pollAttached: () => void }).pollAttached()
+  const feedOf = (
+    server: StatusServer,
+    tabId: string
+  ): { transcriptPath: string | null; live: boolean } =>
+    (
+      server as unknown as {
+        attached: Map<string, { transcriptPath: string | null; live: boolean }>
+      }
+    ).attached.get(tabId)!
+
+  it('derives busy from a fresh transcript write and idle from silence', async () => {
+    const { mkdtempSync, writeFileSync, utimesSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const { join } = await import('path')
+    const { server, updates, tabId } = withLiveTab()
+    server.markAttached(tabId, 'sess-1', null)
+    const transcript = join(mkdtempSync(join(tmpdir(), 'ct-attach-')), 'sess-1.jsonl')
+    writeFileSync(transcript, '{}\n')
+    feedOf(server, tabId).transcriptPath = transcript
+
+    poll(server)
+    expect(server.snapshot(tabId)?.activity).toBe('busy')
+    expect(updates.at(-1)?.busySince).not.toBeNull()
+
+    const old = (Date.now() - 60_000) / 1000
+    utimesSync(transcript, old, old)
+    poll(server)
+    expect(server.snapshot(tabId)?.activity).toBe('idle')
+  })
+
+  it('stands down once a real feed reaches the tab', async () => {
+    const { mkdtempSync, writeFileSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const { join } = await import('path')
+    const { server, tabId } = withLiveTab()
+    server.markAttached(tabId, 'sess-1', null)
+    const transcript = join(mkdtempSync(join(tmpdir(), 'ct-attach2-')), 'sess-1.jsonl')
+    writeFileSync(transcript, '{}\n')
+    feedOf(server, tabId).transcriptPath = transcript
+
+    hook(server, tabId, 'UserPromptSubmit')
+    expect(feedOf(server, tabId).live).toBe(true)
+    hook(server, tabId, 'Stop')
+    poll(server) // fresh transcript would say busy — but the live feed said idle
+    expect(server.snapshot(tabId)?.activity).toBe('idle')
+  })
+})
+
+describe('endpoint persistence', () => {
+  it('keeps port and token across restarts; falls back when the port is taken', async () => {
+    const { mkdtempSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const { join } = await import('path')
+    const file = join(mkdtempSync(join(tmpdir(), 'ct-endpoint-')), 'status-endpoint.json')
+
+    const first = new StatusServer(() => file)
+    await first.start()
+    const { port, token } = first
+    expect(port).toBeGreaterThan(0)
+    first.stop()
+    // same file → same endpoint on the next run
+    const second = new StatusServer(() => file)
+    await second.start()
+    expect(second.port).toBe(port)
+    expect(second.token).toBe(token)
+    // port already held by `second` → a third instance falls back to a new one
+    const third = new StatusServer(() => file)
+    await third.start()
+    expect(third.port).not.toBe(port)
+    expect(third.port).toBeGreaterThan(0)
+    second.stop()
+    third.stop()
+  })
+})
