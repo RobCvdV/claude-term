@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type {
+  BranchGroup,
   CiInfo,
   CiProvider,
   DocGroup,
@@ -135,6 +136,144 @@ function FolderMenu({
               {f.name}
             </button>
           ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** A branch name with the ticket number highlighted, for the branch menu. */
+function BranchLabel({ branch }: { branch: string }): React.JSX.Element {
+  const m = TICKET_RE.exec(branch)
+  if (!m) return <span className="pr-title">{branch}</span>
+  return (
+    <span className="pr-title">
+      <span className="dim">{m[1] ?? ''}</span>
+      <span className="ticket">{m[2]}</span>
+      {m[3] ?? ''}
+    </span>
+  )
+}
+
+const BRANCHES_SHOWN = 12
+
+/** The branch chip + dropdown of every workspace repo's local branches
+ *  (most-recently-committed first, grouped under folder names with several
+ *  repos). Click an entry to `git switch` that repo there — the session gets
+ *  the same "branch switched" FYI as /switch; right-click opens the branch on
+ *  Bitbucket/GitHub. Fetched lazily on open, like the PR menu. */
+function BranchMenu({
+  tabId,
+  cwd,
+  chip,
+  remoteByRoot
+}: {
+  tabId: TabId
+  cwd: string
+  chip: React.ReactNode
+  remoteByRoot: Map<string, string>
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [groups, setGroups] = useState<BranchGroup[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [pos, setPos] = useState({ left: 0, bottom: 0 })
+  const anchor = useRef<HTMLSpanElement>(null)
+
+  const show = (): void => {
+    const r = anchor.current?.getBoundingClientRect()
+    if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top })
+    setOpen(true)
+    setErr(null)
+    void window.claudeTerm.listWorkspaceBranches(tabId).then(setGroups)
+  }
+
+  const pick = async (root: string, branch: string): Promise<void> => {
+    if (busy) return
+    setBusy(branch)
+    setErr(null)
+    const res = await window.claudeTerm.switchBranch(tabId, branch, root)
+    setBusy(null)
+    if (!res.ok) {
+      setErr(res.error || 'git switch failed')
+      return
+    }
+    setOpen(false)
+    // notify only (no /clear): let claude know its file view may be stale
+    const where = root === cwd ? 'this repo' : `the repo at ${root}`
+    window.claudeTerm.submitPrompt(
+      tabId,
+      `FYI: I switched ${where} to branch \`${branch}\`. Files you read earlier may have changed — re-read before editing.`,
+      0
+    )
+  }
+
+  const openRemote = (root: string, branch: string): void => {
+    const remote = remoteByRoot.get(root)
+    const repo = remote ? parseRemote(remote) : null
+    if (repo) window.open(branchUrl(repo, branch))
+  }
+
+  const multi = (groups?.length ?? 0) > 1
+  return (
+    <span
+      ref={anchor}
+      className="branch-menu"
+      onMouseEnter={show}
+      onMouseLeave={() => setOpen(false)}
+    >
+      {chip}
+      {open && (
+        <div className="pr-dropdown branch-dropdown" style={{ left: pos.left, bottom: pos.bottom }}>
+          {err && <div className="pr-note branch-error">{err}</div>}
+          {groups === null ? (
+            <div className="pr-note">loading…</div>
+          ) : groups.length === 0 ? (
+            <div className="pr-note">no git repos</div>
+          ) : (
+            groups.map((g) => (
+              <Fragment key={g.root}>
+                {multi && (
+                  <div className="pr-group" title={g.root}>
+                    {nameOf(g.root)}
+                  </div>
+                )}
+                {g.current && (
+                  <button
+                    className="pr-current"
+                    title={`${g.current} — checked out in ${g.root}`}
+                    onClick={() => setOpen(false)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      openRemote(g.root, g.current!)
+                    }}
+                  >
+                    <BranchLabel branch={g.current} />
+                  </button>
+                )}
+                {g.branches.length === 0 && <div className="pr-note">no other branches</div>}
+                {g.branches.slice(0, BRANCHES_SHOWN).map((b) => (
+                  <button
+                    key={b}
+                    className={busy === b ? 'branch-busy' : undefined}
+                    title={`switch ${g.root} to ${b} — right-click opens it on the remote`}
+                    onClick={() => void pick(g.root, b)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      openRemote(g.root, b)
+                    }}
+                  >
+                    <BranchLabel branch={b} />
+                  </button>
+                ))}
+                {g.branches.length > BRANCHES_SHOWN && (
+                  <div className="pr-note">
+                    +{g.branches.length - BRANCHES_SHOWN} more (/switch)
+                  </div>
+                )}
+              </Fragment>
+            ))
+          )}
         </div>
       )}
     </span>
@@ -356,6 +495,11 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
     ...(cwd ? [[cwd, git?.prUrl ?? null] as const] : []),
     ...extraRepos.map((r) => [r.root, r.git.prUrl] as const)
   ])
+  // remote per workspace repo, for the branch menu's right-click open
+  const remoteByRoot = new Map<string, string>([
+    ...(cwd && git?.remoteUrl ? [[cwd, git.remoteUrl] as const] : []),
+    ...extraRepos.filter((r) => r.git.remoteUrl).map((r) => [r.root, r.git.remoteUrl] as const)
+  ])
 
   const rl5 = payload?.rate_limits?.five_hour
   const rl7 = payload?.rate_limits?.seven_day
@@ -392,7 +536,12 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
     <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
       {activityEl}
       {home && <FolderMenu home={home} others={others} />}
-      {branchEl}
+      {branchEl &&
+        (tabId && cwd ? (
+          <BranchMenu tabId={tabId} cwd={cwd} chip={branchEl} remoteByRoot={remoteByRoot} />
+        ) : (
+          branchEl
+        ))}
       {git && (
         <span className="git-stats">
           {git.changed > 0 && <span className="stat-changed">~{git.changed}</span>}

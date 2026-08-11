@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import type { DocGroup, PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
-import { listBranches, listCommands, listDirs, searchFiles } from './completions'
+import { listAllBranches, listBranches, listCommands, listDirs, searchFiles } from './completions'
+import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
 import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
@@ -407,10 +408,19 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     return cwd ? listNpmScripts(cwd, query) : []
   })
 
-  ipcMain.handle('git:switch', (_e, tabId: TabId, branch: string) => {
-    const cwd = status.getCwd(tabId)
-    return cwd ? switchBranch(cwd, branch) : { ok: false, error: 'no working directory' }
+  ipcMain.handle('git:switch', (_e, tabId: TabId, branch: string, root?: string) => {
+    // `root` targets one of the tab's OTHER workspace repos (branch menu);
+    // only folders the status bar actually points at are allowed
+    if (root && !isWorkspaceRoot(status.snapshot(tabId), root)) {
+      return { ok: false, error: 'not a workspace folder of this tab' }
+    }
+    const dir = root ?? status.getCwd(tabId)
+    return dir ? switchBranch(dir, branch) : { ok: false, error: 'no working directory' }
   })
+
+  ipcMain.handle('branches:workspace', (_e, tabId: TabId) =>
+    workspaceBranchGroups(status.snapshot(tabId), listAllBranches)
+  )
 
   ipcMain.on('pty:input', (_e, tabId: TabId, data: string) => ptys.write(tabId, data))
   ipcMain.on('pty:resize', (_e, tabId: TabId, cols: number, rows: number) =>

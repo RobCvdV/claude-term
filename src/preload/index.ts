@@ -3,6 +3,7 @@ import type {
   ActivityReport,
   BookedWorklog,
   BookResult,
+  BranchGroup,
   BranchHistoryEntry,
   BranchSwitchResult,
   DocGroup,
@@ -77,8 +78,11 @@ export interface ClaudeTermApi {
   listDirs(tabId: TabId, query: string): Promise<string[]>
   /** package.json scripts (root + one level deep) matching `query`, for /npm */
   listNpmScripts(tabId: TabId, query: string): Promise<NpmScript[]>
-  /** run `git switch <branch>` in the tab's cwd */
-  switchBranch(tabId: TabId, branch: string): Promise<BranchSwitchResult>
+  /** run `git switch <branch>` in the tab's cwd, or in one of the tab's other
+   *  workspace repos when `root` is given (status-bar branch menu) */
+  switchBranch(tabId: TabId, branch: string, root?: string): Promise<BranchSwitchResult>
+  /** local branches of every workspace repo, grouped by folder (branch menu) */
+  listWorkspaceBranches(tabId: TabId): Promise<BranchGroup[]>
   listDocs(tabId: TabId): Promise<ProjectDocs>
   readDoc(tabId: TabId, path: string): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
@@ -167,7 +171,8 @@ const api: ClaudeTermApi = {
   listBranches: (tabId, query) => ipcRenderer.invoke('completions:branches', tabId, query),
   listDirs: (tabId, query) => ipcRenderer.invoke('completions:dirs', tabId, query),
   listNpmScripts: (tabId, query) => ipcRenderer.invoke('completions:npmScripts', tabId, query),
-  switchBranch: (tabId, branch) => ipcRenderer.invoke('git:switch', tabId, branch),
+  switchBranch: (tabId, branch, root) => ipcRenderer.invoke('git:switch', tabId, branch, root),
+  listWorkspaceBranches: (tabId) => ipcRenderer.invoke('branches:workspace', tabId),
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
   readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
