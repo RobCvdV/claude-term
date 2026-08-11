@@ -583,7 +583,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           <div className="editor-placeholder">
             {disabled
               ? 'session ended'
-              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘L here)'}
+              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘L here), ⌘/ cheat sheet'}
           </div>
         )}
       </div>
