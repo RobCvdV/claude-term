@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  BranchHistoryEntry,
   DocGroup,
   HelpSection,
   PersistedSession,
@@ -79,6 +80,8 @@ export default function App(): React.JSX.Element {
   const [dropTarget, setDropTarget] = useState<'prompt' | 'terminal' | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
+  // recent-branch history for the palette, refreshed each time it opens
+  const [recentBranches, setRecentBranches] = useState<BranchHistoryEntry[]>([])
   const [showMission, setShowMission] = useState(false)
   // help overlay: which section to show, or null when closed (Help menu / ⌘/)
   const [helpSection, setHelpSection] = useState<HelpSection | null>(null)
@@ -455,6 +458,10 @@ export default function App(): React.JSX.Element {
   const openPalette = useCallback((): void => setShowPalette(true), [])
 
   useEffect(() => {
+    if (showPalette) void window.claudeTerm.recentBranches().then(setRecentBranches)
+  }, [showPalette])
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!e.metaKey) return
       if (e.key === 't') {
@@ -643,6 +650,7 @@ export default function App(): React.JSX.Element {
           statuses={statuses}
           activeId={activeId}
           actions={paletteActions}
+          branches={recentBranches}
           onSelectTab={setActiveId}
           onClose={() => {
             setShowPalette(false)

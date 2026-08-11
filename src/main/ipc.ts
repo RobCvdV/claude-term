@@ -25,6 +25,8 @@ import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { sessionDoing } from './session-summary'
 import { RateStore } from './rate-store'
+import { BranchHistory } from './branch-history'
+import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
 import type { PrGroup, PrInfo } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
@@ -33,12 +35,14 @@ export interface AppServices {
   ptys: PtyManager
   status: StatusServer
   rate: RateStore
+  branches: BranchHistory
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
   const status = new StatusServer()
   // rate limits are account-global: every tab's payload feeds one shared store
   const rate = new RateStore(() => join(app.getPath('userData'), 'rate-samples.jsonl'))
+  const branches = new BranchHistory(() => join(app.getPath('userData'), 'branch-history.json'))
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()
@@ -73,7 +77,16 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // A branch switch renames the live session (name has no spaces → no quoting).
   status.onRenameSession = (tabId, name) => ptys.injectPrompt(tabId, `/rename ${name}`)
-  return { ptys, status, rate }
+  // First sighting of a repo this run: pull its reflog into the history, so
+  // branches from before the app (or this feature) existed are recallable too.
+  const backfilled = new Set<string>()
+  status.onBranchSeen = (root, branch) => {
+    branches.record(root, branch)
+    if (backfilled.has(root)) return
+    backfilled.add(root)
+    void reflogBranches(root).then((found) => branches.backfill(root, found))
+  }
+  return { ptys, status, rate, branches }
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
@@ -231,6 +244,8 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   // Rate-limit burn forecast, from the shared sample store (see createServices).
   ipcMain.handle('rate:forecast', () => services.rate.forecast())
+
+  ipcMain.handle('branches:recent', () => services.branches.recent())
 
   // Activity-hours overview: aggregate the global heartbeat log (written by
   // ~/.claude/hooks/log-activity.sh) into engaged hours per ticket per day.

@@ -3,6 +3,7 @@ import type {
   ActivityReport,
   BookedWorklog,
   BookResult,
+  BranchHistoryEntry,
   BranchSwitchResult,
   DocGroup,
   HelpSection,
@@ -50,6 +51,8 @@ export interface ClaudeTermApi {
   missionDoing(tabId: TabId): Promise<string | null>
   /** projected time-to-100% of the 5h/7d rate-limit windows */
   rateForecast(): Promise<RateForecast>
+  /** branches recently seen checked out in any tab, most recent first (⌘K) */
+  recentBranches(): Promise<BranchHistoryEntry[]>
   activityReport(rangeDays: number): Promise<ActivityReport>
   saveWorklogPlan(plan: WorklogPlan): Promise<void>
   worklogLogged(): Promise<LoggedWorklog[]>
@@ -147,6 +150,7 @@ const api: ClaudeTermApi = {
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   missionDoing: (tabId) => ipcRenderer.invoke('mission:doing', tabId),
   rateForecast: () => ipcRenderer.invoke('rate:forecast'),
+  recentBranches: () => ipcRenderer.invoke('branches:recent'),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),
   saveWorklogPlan: (plan) => ipcRenderer.invoke('worklog:savePlan', plan),
   worklogLogged: () => ipcRenderer.invoke('worklog:logged'),
