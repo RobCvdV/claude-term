@@ -1,6 +1,25 @@
 import { existsSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { basename, dirname, join } from 'path'
+
+/** Where the session's transcript lives, or null when none exists. */
+export function transcriptPathFor(
+  sessionId: string,
+  projectsDir = join(homedir(), '.claude', 'projects')
+): string | null {
+  let dirs: string[]
+  try {
+    dirs = readdirSync(projectsDir)
+  } catch {
+    return null
+  }
+  const file = `${sessionId}.jsonl`
+  for (const d of dirs) {
+    const path = join(projectsDir, d, file)
+    if (existsSync(path)) return path
+  }
+  return null
+}
 
 /**
  * The directory a conversation lives in — its project dir, which is what the
@@ -20,18 +39,8 @@ export function sessionHomeDir(
   sessionId: string,
   projectsDir = join(homedir(), '.claude', 'projects')
 ): string | null {
-  let dirs: string[]
-  try {
-    dirs = readdirSync(projectsDir)
-  } catch {
-    return null
-  }
-  const file = `${sessionId}.jsonl`
-  for (const d of dirs) {
-    const path = join(projectsDir, d, file)
-    if (existsSync(path)) return homeCwd(path, d)
-  }
-  return null
+  const path = transcriptPathFor(sessionId, projectsDir)
+  return path ? homeCwd(path, basename(dirname(path))) : null
 }
 
 /** Claude Code's project-folder encoding: every non-alphanumeric char → '-'. */

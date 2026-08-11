@@ -40,7 +40,9 @@ export interface AppServices {
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
-  const status = new StatusServer()
+  // stable endpoint (port+token survive restarts) so a background agent's
+  // baked-in --settings keep reaching us after an app update
+  const status = new StatusServer(() => join(app.getPath('userData'), 'status-endpoint.json'))
   // rate limits are account-global: every tab's payload feeds one shared store
   const rate = new RateStore(() => join(app.getPath('userData'), 'rate-samples.jsonl'))
   const branches = new BranchHistory(() => join(app.getPath('userData'), 'branch-history.json'))
@@ -60,7 +62,10 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     // live background agent — attach to it instead of leaving a dead tab.
     resumeRefused: (tabId, sessionId) => {
       void jobIdForRefusedResume(sessionId).then((jobId) => {
-        if (jobId) void ptys.attachInPlace(tabId, jobId)
+        if (jobId) {
+          void ptys.attachInPlace(tabId, jobId)
+          status.markAttached(tabId, sessionId, jobId)
+        }
       })
     }
   })
@@ -146,6 +151,9 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
         // is the only thing that shows its Claude UI and keeps its session id
         // in the persisted state for the next launch.
         if (target.mode !== 'shell') status.markClaudeActive(tabId, resume)
+        // an attached agent's own feed POSTs to the endpoint of the app run
+        // that launched it — synthesize activity until a real feed shows up
+        if (target.mode === 'attach') status.markAttached(tabId, resume as string, target.jobId)
       } else {
         await ptys.create(tabId, dir)
       }

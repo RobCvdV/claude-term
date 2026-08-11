@@ -182,6 +182,21 @@ export async function resolveRevive(sessionId: string): Promise<ReviveMode> {
  * running as a background agent. The daemon is demonstrably up by then (it just
  * refused us), so ask it first and fall back to the on-disk job records.
  */
+/** Current daemon state of a job (~/.claude/jobs/<jobId>/state.json). */
+export function readJobState(
+  jobId: string,
+  jobsDir = join(homedir(), '.claude', 'jobs')
+): string | null {
+  try {
+    const state = JSON.parse(readFileSync(join(jobsDir, jobId, 'state.json'), 'utf8')) as {
+      state?: unknown
+    }
+    return typeof state.state === 'string' ? state.state : null
+  } catch {
+    return null
+  }
+}
+
 export async function jobIdForRefusedResume(sessionId: string): Promise<string | null> {
   const bg = await findLiveBackgroundAgent(sessionId, true)
   return bg?.id ?? bg?.sessionId ?? findBgJobForSession(sessionId)?.jobId ?? null
