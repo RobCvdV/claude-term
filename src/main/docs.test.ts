@@ -5,7 +5,7 @@ import { join } from 'path'
 
 vi.mock('electron', () => ({ shell: { openPath: async () => '' } }))
 
-const { createDoc, normalizeDocName } = await import('./docs')
+const { createDoc, newFileName } = await import('./docs')
 
 let dir: string
 
@@ -17,33 +17,44 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('normalizeDocName', () => {
-  it('keeps a .md name as typed', () => {
-    expect(normalizeDocName('docs/plan.md')).toBe('docs/plan.md')
-    expect(normalizeDocName('  notes.MD  ')).toBe('notes.MD')
+describe('newFileName', () => {
+  it('takes the name exactly as typed, whatever the extension', () => {
+    expect(newFileName('docs/plan.md')).toBe('docs/plan.md')
+    expect(newFileName('  notes.txt  ')).toBe('notes.txt')
+    expect(newFileName('src/thing.ts')).toBe('src/thing.ts')
   })
 
-  it('adds .md to an extension-less name', () => {
-    expect(normalizeDocName('docs/plan')).toBe('docs/plan.md')
-    expect(normalizeDocName('research/v1.2/plan')).toBe('research/v1.2/plan.md')
+  it('accepts a name with no extension, and a bare dotfile', () => {
+    expect(newFileName('docs/plan')).toBe('docs/plan')
+    expect(newFileName('Makefile')).toBe('Makefile')
+    expect(newFileName('.gitignore')).toBe('.gitignore')
   })
 
-  it('refuses anything that is not a markdown file', () => {
-    expect(normalizeDocName('notes.txt')).toBeNull()
-    expect(normalizeDocName('')).toBeNull()
-    expect(normalizeDocName('docs/')).toBeNull()
+  it('refuses anything that names no file', () => {
+    expect(newFileName('')).toBeNull()
+    expect(newFileName('   ')).toBeNull()
+    expect(newFileName('docs/')).toBeNull()
+    expect(newFileName('..')).toBeNull()
   })
 })
 
 describe('createDoc', () => {
-  it('creates the file, seeded with a heading from its name', () => {
+  it('seeds a markdown file with a heading from its name', () => {
     const res = createDoc(dir, 'plan-of-attack.md')
     expect(res).toEqual({ ok: true, path: join(dir, 'plan-of-attack.md') })
     expect(readFileSync(join(dir, 'plan-of-attack.md'), 'utf8')).toBe('# Plan of attack\n\n')
   })
 
+  it('creates any other text file empty', () => {
+    for (const name of ['.gitignore', 'Makefile', 'notes', 'src/thing.ts']) {
+      const res = createDoc(dir, name)
+      expect(res).toEqual({ ok: true, path: join(dir, name) })
+      expect(readFileSync(join(dir, name), 'utf8')).toBe('')
+    }
+  })
+
   it('creates missing parent folders', () => {
-    const res = createDoc(dir, 'docs/deep/nested/notes')
+    const res = createDoc(dir, 'docs/deep/nested/notes.md')
     expect(res.ok).toBe(true)
     expect(existsSync(join(dir, 'docs/deep/nested/notes.md'))).toBe(true)
   })
@@ -65,9 +76,12 @@ describe('createDoc', () => {
     rmSync(outside, { recursive: true, force: true })
   })
 
-  it('refuses a non-markdown name', () => {
-    const res = createDoc(dir, 'script.sh')
-    expect(res.ok).toBe(false)
-    expect(existsSync(join(dir, 'script.sh'))).toBe(false)
+  it('refuses an argument that names no file', () => {
+    for (const arg of ['', 'sub/']) {
+      expect(createDoc(dir, arg)).toEqual({
+        ok: false,
+        error: 'Give a file name, e.g. docs/plan.md'
+      })
+    }
   })
 })

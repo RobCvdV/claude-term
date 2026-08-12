@@ -49,8 +49,8 @@ export interface AppCommand {
 export const APP_COMMANDS: AppCommand[] = [
   {
     name: 'add-file',
-    description: 'Create a markdown doc and open it in the docs editor',
-    hint: '<folder/name.md>',
+    description: 'Create a file (any text format) and open it in the docs editor',
+    hint: '<folder/name>',
     complete: completeDir,
     run: async ({ tabId, arg, setError, editDoc }) => {
       const res = await window.claudeTerm.createDoc(tabId, arg)

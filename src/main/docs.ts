@@ -228,34 +228,38 @@ export function writeDoc(cwd: string, path: string, content: string): boolean {
   }
 }
 
-/** The markdown file a `/add-file` argument asks for: a bare name gains `.md`,
- *  any other extension is refused (so `notes.txt` never becomes `notes.txt.md`). */
-export function normalizeDocName(arg: string): string | null {
+/** The file a `/add-file` argument names, taken literally — any extension or
+ *  none (`.gitignore`, `Makefile`, `notes`). Null when it names no file. */
+export function newFileName(arg: string): string | null {
   const path = arg.trim()
   if (!path || path.endsWith('/')) return null
-  if (/\.md$/i.test(path)) return path
-  return /\.[^./]+$/.test(basename(path)) ? null : path + '.md'
+  const name = basename(path)
+  return !name || name === '.' || name === '..' ? null : path
 }
 
-/** Seed heading for a new doc, from its file name: `plan-of-attack.md` → "Plan
- *  of attack". Gives the file a real title in the docs rail from the start. */
-function docHeading(path: string): string {
-  const words = basename(path).replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim()
-  return words.charAt(0).toUpperCase() + words.slice(1)
+const MARKDOWN = /\.(md|markdown|mdx)$/i
+
+/** Seed heading for a new markdown file, from its name: `plan-of-attack.md` →
+ *  "Plan of attack". Gives the file a real title in the docs rail from the
+ *  start; anything else is created empty, since a heading would be noise. */
+function seedContent(path: string): string {
+  if (!MARKDOWN.test(path)) return ''
+  const words = basename(path).replace(MARKDOWN, '').replace(/[-_]+/g, ' ').trim()
+  return `# ${words.charAt(0).toUpperCase() + words.slice(1)}\n\n`
 }
 
-/** Create a new markdown doc for `/add-file` and return its absolute path.
- *  Same roots as the rest of the overlay (plans dir or project cwd); missing
- *  parent folders are created, existing files are never touched. */
+/** Create the file `/add-file` asked for and return its absolute path. Same
+ *  roots as the rest of the overlay (plans dir or project cwd); missing parent
+ *  folders are created, existing files are never touched. */
 export function createDoc(cwd: string, arg: string): CreateDocResult {
-  const name = normalizeDocName(arg)
-  if (!name) return { ok: false, error: 'Give a markdown file name, e.g. docs/plan.md' }
+  const name = newFileName(arg)
+  if (!name) return { ok: false, error: 'Give a file name, e.g. docs/plan.md' }
   const path = resolve(cwd, expandHome(name) ?? name)
   if (!allowed(cwd, path)) return { ok: false, error: 'Outside this project' }
   if (existsSync(path)) return { ok: false, error: `Already exists: ${basename(path)}` }
   try {
     mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, `# ${docHeading(path)}\n\n`, 'utf8')
+    writeFileSync(path, seedContent(path), 'utf8')
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Could not create the file' }
   }

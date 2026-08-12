@@ -115,10 +115,10 @@ function Guide(): React.JSX.Element {
           <code>/switch</code> completes local branches and renames the session to match,{' '}
           <code>/npm</code> lists the project&apos;s npm scripts (root + one folder deep) — Enter
           runs one, Tab fills <code>!npm run …</code> to add params — <code>/add-file</code>{' '}
-          completes folders and creates the markdown file you name at the end (
-          <code>/add-file docs/plan.md</code>), opening it in the docs editor, and{' '}
-          <code>/add-dir</code> completes directories. When Claude shows a grayed-out suggested next
-          prompt in the terminal, <b>Tab</b> in the empty box runs it.
+          completes folders and creates the file you name at the end (
+          <code>/add-file docs/plan.md</code>, any extension or none), opening it in the docs
+          editor, and <code>/add-dir</code> completes directories. When Claude shows a grayed-out
+          suggested next prompt in the terminal, <b>Tab</b> in the empty box runs it.
         </p>
       </section>
       <section>

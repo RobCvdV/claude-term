@@ -75,6 +75,12 @@ describe('languageForFile', () => {
     expect(languageForFile('Config.YML')).toBe('yaml')
   })
 
+  it('treats every markdown spelling as markdown', () => {
+    expect(languageForFile('docs/plan.md')).toBe('markdown')
+    expect(languageForFile('docs/plan.markdown')).toBe('markdown')
+    expect(languageForFile('docs/page.mdx')).toBe('markdown')
+  })
+
   it('accepts a path and decides on its final segment', () => {
     expect(languageForFile('.claude/settings.json')).toBe('json')
     expect(languageForFile('.github/workflows/release.yml')).toBe('yaml')

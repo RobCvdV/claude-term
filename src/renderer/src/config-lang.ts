@@ -58,7 +58,9 @@ const BY_EXTENSION: Record<string, string> = {
   sh: 'shell',
   bash: 'shell',
   zsh: 'shell',
-  md: 'markdown'
+  md: 'markdown',
+  markdown: 'markdown',
+  mdx: 'markdown'
 }
 
 /** `.env.local`, `.env.production` … all read as env files. */

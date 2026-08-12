@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import type { DocEntry, DocGroup, DocTarget, ProjectDocs } from '../../../shared/types'
 import { MARKDOWN_LANG, setupMonaco } from '../monaco-setup'
+import { languageForFile } from '../config-lang'
 import { attachSpellcheck } from '../spell'
 import { attachGrammar } from '../grammar'
 
@@ -244,8 +245,9 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     if (mode !== 'edit' || !selected || content == null || !hostRef.current) return
     const monaco = setupMonaco()
     const uri = monaco.Uri.parse(`claude-doc://${selected.path}`)
+    const lang = languageForFile(selected.path)
     const model =
-      monaco.editor.getModel(uri) ?? monaco.editor.createModel(draft ?? content, MARKDOWN_LANG, uri)
+      monaco.editor.getModel(uri) ?? monaco.editor.createModel(draft ?? content, lang, uri)
     const editor = monaco.editor.create(hostRef.current, {
       model,
       theme: 'claude-term',
@@ -258,8 +260,11 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     })
     editorRef.current = editor
     const sub = editor.onDidChangeModelContent(() => setDraft(editor.getValue()))
-    const spell = attachSpellcheck(editor, 'markdown')
-    const grammar = attachGrammar(editor)
+    // prose only: spelling and grammar on code or config would be all noise,
+    // and their quick fixes are registered for markdown anyway
+    const prose = lang === MARKDOWN_LANG
+    const spell = prose ? attachSpellcheck(editor, 'markdown') : null
+    const grammar = prose ? attachGrammar(editor) : null
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
     if (openAtEnd.current) {
       openAtEnd.current = false
@@ -267,8 +272,8 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     }
     editor.focus()
     return () => {
-      grammar.dispose()
-      spell.dispose()
+      grammar?.dispose()
+      spell?.dispose()
       sub.dispose()
       editor.dispose()
       model.dispose()
@@ -285,6 +290,9 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     return !dirty || window.confirm('Discard unsaved changes?')
   }, [dirty])
 
+  // only markdown gets rendered; any other file (a .gitignore, a script) is
+  // shown as-is, since the markdown renderer would mangle it
+  const isMarkdown = !selected || languageForFile(selected.path) === MARKDOWN_LANG
   const rendered = useMemo(() => (shown ? renderMarkdown(shown) : ''), [shown])
 
   const onPreviewClick = (e: React.MouseEvent): void => {
@@ -350,9 +358,7 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
                 className="docs-btn"
                 onClick={() => setMode((m) => (m === 'edit' ? 'view' : 'edit'))}
                 disabled={content == null}
-                title={
-                  mode === 'edit' ? 'Preview the rendered markdown' : 'Edit the markdown source'
-                }
+                title={mode === 'edit' ? 'Preview this file' : 'Edit this file'}
               >
                 {mode === 'edit' ? 'View' : 'Edit'}
               </button>
@@ -385,8 +391,12 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
                 <div className="docs-preview" onClick={onPreviewClick}>
                   {shown == null ? (
                     <p className="activity-empty">Loading…</p>
-                  ) : (
+                  ) : isMarkdown ? (
                     <div dangerouslySetInnerHTML={{ __html: rendered }} />
+                  ) : (
+                    <pre>
+                      <code>{shown}</code>
+                    </pre>
                   )}
                 </div>
               )}
