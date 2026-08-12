@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
-import type { DocEntry, DocGroup, ProjectDocs } from '../../../shared/types'
+import type { DocEntry, DocGroup, DocTarget, ProjectDocs } from '../../../shared/types'
 import { MARKDOWN_LANG, setupMonaco } from '../monaco-setup'
 import { attachSpellcheck } from '../spell'
 import { attachGrammar } from '../grammar'
@@ -9,6 +9,9 @@ interface Props {
   tabId: string
   /** which section to focus — changes when the owner tab re-opens the window */
   group: DocGroup
+  /** one specific doc to open (a just-created `/add-file`), instead of the
+   *  group's first entry — with `edit` it opens straight in the editor */
+  target?: DocTarget | null
 }
 
 function escapeHtml(s: string): string {
@@ -137,7 +140,22 @@ function pickInitial(d: ProjectDocs, group: DocGroup): DocEntry | null {
   return null
 }
 
-export function DocsView({ tabId, group }: Props): React.JSX.Element {
+/** Every listed doc, in rail order. */
+function allEntries(d: ProjectDocs): DocEntry[] {
+  return [...d.plans, ...(d.roadmap ? [d.roadmap] : []), ...d.sections.flatMap((s) => s.entries)]
+}
+
+/** The doc a target points at: its listed entry, else a stand-in built from the
+ *  file name — docs more than one folder deep exist but aren't in the rail. */
+function targetEntry(d: ProjectDocs, target?: DocTarget | null): DocEntry | null {
+  if (!target) return null
+  const hit = allEntries(d).find((e) => e.path === target.path)
+  if (hit) return hit
+  const name = target.path.split('/').pop() ?? target.path
+  return { path: target.path, title: name.replace(/\.md$/i, ''), mtime: 0 }
+}
+
+export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
   const [selected, setSelected] = useState<DocEntry | null>(null)
   // keyed to its path so a stale doc never shows while the next one loads
@@ -147,19 +165,29 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
   // the editor's working copy; null until editing starts for the current doc
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // a doc handed to us for editing (/add-file) starts with the cursor at the
+  // end, under its seeded heading; consumed by the editor on mount, so a later
+  // View→Edit toggle still opens at the top like any other doc
+  const openAtEnd = useRef(false)
 
   useEffect(() => {
     let live = true
     window.claudeTerm.listDocs(tabId).then((d) => {
       if (!live) return
       setDocs(d)
-      setSelected(pickInitial(d, group))
+      setSelected(targetEntry(d, target) ?? pickInitial(d, group))
+      // a draft belongs to the doc it was typed in — never carry it over
+      setDraft(null)
+      if (target) setMode(target.edit ? 'edit' : 'view')
+      openAtEnd.current = !!target?.edit
       setLoading(false)
     })
     return () => {
       live = false
     }
-  }, [tabId, group])
+    // a re-target is only ever a new path/mode, so depend on those, not identity
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabId, group, target?.path, target?.edit])
 
   useEffect(() => {
     if (!selected) return
@@ -173,6 +201,9 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
   }, [tabId, selected])
 
   const content = selected && loaded?.path === selected.path ? loaded.text : null
+  // flips false→true once per doc, when its text arrives — the editor can only
+  // mount after that, and a save (which replaces `content`) must not remount it
+  const contentReady = content != null
   // what the view/editor shows: the unsaved draft when present, else disk content
   const shown = draft ?? content
   const dirty = draft != null && draft !== content
@@ -230,6 +261,10 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
     const spell = attachSpellcheck(editor, 'markdown')
     const grammar = attachGrammar(editor)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
+    if (openAtEnd.current) {
+      openAtEnd.current = false
+      editor.setPosition(model.getFullModelRange().getEndPosition())
+    }
     editor.focus()
     return () => {
       grammar.dispose()
@@ -239,11 +274,12 @@ export function DocsView({ tabId, group }: Props): React.JSX.Element {
       model.dispose()
       editorRef.current = null
     }
-    // recreate only when entering edit mode or switching docs — not on every
-    // content/draft change (those flow FROM the editor). `content` is read once
-    // here; the Edit toggle is disabled until it has loaded.
+    // recreate only when entering edit mode, switching docs, or the doc's text
+    // finally arriving — not on every content/draft change (those flow FROM the
+    // editor). Opening straight in edit mode (/add-file) beats the read, so
+    // `contentReady` is what mounts the editor in that case.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selected?.path])
+  }, [mode, selected?.path, contentReady])
 
   const confirmDiscard = useCallback((): boolean => {
     return !dirty || window.confirm('Discard unsaved changes?')

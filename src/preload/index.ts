@@ -6,7 +6,9 @@ import type {
   BranchGroup,
   BranchHistoryEntry,
   BranchSwitchResult,
+  CreateDocResult,
   DocGroup,
+  DocTarget,
   HelpSection,
   JiraStatus,
   LoggedWorklog,
@@ -87,10 +89,15 @@ export interface ClaudeTermApi {
   readDoc(tabId: TabId, path: string): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
   writeDoc(tabId: TabId, path: string, content: string): Promise<boolean>
-  /** open (or focus, if already open) the docs window for a tab, on `group` */
-  openDocsWindow(tabId: TabId, group: DocGroup, title: string): void
+  /** create a new markdown doc under the tab's cwd (for /add-file) */
+  createDoc(tabId: TabId, path: string): Promise<CreateDocResult>
+  /** open (or focus, if already open) the docs window for a tab, on `group` —
+   *  `target` selects one specific file instead of the group's first */
+  openDocsWindow(tabId: TabId, group: DocGroup, title: string, target?: DocTarget): void
   /** (docs window only) the owner tab asked to switch section / retitle */
-  onDocsSetGroup(cb: (payload: { group: DocGroup; title: string }) => void): () => void
+  onDocsSetGroup(
+    cb: (payload: { group: DocGroup; title: string; target?: DocTarget }) => void
+  ): () => void
   /** (docs window only) report unsaved-edit state so close can prompt to save */
   docsDirty(dirty: boolean): void
   /** (docs window only) main asks the window to save before closing */
@@ -177,7 +184,9 @@ const api: ClaudeTermApi = {
   readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
   writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),
-  openDocsWindow: (tabId, group, title) => ipcRenderer.send('docs:openWindow', tabId, group, title),
+  createDoc: (tabId, path) => ipcRenderer.invoke('docs:create', tabId, path),
+  openDocsWindow: (tabId, group, title, target) =>
+    ipcRenderer.send('docs:openWindow', tabId, group, title, target),
   onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),

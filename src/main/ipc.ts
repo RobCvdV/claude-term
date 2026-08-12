@@ -3,7 +3,7 @@ import { basename, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
-import type { DocGroup, PersistedSession, TabId, TabInfo } from '../shared/types'
+import type { DocGroup, DocTarget, PersistedSession, TabId, TabInfo } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listAllBranches, listBranches, listCommands, listDirs, searchFiles } from './completions'
@@ -12,7 +12,7 @@ import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { buildActivityReport } from './activity-log'
-import { listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
+import { createDoc, listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles, readConfigFile, writeConfigFile } from './config-files'
 import { closeConfigWindowForTab, openOrFocusConfigWindow } from './config-window'
@@ -170,9 +170,12 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     status.removeTab(tabId)
   })
 
-  ipcMain.on('docs:openWindow', (_e, tabId: TabId, group: DocGroup, title: string) => {
-    openOrFocusDocsWindow(tabId, group, title)
-  })
+  ipcMain.on(
+    'docs:openWindow',
+    (_e, tabId: TabId, group: DocGroup, title: string, target?: DocTarget) => {
+      openOrFocusDocsWindow(tabId, group, title, target)
+    }
+  )
 
   ipcMain.on('config:openWindow', (_e, tabId: TabId, title: string) => {
     openOrFocusConfigWindow(tabId, title)
@@ -366,6 +369,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('docs:write', (_e, tabId: TabId, path: string, content: string) => {
     const cwd = status.getCwd(tabId)
     return cwd ? writeDoc(cwd, path, content) : false
+  })
+  ipcMain.handle('docs:create', (_e, tabId: TabId, path: string) => {
+    const cwd = status.getCwd(tabId)
+    return cwd ? createDoc(cwd, path) : { ok: false, error: 'No working directory for this tab' }
   })
 
   // Project configuration files (the status-bar Settings window). Roots are the

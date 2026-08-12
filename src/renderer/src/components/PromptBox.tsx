@@ -26,6 +26,8 @@ interface Props {
   onStepTab: (delta: number) => void
   onColor: (color: string) => void
   color?: string
+  /** open a doc in the docs window's editor (a `/add-file` just created it) */
+  onEditDoc: (path: string) => void
   /** ⌘K — Monaco owns the key while the box has focus, so bind it here too */
   onOpenPalette: () => void
   /** ⌘F — likewise; terminal scrollback search, never Monaco's find widget */
@@ -63,6 +65,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     onStepTab,
     onColor,
     color,
+    onEditDoc,
     onOpenPalette,
     onFindInTerminal,
     onOpenMission,
@@ -96,6 +99,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   showHelpRef.current = onShowHelp
   const colorRef = useRef(onColor)
   colorRef.current = onColor
+  const editDocRef = useRef(onEditDoc)
+  editDocRef.current = onEditDoc
   const autoFocusRef = useRef(autoFocus)
   autoFocusRef.current = autoFocus
   const focusStateRef = useRef(focusState)
@@ -287,7 +292,8 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
             tabId,
             arg: matched.arg,
             setColor: (c) => colorRef.current(c),
-            setError: (m) => showCmdErrorRef.current(m)
+            setError: (m) => showCmdErrorRef.current(m),
+            editDoc: (p) => editDocRef.current(p)
           })
         ).then((keep) => {
           if (keep !== false) {

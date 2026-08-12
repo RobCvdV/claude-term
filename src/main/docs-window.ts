@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import type { DocGroup, TabId } from '../shared/types'
+import type { DocGroup, DocTarget, TabId } from '../shared/types'
 
 /**
  * Docs viewer/editor windows, one per tab. Each is a normal top-level window
@@ -73,15 +73,22 @@ async function confirmClose(entry: DocsWin, allowCancel: boolean): Promise<boole
   return true
 }
 
-/** Open the docs window for a tab, or focus + retarget it if already open. */
-export function openOrFocusDocsWindow(tabId: TabId, group: DocGroup, title: string): void {
+/** Open the docs window for a tab, or focus + retarget it if already open.
+ *  `target` opens one specific file (e.g. the doc `/add-file` just created)
+ *  instead of the group's first entry. */
+export function openOrFocusDocsWindow(
+  tabId: TabId,
+  group: DocGroup,
+  title: string,
+  target?: DocTarget
+): void {
   ensureIpc()
   const existing = windows.get(tabId)
   if (existing && !existing.win.isDestroyed()) {
     if (existing.win.isMinimized()) existing.win.restore()
     existing.win.show()
     existing.win.focus()
-    existing.win.webContents.send('docs:setGroup', { group, title })
+    existing.win.webContents.send('docs:setGroup', { group, title, target })
     return
   }
 
@@ -118,7 +125,8 @@ export function openOrFocusDocsWindow(tabId: TabId, group: DocGroup, title: stri
 
   const query =
     `?docs=1&tabId=${encodeURIComponent(tabId)}` +
-    `&group=${group}&title=${encodeURIComponent(title)}`
+    `&group=${group}&title=${encodeURIComponent(title)}` +
+    (target ? `&path=${encodeURIComponent(target.path)}${target.edit ? '&edit=1' : ''}` : '')
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL'] + query)
   } else {

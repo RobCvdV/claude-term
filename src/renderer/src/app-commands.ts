@@ -20,6 +20,16 @@ export interface AppCommandCtx {
   arg: string
   setColor: (color: string) => void
   setError: (msg: string) => void
+  /** open one doc in the docs window's markdown editor */
+  editDoc: (path: string) => void
+}
+
+export type ArgCompleter = (tabId: TabId, query: string) => Promise<AppCompletion[]>
+
+/** Single-level directory picker: accepting a folder descends into it. */
+const completeDir: ArgCompleter = async (tabId, query) => {
+  const dirs = await window.claudeTerm.listDirs(tabId, query)
+  return dirs.map((d) => ({ label: d, value: d, isDir: true }))
 }
 
 export interface AppCommand {
@@ -37,6 +47,21 @@ export interface AppCommand {
 }
 
 export const APP_COMMANDS: AppCommand[] = [
+  {
+    name: 'add-file',
+    description: 'Create a markdown doc and open it in the docs editor',
+    hint: '<folder/name.md>',
+    complete: completeDir,
+    run: async ({ tabId, arg, setError, editDoc }) => {
+      const res = await window.claudeTerm.createDoc(tabId, arg)
+      if (!res.ok) {
+        setError(res.error)
+        return false
+      }
+      editDoc(res.path)
+      return true
+    }
+  },
   {
     name: 'color',
     description: 'Tint this tab (a color name, #rrggbb, or "off")',
@@ -168,16 +193,9 @@ export function getAppCommand(name: string): AppCommand | undefined {
   return byName.get(name)
 }
 
-export type ArgCompleter = (tabId: TabId, query: string) => Promise<AppCompletion[]>
-
 // claude's own commands we don't intercept but DO assist with a directory
 // picker for their path argument; the full "/name <path>" still goes to claude.
 const PATH_COMMANDS = new Set(['add-dir'])
-
-const completeDir: ArgCompleter = async (tabId, query) => {
-  const dirs = await window.claudeTerm.listDirs(tabId, query)
-  return dirs.map((d) => ({ label: d, value: d, isDir: true }))
-}
 
 /**
  * Argument completer for `/name <arg>`, if any — an app command's own

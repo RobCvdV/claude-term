@@ -182,6 +182,17 @@ export interface ProjectDocs {
   sections: DocSection[]
 }
 
+/** A specific doc for the docs window to open, instead of its group's first. */
+export interface DocTarget {
+  /** absolute path on disk */
+  path: string
+  /** open the markdown editor straight away rather than the rendered preview */
+  edit?: boolean
+}
+
+/** Outcome of creating a new doc from `/add-file`. */
+export type CreateDocResult = { ok: true; path: string } | { ok: false; error: string }
+
 /** Above this size a config file is listed but not opened — a generated file
  *  that happens to match a pattern shouldn't be able to hang the editor. Shared
  *  policy: the main process enforces it, the window explains it. */

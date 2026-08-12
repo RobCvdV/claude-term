@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   BranchHistoryEntry,
   DocGroup,
+  DocTarget,
   HelpSection,
   PersistedSession,
   TabId,
@@ -535,15 +536,26 @@ export default function App(): React.JSX.Element {
   const showClaudeUi = !!activeStatus?.claudeActive
 
   const openDocsFor = useCallback(
-    (group: DocGroup): void => {
+    (group: DocGroup, target?: DocTarget): void => {
       if (!activeId) return
       const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Docs'
-      window.claudeTerm.openDocsWindow(activeId, group, composeWindowTitle(title, activeStatus))
+      window.claudeTerm.openDocsWindow(
+        activeId,
+        group,
+        composeWindowTitle(title, activeStatus),
+        target
+      )
       // the docs window takes OS focus; leave the main window's focus on the
       // prompt/terminal so it's usable the moment you return
       restoreFocus(activeId)
     },
     [activeId, tabs, activeStatus, restoreFocus]
+  )
+
+  // /add-file: the doc exists now — show it in the editor, ready to type in
+  const editDoc = useCallback(
+    (path: string): void => openDocsFor('docs', { path, edit: true }),
+    [openDocsFor]
   )
 
   const openSettingsFor = useCallback((): void => {
@@ -717,6 +729,7 @@ export default function App(): React.JSX.Element {
               onStepTab={stepTab}
               onColor={(color) => setTabColor(activeId, color)}
               color={colors[activeId]}
+              onEditDoc={editDoc}
               onOpenPalette={openPalette}
               onFindInTerminal={openSearch}
               onOpenMission={() => setShowMission(true)}

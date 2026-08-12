@@ -1,8 +1,9 @@
 import { shell } from 'electron'
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { basename, join, resolve, sep } from 'path'
-import type { DocEntry, DocSection, ProjectDocs } from '../shared/types'
+import { basename, dirname, join, resolve, sep } from 'path'
+import type { CreateDocResult, DocEntry, DocSection, ProjectDocs } from '../shared/types'
+import { expandHome } from './completions'
 
 const PLANS_DIR = join(homedir(), '.claude', 'plans')
 
@@ -225,4 +226,38 @@ export function writeDoc(cwd: string, path: string, content: string): boolean {
   } catch {
     return false
   }
+}
+
+/** The markdown file a `/add-file` argument asks for: a bare name gains `.md`,
+ *  any other extension is refused (so `notes.txt` never becomes `notes.txt.md`). */
+export function normalizeDocName(arg: string): string | null {
+  const path = arg.trim()
+  if (!path || path.endsWith('/')) return null
+  if (/\.md$/i.test(path)) return path
+  return /\.[^./]+$/.test(basename(path)) ? null : path + '.md'
+}
+
+/** Seed heading for a new doc, from its file name: `plan-of-attack.md` → "Plan
+ *  of attack". Gives the file a real title in the docs rail from the start. */
+function docHeading(path: string): string {
+  const words = basename(path).replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** Create a new markdown doc for `/add-file` and return its absolute path.
+ *  Same roots as the rest of the overlay (plans dir or project cwd); missing
+ *  parent folders are created, existing files are never touched. */
+export function createDoc(cwd: string, arg: string): CreateDocResult {
+  const name = normalizeDocName(arg)
+  if (!name) return { ok: false, error: 'Give a markdown file name, e.g. docs/plan.md' }
+  const path = resolve(cwd, expandHome(name) ?? name)
+  if (!allowed(cwd, path)) return { ok: false, error: 'Outside this project' }
+  if (existsSync(path)) return { ok: false, error: `Already exists: ${basename(path)}` }
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, `# ${docHeading(path)}\n\n`, 'utf8')
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Could not create the file' }
+  }
+  return { ok: true, path }
 }
