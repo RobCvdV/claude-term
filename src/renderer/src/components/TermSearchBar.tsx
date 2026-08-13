@@ -22,13 +22,21 @@ const DECORATIONS = {
 export function TermSearchBar({ tabId, open, focusNonce, onClose }: Props): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<{ index: number; count: number } | null>(null)
+  // A full-screen program (Claude Code, less, vim) draws on the terminal's
+  // alternate buffer, which has no scrollback — only what is on screen exists.
+  // The bar is mounted per tab, so its first value can be read straight off the
+  // terminal and kept up to date from there.
+  const [screenOnly, setScreenOnly] = useState(
+    () => getTerm(tabId)?.term.buffer.active.type === 'alternate'
+  )
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (!open) return
-    inputRef.current?.focus()
-    inputRef.current?.select()
-  }, [open, focusNonce])
+    const term = getTerm(tabId)?.term
+    if (!term) return
+    const sub = term.buffer.onBufferChange((buffer) => setScreenOnly(buffer.type === 'alternate'))
+    return () => sub.dispose()
+  }, [tabId])
 
   // match counter (only reported while decorations are active)
   useEffect(() => {
@@ -47,6 +55,18 @@ export function TermSearchBar({ tabId, open, focusNonce, onClose }: Props): Reac
     if (dir === 'next') search.findNext(q, opts)
     else search.findPrevious(q, opts)
   }
+
+  useEffect(() => {
+    if (!open) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+    // Re-run the query the bar remembers. Closing cleared its highlights and
+    // its count, so without this ⌘F comes back showing "0/0" over a query that
+    // does match — which reads as a broken search. Incremental keeps the
+    // current match rather than stepping past it.
+    if (query) find(query, 'next', true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, focusNonce])
 
   const close = (): void => {
     getTerm(tabId)?.search.clearDecorations()
@@ -78,6 +98,14 @@ export function TermSearchBar({ tabId, open, focusNonce, onClose }: Props): Reac
       <span className="term-search-count">
         {query ? (result ? `${result.index + 1}/${result.count}` : '0/0') : ''}
       </span>
+      {screenOnly && (
+        <span
+          className="term-search-note"
+          title="A full-screen program is drawing over the terminal (Claude Code, less, vim). It keeps its own history, so only what is on screen right now can be searched."
+        >
+          screen only
+        </span>
+      )}
       <button title="Previous match (⇧Enter)" onClick={() => find(query, 'prev')}>
         ↑
       </button>
