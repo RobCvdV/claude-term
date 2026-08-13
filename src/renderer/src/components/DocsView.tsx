@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type * as monacoNs from 'monaco-editor'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocEntry, DocGroup, DocTarget, ProjectDocs } from '../../../shared/types'
-import { MARKDOWN_LANG, setupMonaco } from '../monaco-setup'
+import { MARKDOWN_LANG } from '../monaco-setup'
 import { languageForFile } from '../config-lang'
 import { attachSpellcheck } from '../spell'
 import { attachGrammar } from '../grammar'
+import { useFileEditor } from '../file-editor'
 
 interface Props {
   tabId: string
@@ -158,27 +158,44 @@ function targetEntry(d: ProjectDocs, target?: DocTarget | null): DocEntry | null
 
 export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
-  const [selected, setSelected] = useState<DocEntry | null>(null)
-  // keyed to its path so a stale doc never shows while the next one loads
-  const [loaded, setLoaded] = useState<{ path: string; text: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
-  // the editor's working copy; null until editing starts for the current doc
-  const [draft, setDraft] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   // a doc handed to us for editing (/add-file) starts with the cursor at the
   // end, under its seeded heading; consumed by the editor on mount, so a later
   // View→Edit toggle still opens at the top like any other doc
   const openAtEnd = useRef(false)
+
+  const editor = useFileEditor<DocEntry>({
+    io: {
+      read: (path) => window.claudeTerm.readDoc(tabId, path),
+      write: (path, content) => window.claudeTerm.writeDoc(tabId, path, content),
+      reportDirty: (d) => window.claudeTerm.docsDirty(d),
+      onRequestSave: (cb) => window.claudeTerm.onDocsRequestSave(cb),
+      saveDone: () => window.claudeTerm.docsSaveDone()
+    },
+    scheme: 'claude-doc',
+    editing: mode === 'edit',
+    options: { wordWrap: 'on', renderWhitespace: 'none' },
+    attach: (ed, language) => {
+      if (openAtEnd.current) {
+        openAtEnd.current = false
+        const model = ed.getModel()
+        if (model) ed.setPosition(model.getFullModelRange().getEndPosition())
+      }
+      // prose only: spelling and grammar on code or config would be all noise,
+      // and their quick fixes are registered for markdown anyway
+      if (language !== MARKDOWN_LANG) return []
+      return [attachSpellcheck(ed, 'markdown'), attachGrammar(ed)]
+    }
+  })
+  const { selected, content, shown, dirty, saving, save, hostRef } = editor
 
   useEffect(() => {
     let live = true
     window.claudeTerm.listDocs(tabId).then((d) => {
       if (!live) return
       setDocs(d)
-      setSelected(targetEntry(d, target) ?? pickInitial(d, group))
-      // a draft belongs to the doc it was typed in — never carry it over
-      setDraft(null)
+      editor.select(targetEntry(d, target) ?? pickInitial(d, group))
       if (target) setMode(target.edit ? 'edit' : 'view')
       openAtEnd.current = !!target?.edit
       setLoading(false)
@@ -189,106 +206,6 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     // a re-target is only ever a new path/mode, so depend on those, not identity
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, group, target?.path, target?.edit])
-
-  useEffect(() => {
-    if (!selected) return
-    let live = true
-    window.claudeTerm.readDoc(tabId, selected.path).then((c) => {
-      if (live) setLoaded({ path: selected.path, text: c })
-    })
-    return () => {
-      live = false
-    }
-  }, [tabId, selected])
-
-  const content = selected && loaded?.path === selected.path ? loaded.text : null
-  // flips false→true once per doc, when its text arrives — the editor can only
-  // mount after that, and a save (which replaces `content`) must not remount it
-  const contentReady = content != null
-  // what the view/editor shows: the unsaved draft when present, else disk content
-  const shown = draft ?? content
-  const dirty = draft != null && draft !== content
-
-  const save = useCallback(async (): Promise<void> => {
-    if (!selected || draft == null) return
-    setSaving(true)
-    const ok = await window.claudeTerm.writeDoc(tabId, selected.path, draft)
-    setSaving(false)
-    // reconcile the baseline so `dirty` clears; editor is not recreated
-    if (ok) setLoaded({ path: selected.path, text: draft })
-  }, [tabId, selected, draft])
-
-  // Monaco's Cmd+S command is bound once per editor, so reach the latest `save`
-  // (which closes over the current draft) through a ref kept fresh in an effect.
-  const saveRef = useRef(save)
-  useEffect(() => {
-    saveRef.current = save
-  }, [save])
-
-  // Let the main process know whether there are unsaved edits, so closing the
-  // window (or its tab) can prompt to save/discard first.
-  useEffect(() => {
-    window.claudeTerm.docsDirty(dirty)
-  }, [dirty])
-
-  // Honour a "save before closing" request from the main process.
-  useEffect(() => {
-    return window.claudeTerm.onDocsRequestSave(() => {
-      void saveRef.current().finally(() => window.claudeTerm.docsSaveDone())
-    })
-  }, [])
-
-  // Monaco editor lifecycle — mounted only while editing the current doc.
-  const hostRef = useRef<HTMLDivElement | null>(null)
-  const editorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
-  useEffect(() => {
-    if (mode !== 'edit' || !selected || content == null || !hostRef.current) return
-    const monaco = setupMonaco()
-    const uri = monaco.Uri.parse(`claude-doc://${selected.path}`)
-    const lang = languageForFile(selected.path)
-    const model =
-      monaco.editor.getModel(uri) ?? monaco.editor.createModel(draft ?? content, lang, uri)
-    const editor = monaco.editor.create(hostRef.current, {
-      model,
-      theme: 'claude-term',
-      automaticLayout: true,
-      wordWrap: 'on',
-      minimap: { enabled: false },
-      fontSize: 13,
-      scrollBeyondLastLine: false,
-      renderWhitespace: 'none'
-    })
-    editorRef.current = editor
-    const sub = editor.onDidChangeModelContent(() => setDraft(editor.getValue()))
-    // prose only: spelling and grammar on code or config would be all noise,
-    // and their quick fixes are registered for markdown anyway
-    const prose = lang === MARKDOWN_LANG
-    const spell = prose ? attachSpellcheck(editor, 'markdown') : null
-    const grammar = prose ? attachGrammar(editor) : null
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
-    if (openAtEnd.current) {
-      openAtEnd.current = false
-      editor.setPosition(model.getFullModelRange().getEndPosition())
-    }
-    editor.focus()
-    return () => {
-      grammar?.dispose()
-      spell?.dispose()
-      sub.dispose()
-      editor.dispose()
-      model.dispose()
-      editorRef.current = null
-    }
-    // recreate only when entering edit mode, switching docs, or the doc's text
-    // finally arriving — not on every content/draft change (those flow FROM the
-    // editor). Opening straight in edit mode (/add-file) beats the read, so
-    // `contentReady` is what mounts the editor in that case.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selected?.path, contentReady])
-
-  const confirmDiscard = useCallback((): boolean => {
-    return !dirty || window.confirm('Discard unsaved changes?')
-  }, [dirty])
 
   // only markdown gets rendered; any other file (a .gitignore, a script) is
   // shown as-is, since the markdown renderer would mangle it
@@ -306,11 +223,10 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
   const empty = !docs || (!docs.plans.length && !docs.roadmap && !docs.sections.length)
 
   const selectDoc = (e: DocEntry): void => {
-    if (e.path === selected?.path || !confirmDiscard()) return
-    // switching docs drops any draft and returns to view
-    setSelected(e)
+    if (e.path === selected?.path || !editor.confirmDiscard()) return
+    // switching docs drops any draft (the hook's job) and returns to view
+    editor.select(e)
     setMode('view')
-    setDraft(null)
   }
 
   const section = (label: string, entries: DocEntry[]): React.JSX.Element | null =>
