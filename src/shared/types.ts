@@ -159,6 +159,26 @@ export interface DocEntry {
   title: string
   /** modification time, epoch ms (used to sort plans newest-first) */
   mtime: number
+  /** bytes — the editor refuses anything over MAX_EDIT_BYTES until told to */
+  size: number
+}
+
+/** A folder the file tree is rooted at: the tab's cwd, plus its added dirs. */
+export interface TreeRoot {
+  path: string
+  /** the folder's own name, for the row label */
+  name: string
+  /** absolute path, shown when the root is not the tab's own cwd */
+  subtitle?: string
+}
+
+/** One entry inside an expanded tree folder. */
+export interface TreeNode {
+  path: string
+  name: string
+  isDir: boolean
+  /** bytes; 0 for folders */
+  size: number
 }
 
 /** Which status-bar label opened the overlay / which section to focus. */
@@ -180,6 +200,8 @@ export interface ProjectDocs {
   /** every *.md in the repo root or one sub-directory deep, grouped by folder:
    *  root files first, then each sub-folder that holds *.md, folder-name sorted */
   sections: DocSection[]
+  /** folders the file tree is rooted at — the tab's cwd plus its added dirs */
+  roots: TreeRoot[]
 }
 
 /** A specific doc for the docs window to open, instead of its group's first. */
@@ -193,10 +215,10 @@ export interface DocTarget {
 /** Outcome of creating a new doc from `/add-file`. */
 export type CreateDocResult = { ok: true; path: string } | { ok: false; error: string }
 
-/** Above this size a config file is listed but not opened — a generated file
- *  that happens to match a pattern shouldn't be able to hang the editor. Shared
- *  policy: the main process enforces it, the window explains it. */
-export const MAX_CONFIG_EDIT_BYTES = 2 * 1024 * 1024
+/** Above this size a file is listed but not opened by default — a generated
+ *  file shouldn't be able to hang the editor. Shared policy: the main process
+ *  enforces it, the window explains it and offers to open it anyway. */
+export const MAX_EDIT_BYTES = 2 * 1024 * 1024
 
 /** One configuration/settings file surfaced in the status-bar Settings window. */
 export interface ConfigEntry {

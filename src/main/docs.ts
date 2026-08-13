@@ -2,8 +2,10 @@ import { shell } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { basename, dirname, join, resolve, sep } from 'path'
+import { MAX_EDIT_BYTES } from '../shared/types'
 import type { CreateDocResult, DocEntry, DocSection, ProjectDocs } from '../shared/types'
 import { expandHome } from './completions'
+import { insideAny, SKIP_DIRS, treeRoots } from './file-tree'
 
 const PLANS_DIR = join(homedir(), '.claude', 'plans')
 
@@ -29,12 +31,15 @@ function titleFor(path: string): string {
 
 function entry(path: string): DocEntry {
   let mtime = 0
+  let size = 0
   try {
-    mtime = statSync(path).mtimeMs
+    const stat = statSync(path)
+    mtime = stat.mtimeMs
+    size = stat.size
   } catch {
     // ignore — a 0 mtime just sorts last
   }
-  return { path, title: titleFor(path), mtime }
+  return { path, title: titleFor(path), mtime, size }
 }
 
 // Scanning a project's transcripts means reading its (sometimes large) *.jsonl
@@ -126,9 +131,6 @@ function plansForProject(cwd: string): DocEntry[] {
   return plans
 }
 
-/** Sub-directories never worth scanning for docs (heavy or build output). */
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'coverage'])
-
 /** README first, then alphabetical by file name — the order docs are shown in. */
 function byDocName(a: string, b: string): number {
   const ar = /readme\.md$/i.test(a) ? 0 : 1
@@ -189,37 +191,46 @@ function repoDocs(cwd: string): { roadmap: DocEntry | null; sections: DocSection
   return { roadmap, sections }
 }
 
-export function listProjectDocs(cwd: string): ProjectDocs {
+export function listProjectDocs(cwd: string, addedDirs: string[] = []): ProjectDocs {
   const { roadmap, sections } = repoDocs(cwd)
-  return { plans: plansForProject(cwd), roadmap, sections }
+  return {
+    plans: plansForProject(cwd),
+    roadmap,
+    sections,
+    roots: treeRoots(cwd, addedDirs)
+  }
 }
 
-/** The overlay may only read/open files inside the plans dir or the project cwd. */
-function allowed(cwd: string, path: string): boolean {
-  const p = resolve(path)
-  return [resolve(PLANS_DIR), resolve(cwd)].some((r) => p === r || p.startsWith(r + sep))
+/** The window may only reach files inside the plans dir or one of its roots
+ *  (the tab's cwd and its added directories). */
+function allowed(roots: string[], path: string): boolean {
+  return insideAny([PLANS_DIR, ...roots], path)
 }
 
-export function readDoc(cwd: string, path: string): string | null {
-  if (!allowed(cwd, path) || !existsSync(path)) return null
+/** A file's text, or null when it is out of reach, missing or unreadable. Over
+ *  MAX_EDIT_BYTES it reads only when the window asks for it explicitly — the
+ *  user answering "Open anyway" to the size warning. */
+export function readDoc(roots: string[], path: string, allowOversize = false): string | null {
+  if (!allowed(roots, path) || !existsSync(path)) return null
   try {
+    if (!allowOversize && statSync(path).size > MAX_EDIT_BYTES) return null
     return readFileSync(path, 'utf8')
   } catch {
     return null
   }
 }
 
-/** Open the file in the OS default markdown app for editing. */
-export async function openDoc(cwd: string, path: string): Promise<boolean> {
-  if (!allowed(cwd, path) || !existsSync(path)) return false
+/** Open the file in the OS default app for editing. */
+export async function openDoc(roots: string[], path: string): Promise<boolean> {
+  if (!allowed(roots, path) || !existsSync(path)) return false
   const err = await shell.openPath(path)
   return err === ''
 }
 
 /** Overwrite an existing doc from the in-app editor. Only existing files inside
  *  the plans dir or the project cwd may be written — never create new paths. */
-export function writeDoc(cwd: string, path: string, content: string): boolean {
-  if (!allowed(cwd, path) || !existsSync(path)) return false
+export function writeDoc(roots: string[], path: string, content: string): boolean {
+  if (!allowed(roots, path) || !existsSync(path)) return false
   try {
     writeFileSync(path, content, 'utf8')
     return true
@@ -251,11 +262,11 @@ function seedContent(path: string): string {
 /** Create the file `/add-file` asked for and return its absolute path. Same
  *  roots as the rest of the overlay (plans dir or project cwd); missing parent
  *  folders are created, existing files are never touched. */
-export function createDoc(cwd: string, arg: string): CreateDocResult {
+export function createDoc(cwd: string, arg: string, addedDirs: string[] = []): CreateDocResult {
   const name = newFileName(arg)
   if (!name) return { ok: false, error: 'Give a file name, e.g. docs/plan.md' }
   const path = resolve(cwd, expandHome(name) ?? name)
-  if (!allowed(cwd, path)) return { ok: false, error: 'Outside this project' }
+  if (!allowed([cwd, ...addedDirs], path)) return { ok: false, error: 'Outside this project' }
   if (existsSync(path)) return { ok: false, error: `Already exists: ${basename(path)}` }
   try {
     mkdirSync(dirname(path), { recursive: true })

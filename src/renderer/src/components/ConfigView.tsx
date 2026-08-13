@@ -1,18 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ConfigEntry, ProjectConfigFiles } from '../../../shared/types'
-import { MAX_CONFIG_EDIT_BYTES } from '../../../shared/types'
+import { MAX_EDIT_BYTES } from '../../../shared/types'
 import { useFileEditor } from '../file-editor'
+import { formatBytes } from '../format'
 
 interface Props {
   tabId: string
   /** bumped by the owner tab re-opening the window — forces a re-scan */
   reloadKey: number
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /** Case-insensitive substring match on the path shown in the rail. */
@@ -26,11 +21,13 @@ export function ConfigView({ tabId, reloadKey }: Props): React.JSX.Element {
   const [filter, setFilter] = useState('')
   // bumped after saving the patterns file, which changes what the scan returns
   const [rescan, setRescan] = useState(0)
+  // files the user answered the size warning for ("Open anyway")
+  const [oversizeOk, setOversizeOk] = useState<Set<string>>(new Set())
   const patternsFile = files?.patternsFile
 
   const editor = useFileEditor<ConfigEntry>({
     io: {
-      read: (path) => window.claudeTerm.readConfigFile(tabId, path),
+      read: (path) => window.claudeTerm.readConfigFile(tabId, path, oversizeOk.has(path)),
       write: (path, content) => window.claudeTerm.writeConfigFile(tabId, path, content),
       reportDirty: (d) => window.claudeTerm.configDirty(d),
       onRequestSave: (cb) => window.claudeTerm.onConfigRequestSave(cb),
@@ -39,7 +36,7 @@ export function ConfigView({ tabId, reloadKey }: Props): React.JSX.Element {
     scheme: 'claude-config',
     editing: true,
     // don't even read a file we refuse to open — render explains it instead
-    readable: (e) => e.size <= MAX_CONFIG_EDIT_BYTES,
+    readable: (e) => e.size <= MAX_EDIT_BYTES || oversizeOk.has(e.path),
     options: { renderWhitespace: 'selection', tabSize: 2 },
     // the patterns file decides what the scan lists — re-run it once saved
     onSaved: (e) => {
@@ -65,7 +62,10 @@ export function ConfigView({ tabId, reloadKey }: Props): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, reloadKey, rescan])
 
-  const tooLarge = !!selected && selected.size > MAX_CONFIG_EDIT_BYTES
+  const tooLarge = !!selected && selected.size > MAX_EDIT_BYTES && !oversizeOk.has(selected.path)
+  const openAnyway = (): void => {
+    if (selected) setOversizeOk((prev) => new Set(prev).add(selected.path))
+  }
 
   const selectFile = (e: ConfigEntry): void => {
     if (e.path === selected?.path || !editor.confirmDiscard()) return
@@ -98,7 +98,7 @@ export function ConfigView({ tabId, reloadKey }: Props): React.JSX.Element {
           {selected && (
             <div className="docs-actions">
               <span className="config-meta" title={selected.path}>
-                {formatSize(selected.size)}
+                {formatBytes(selected.size)}
               </span>
               <button
                 className="docs-btn docs-save"
@@ -149,8 +149,10 @@ export function ConfigView({ tabId, reloadKey }: Props): React.JSX.Element {
               {tooLarge ? (
                 <div className="docs-preview">
                   <p className="activity-empty">
-                    This file is {formatSize(selected.size)} — too large to edit here. Open it in
-                    your editor instead.
+                    This file is {formatBytes(selected.size)} — big enough to slow the editor down.{' '}
+                    <button className="docs-btn" onClick={openAnyway}>
+                      Open anyway
+                    </button>
                   </p>
                 </div>
               ) : content == null ? (

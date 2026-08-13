@@ -860,6 +860,62 @@ body {
   color: #fff;
 }
 
+/* File tree: one row per entry, indented by depth. Rows are denser than the
+   curated .docs-item entries above them, since a tree needs the vertical room. */
+.docs-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  padding: 1px 6px 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.docs-tree-row:hover {
+  background: var(--bg-input);
+}
+
+.docs-tree-row.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* folders read as structure, files as content */
+.docs-tree-row.file .docs-tree-name {
+  color: var(--fg);
+}
+
+.docs-tree-row:not(.file) .docs-tree-name {
+  color: var(--fg-dim);
+}
+
+.docs-twisty {
+  width: 9px;
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--fg-dim);
+}
+
+.docs-tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docs-tree-note {
+  font-size: 11px;
+  color: var(--fg-dim);
+  padding: 1px 6px;
+}
+
 .docs-preview {
   flex: 1;
   overflow: auto;

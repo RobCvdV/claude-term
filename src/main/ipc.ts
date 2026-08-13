@@ -13,6 +13,7 @@ import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { buildActivityReport } from './activity-log'
 import { createDoc, listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
+import { listTree } from './file-tree'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles, readConfigFile, writeConfigFile } from './config-files'
 import { closeConfigWindowForTab, openOrFocusConfigWindow } from './config-window'
@@ -354,34 +355,44 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     e.returnValue = true
   })
 
-  ipcMain.handle('docs:list', (_e, tabId: TabId) => {
-    const cwd = status.getCwd(tabId)
-    return cwd ? listProjectDocs(cwd) : { plans: [], roadmap: null, sections: [] }
-  })
-  ipcMain.handle('docs:read', (_e, tabId: TabId, path: string) => {
-    const cwd = status.getCwd(tabId)
-    return cwd ? readDoc(cwd, path) : null
-  })
-  ipcMain.handle('docs:open', (_e, tabId: TabId, path: string) => {
-    const cwd = status.getCwd(tabId)
-    return cwd ? openDoc(cwd, path) : false
-  })
-  ipcMain.handle('docs:write', (_e, tabId: TabId, path: string, content: string) => {
-    const cwd = status.getCwd(tabId)
-    return cwd ? writeDoc(cwd, path, content) : false
-  })
-  ipcMain.handle('docs:create', (_e, tabId: TabId, path: string) => {
-    const cwd = status.getCwd(tabId)
-    return cwd ? createDoc(cwd, path) : { ok: false, error: 'No working directory for this tab' }
-  })
-
-  // Project configuration files (the status-bar Settings window). Roots are the
-  // tab's cwd plus its added directories — resolved here, never passed in.
-  const configPatternsFile = join(app.getPath('userData'), 'config-file-patterns.json')
+  // Both file windows reach the tab's cwd plus its added directories — always
+  // resolved here from the tab's own state, never passed in by a renderer.
   const rootsFor = (tabId: TabId): { cwd: string | null; addedDirs: string[] } => {
     const cwd = status.getCwd(tabId)
     return { cwd, addedDirs: cwd ? mergeAddedDirs(cwd, status.getAddedDirs(tabId)) : [] }
   }
+  const docRoots = (tabId: TabId): string[] => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd ? [cwd, ...addedDirs] : []
+  }
+
+  ipcMain.handle('docs:list', (_e, tabId: TabId) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd
+      ? listProjectDocs(cwd, addedDirs)
+      : { plans: [], roadmap: null, sections: [], roots: [] }
+  })
+  ipcMain.handle('docs:tree', (_e, tabId: TabId, dir: string) => {
+    return listTree(docRoots(tabId), dir)
+  })
+  ipcMain.handle('docs:read', (_e, tabId: TabId, path: string, allowOversize?: boolean) => {
+    return readDoc(docRoots(tabId), path, allowOversize)
+  })
+  ipcMain.handle('docs:open', (_e, tabId: TabId, path: string) => {
+    return openDoc(docRoots(tabId), path)
+  })
+  ipcMain.handle('docs:write', (_e, tabId: TabId, path: string, content: string) => {
+    return writeDoc(docRoots(tabId), path, content)
+  })
+  ipcMain.handle('docs:create', (_e, tabId: TabId, path: string) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd
+      ? createDoc(cwd, path, addedDirs)
+      : { ok: false, error: 'No working directory for this tab' }
+  })
+
+  // Project configuration files (the status-bar Settings window).
+  const configPatternsFile = join(app.getPath('userData'), 'config-file-patterns.json')
 
   ipcMain.handle('config:list', (_e, tabId: TabId) => {
     const { cwd, addedDirs } = rootsFor(tabId)
@@ -389,9 +400,9 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       ? listConfigFiles(cwd, addedDirs, configPatternsFile)
       : { sections: [], patternsFile: configPatternsFile }
   })
-  ipcMain.handle('config:read', (_e, tabId: TabId, path: string) => {
+  ipcMain.handle('config:read', (_e, tabId: TabId, path: string, allowOversize?: boolean) => {
     const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd ? readConfigFile(cwd, addedDirs, configPatternsFile, path) : null
+    return cwd ? readConfigFile(cwd, addedDirs, configPatternsFile, path, allowOversize) : null
   })
   ipcMain.handle('config:write', (_e, tabId: TabId, path: string, content: string) => {
     const { cwd, addedDirs } = rootsFor(tabId)

@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { DocEntry, DocGroup, DocTarget, ProjectDocs } from '../../../shared/types'
+import type { DocEntry, DocGroup, DocTarget, ProjectDocs, TreeNode } from '../../../shared/types'
+import { MAX_EDIT_BYTES } from '../../../shared/types'
 import { MARKDOWN_LANG } from '../monaco-setup'
 import { languageForFile } from '../config-lang'
 import { attachSpellcheck } from '../spell'
 import { attachGrammar } from '../grammar'
 import { useFileEditor } from '../file-editor'
+import { formatBytes } from '../format'
+import { FileTree } from './FileTree'
 
 interface Props {
   tabId: string
@@ -153,7 +156,8 @@ function targetEntry(d: ProjectDocs, target?: DocTarget | null): DocEntry | null
   const hit = allEntries(d).find((e) => e.path === target.path)
   if (hit) return hit
   const name = target.path.split('/').pop() ?? target.path
-  return { path: target.path, title: name.replace(/\.md$/i, ''), mtime: 0 }
+  // size 0: a target is a file the app just created, never something to gate
+  return { path: target.path, title: name.replace(/\.md$/i, ''), mtime: 0, size: 0 }
 }
 
 export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
@@ -164,10 +168,15 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
   // end, under its seeded heading; consumed by the editor on mount, so a later
   // View→Edit toggle still opens at the top like any other doc
   const openAtEnd = useRef(false)
+  // expanded folders and the children read for them, for the file tree
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [treeEntries, setTreeEntries] = useState<Map<string, TreeNode[]>>(new Map())
+  // files the user answered the size warning for ("Open anyway")
+  const [oversizeOk, setOversizeOk] = useState<Set<string>>(new Set())
 
   const editor = useFileEditor<DocEntry>({
     io: {
-      read: (path) => window.claudeTerm.readDoc(tabId, path),
+      read: (path) => window.claudeTerm.readDoc(tabId, path, oversizeOk.has(path)),
       write: (path, content) => window.claudeTerm.writeDoc(tabId, path, content),
       reportDirty: (d) => window.claudeTerm.docsDirty(d),
       onRequestSave: (cb) => window.claudeTerm.onDocsRequestSave(cb),
@@ -175,6 +184,9 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     },
     scheme: 'claude-doc',
     editing: mode === 'edit',
+    // a generated file shouldn't be able to hang the editor; the warning below
+    // offers to open it anyway, which is what puts it in `oversizeOk`
+    readable: (e) => e.size <= MAX_EDIT_BYTES || oversizeOk.has(e.path),
     options: { wordWrap: 'on', renderWhitespace: 'none' },
     attach: (ed, language) => {
       if (openAtEnd.current) {
@@ -207,6 +219,35 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, group, target?.path, target?.edit])
 
+  // Expanding a folder reads it once; collapsing keeps what was read, so
+  // re-opening a branch is instant.
+  const toggleFolder = (dir: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(dir)) next.delete(dir)
+      else next.add(dir)
+      return next
+    })
+    if (treeEntries.has(dir)) return
+    void window.claudeTerm.listDocTree(tabId, dir).then((nodes) => {
+      setTreeEntries((prev) => new Map(prev).set(dir, nodes))
+    })
+  }
+
+  /** Open a file picked from the tree. It is not in the rail's own listing, so
+   *  it becomes an entry of its own — titled by file name, like any doc that
+   *  lives deeper than the scan reaches. */
+  const openFromTree = (node: TreeNode): void => {
+    if (node.path === selected?.path || !editor.confirmDiscard()) return
+    editor.select({ path: node.path, title: node.name, mtime: 0, size: node.size })
+    setMode(languageForFile(node.path) === MARKDOWN_LANG ? 'view' : 'edit')
+  }
+
+  const tooLarge = !!selected && selected.size > MAX_EDIT_BYTES && !oversizeOk.has(selected.path)
+  const openAnyway = (): void => {
+    if (selected) setOversizeOk((prev) => new Set(prev).add(selected.path))
+  }
+
   // only markdown gets rendered; any other file (a .gitignore, a script) is
   // shown as-is, since the markdown renderer would mangle it
   const isMarkdown = !selected || languageForFile(selected.path) === MARKDOWN_LANG
@@ -220,7 +261,8 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     if (/^https?:\/\//.test(href)) window.open(href)
   }
 
-  const empty = !docs || (!docs.plans.length && !docs.roadmap && !docs.sections.length)
+  const empty =
+    !docs || (!docs.plans.length && !docs.roadmap && !docs.sections.length && !docs.roots.length)
 
   const selectDoc = (e: DocEntry): void => {
     if (e.path === selected?.path || !editor.confirmDiscard()) return
@@ -293,15 +335,34 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
           {loading ? (
             <p className="activity-empty">Loading…</p>
           ) : empty ? (
-            <p className="activity-empty">No plan, roadmap or docs for this project.</p>
+            <p className="activity-empty">Nothing to show for this project.</p>
           ) : (
             <>
               <div className="docs-rail">
                 {section('Plan', docs!.plans)}
                 {section('Roadmap', docs!.roadmap ? [docs!.roadmap] : [])}
                 {docs!.sections.map((s) => section(s.name, s.entries))}
+                {!!docs!.roots.length && (
+                  <FileTree
+                    roots={docs!.roots}
+                    entries={treeEntries}
+                    expanded={expanded}
+                    selectedPath={selected?.path}
+                    onToggle={toggleFolder}
+                    onOpen={openFromTree}
+                  />
+                )}
               </div>
-              {mode === 'edit' ? (
+              {tooLarge ? (
+                <div className="docs-preview">
+                  <p className="activity-empty">
+                    This file is {formatBytes(selected.size)} — big enough to slow the editor down.{' '}
+                    <button className="docs-btn" onClick={openAnyway}>
+                      Open anyway
+                    </button>
+                  </p>
+                </div>
+              ) : mode === 'edit' ? (
                 <div className="docs-editor" ref={hostRef} />
               ) : (
                 <div className="docs-preview" onClick={onPreviewClick}>

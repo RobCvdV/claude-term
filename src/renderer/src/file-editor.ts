@@ -83,9 +83,13 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
   // the open path, for select()/reselect() — they must not depend on a render
   const openPath = useRef<string | undefined>(undefined)
 
+  // A file the window refuses to open isn't read at all. Read as a value rather
+  // than through the ref, so answering the size warning ("Open anyway") flips
+  // this and re-runs the read — nothing else about the selection changed.
+  const canRead = !selected || (spec.readable?.(selected) ?? true)
+
   useEffect(() => {
-    if (!selected) return
-    if (specRef.current.readable && !specRef.current.readable(selected)) return
+    if (!selected || !canRead) return
     let live = true
     void specRef.current.io.read(selected.path).then((text) => {
       if (live) setLoaded({ path: selected.path, text })
@@ -93,7 +97,7 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
     return () => {
       live = false
     }
-  }, [selected])
+  }, [selected, canRead])
 
   const content = contentOf(loaded, selected?.path)
   const shown = shownText(draft, content)

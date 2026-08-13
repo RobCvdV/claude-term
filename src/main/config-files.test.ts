@@ -9,7 +9,7 @@ import {
   resolveRoots,
   writeConfigFile
 } from './config-files'
-import { MAX_CONFIG_EDIT_BYTES } from '../shared/types'
+import { MAX_EDIT_BYTES } from '../shared/types'
 
 let dir: string
 let patternsFile: string
@@ -157,7 +157,7 @@ describe('listConfigFiles', () => {
     const listed = listConfigFiles(dir, [], patternsFile)
     const pkg = listed.sections[0].entries.find((e) => e.rel === 'package.json')
     expect(pkg?.size).toBeGreaterThan(0)
-    expect(pkg!.size).toBeLessThan(MAX_CONFIG_EDIT_BYTES)
+    expect(pkg!.size).toBeLessThan(MAX_EDIT_BYTES)
   })
 })
 
@@ -224,7 +224,7 @@ describe('readConfigFile / writeConfigFile', () => {
 
   it('refuses to read a file larger than the edit limit', () => {
     const big = join(dir, 'big.json')
-    writeFileSync(big, 'y'.repeat(MAX_CONFIG_EDIT_BYTES + 1))
+    writeFileSync(big, 'y'.repeat(MAX_EDIT_BYTES + 1))
     expect(readConfigFile(dir, [], patternsFile, big)).toBeNull()
     rmSync(big)
   })

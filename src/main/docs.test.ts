@@ -5,7 +5,8 @@ import { join } from 'path'
 
 vi.mock('electron', () => ({ shell: { openPath: async () => '' } }))
 
-const { createDoc, newFileName } = await import('./docs')
+const { createDoc, newFileName, readDoc } = await import('./docs')
+const { MAX_EDIT_BYTES } = await import('../shared/types')
 
 let dir: string
 
@@ -76,6 +77,18 @@ describe('createDoc', () => {
     rmSync(outside, { recursive: true, force: true })
   })
 
+  it('creates into an added directory, which is a root of its own', () => {
+    const added = mkdtempSync(join(tmpdir(), 'docs-added-'))
+    const res = createDoc(dir, join(added, 'notes.md'), [added])
+    expect(res).toEqual({ ok: true, path: join(added, 'notes.md') })
+    // …but not when that directory was never added to the session
+    expect(createDoc(dir, join(added, 'other.md'))).toEqual({
+      ok: false,
+      error: 'Outside this project'
+    })
+    rmSync(added, { recursive: true, force: true })
+  })
+
   it('refuses an argument that names no file', () => {
     for (const arg of ['', 'sub/']) {
       expect(createDoc(dir, arg)).toEqual({
@@ -83,5 +96,29 @@ describe('createDoc', () => {
         error: 'Give a file name, e.g. docs/plan.md'
       })
     }
+  })
+})
+
+describe('readDoc', () => {
+  it('reads a file inside a root, and refuses one outside every root', () => {
+    writeFileSync(join(dir, 'readable.md'), 'hello', 'utf8')
+    expect(readDoc([dir], join(dir, 'readable.md'))).toBe('hello')
+    const outside = mkdtempSync(join(tmpdir(), 'docs-read-outside-'))
+    writeFileSync(join(outside, 'secret.md'), 'nope', 'utf8')
+    expect(readDoc([dir], join(outside, 'secret.md'))).toBeNull()
+    // …until that directory is one of the roots
+    expect(readDoc([dir, outside], join(outside, 'secret.md'))).toBe('nope')
+    rmSync(outside, { recursive: true, force: true })
+  })
+
+  it('holds back a file over the size cap until asked to open it anyway', () => {
+    const big = join(dir, 'big.md')
+    writeFileSync(big, 'x'.repeat(MAX_EDIT_BYTES + 1), 'utf8')
+    expect(readDoc([dir], big)).toBeNull()
+    expect(readDoc([dir], big, true)).toHaveLength(MAX_EDIT_BYTES + 1)
+  })
+
+  it('is null for a file that does not exist', () => {
+    expect(readDoc([dir], join(dir, 'nope.md'))).toBeNull()
   })
 })

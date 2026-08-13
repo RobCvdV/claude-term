@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { basename, dirname, join, relative, resolve, sep } from 'path'
 import type { ConfigEntry, ConfigSection, ProjectConfigFiles } from '../shared/types'
-import { MAX_CONFIG_EDIT_BYTES } from '../shared/types'
+import { MAX_EDIT_BYTES } from '../shared/types'
 import { matchesAny } from './config-patterns'
 
 /**
@@ -294,12 +294,13 @@ export function readConfigFile(
   cwd: string,
   addedDirs: readonly string[],
   patternsFile: string,
-  path: string
+  path: string,
+  allowOversize = false
 ): string | null {
   const roots = resolveRoots(cwd, addedDirs)
   if (!allowed(roots, patternsFile, path) || !existsSync(path)) return null
   try {
-    if (statSync(path).size > MAX_CONFIG_EDIT_BYTES) return null
+    if (!allowOversize && statSync(path).size > MAX_EDIT_BYTES) return null
     return readFileSync(path, 'utf8')
   } catch {
     return null

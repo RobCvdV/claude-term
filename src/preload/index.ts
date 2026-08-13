@@ -21,6 +21,7 @@ import type {
   RateForecast,
   SlashCommand,
   TabId,
+  TreeNode,
   TabInfo,
   TabStatus,
   VolumeOp,
@@ -86,7 +87,10 @@ export interface ClaudeTermApi {
   /** local branches of every workspace repo, grouped by folder (branch menu) */
   listWorkspaceBranches(tabId: TabId): Promise<BranchGroup[]>
   listDocs(tabId: TabId): Promise<ProjectDocs>
-  readDoc(tabId: TabId, path: string): Promise<string | null>
+  /** one level of a folder in the docs window's file tree */
+  listDocTree(tabId: TabId, dir: string): Promise<TreeNode[]>
+  /** a file's text; `allowOversize` answers the size warning ("Open anyway") */
+  readDoc(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
   writeDoc(tabId: TabId, path: string, content: string): Promise<boolean>
   /** create a new markdown doc under the tab's cwd (for /add-file) */
@@ -105,7 +109,8 @@ export interface ClaudeTermApi {
   /** (docs window only) acknowledge a save request has completed */
   docsSaveDone(): void
   listConfigFiles(tabId: TabId): Promise<ProjectConfigFiles>
-  readConfigFile(tabId: TabId, path: string): Promise<string | null>
+  /** a file's text; `allowOversize` answers the size warning ("Open anyway") */
+  readConfigFile(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
   writeConfigFile(tabId: TabId, path: string, content: string): Promise<boolean>
   /** open (or focus, if already open) the settings window for a tab */
   openConfigWindow(tabId: TabId, title: string): void
@@ -181,7 +186,9 @@ const api: ClaudeTermApi = {
   switchBranch: (tabId, branch, root) => ipcRenderer.invoke('git:switch', tabId, branch, root),
   listWorkspaceBranches: (tabId) => ipcRenderer.invoke('branches:workspace', tabId),
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
-  readDoc: (tabId, path) => ipcRenderer.invoke('docs:read', tabId, path),
+  listDocTree: (tabId, dir) => ipcRenderer.invoke('docs:tree', tabId, dir),
+  readDoc: (tabId, path, allowOversize) =>
+    ipcRenderer.invoke('docs:read', tabId, path, allowOversize),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
   writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),
   createDoc: (tabId, path) => ipcRenderer.invoke('docs:create', tabId, path),
@@ -192,7 +199,8 @@ const api: ClaudeTermApi = {
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),
   docsSaveDone: () => ipcRenderer.send('docs:saveDone'),
   listConfigFiles: (tabId) => ipcRenderer.invoke('config:list', tabId),
-  readConfigFile: (tabId, path) => ipcRenderer.invoke('config:read', tabId, path),
+  readConfigFile: (tabId, path, allowOversize) =>
+    ipcRenderer.invoke('config:read', tabId, path, allowOversize),
   writeConfigFile: (tabId, path, content) =>
     ipcRenderer.invoke('config:write', tabId, path, content),
   openConfigWindow: (tabId, title) => ipcRenderer.send('config:openWindow', tabId, title),
