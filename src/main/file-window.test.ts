@@ -164,6 +164,23 @@ describe('opening', () => {
     expect(win(1).loaded.search).toBe('?docs=1&tabId=tab-2&group=plan&title=Other')
   })
 
+  it('uses the spec’s own OS title when it has one', () => {
+    const titled = createFileWindows<Open>({
+      channel: 'titled',
+      width: 900,
+      height: 720,
+      subject: 'document',
+      osTitle: (t) => `File editor — ${t}`,
+      query: (tabId) => `?tabId=${tabId}`,
+      retarget: () => {}
+    })
+    titled.openOrFocus('tab-1', 'Project', { group: 'docs' })
+    // the window's own title carries the prefix; the renderer is told the plain
+    // one, so it can compose its own without doubling it up
+    expect(win().options.title).toBe('File editor — Project')
+    expect(win().loaded.search).toBe('?tabId=tab-1')
+  })
+
   it('shows the window once the renderer is ready', () => {
     windows.openOrFocus('tab-1', 'Project', { group: 'docs' })
     expect(win().shown).toBe(0)

@@ -1,4 +1,5 @@
 import type { DocGroup, DocTarget, TabId } from '../shared/types'
+import { WINDOW_KIND, windowTitle } from '../shared/window-titles'
 import { createFileWindows } from './file-window'
 
 /** What the docs window is showing: a section, optionally one specific file. */
@@ -12,6 +13,8 @@ const windows = createFileWindows<DocsOpen>({
   width: 900,
   height: 720,
   subject: 'document',
+  // until the renderer loads and names the file it landed on
+  osTitle: (title) => windowTitle(WINDOW_KIND.files, title),
   query: (tabId, title, { group, target }) =>
     `?docs=1&tabId=${encodeURIComponent(tabId)}` +
     `&group=${group}&title=${encodeURIComponent(title)}` +

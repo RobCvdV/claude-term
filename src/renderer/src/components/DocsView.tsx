@@ -16,6 +16,8 @@ interface Props {
   /** one specific doc to open (a just-created `/add-file`), instead of the
    *  group's first entry — with `edit` it opens straight in the editor */
   target?: DocTarget | null
+  /** the file now on screen, for the window's own title */
+  onOpenFile?: (label: string | null) => void
 }
 
 function escapeHtml(s: string): string {
@@ -201,7 +203,7 @@ function targetEntry(d: ProjectDocs, target?: DocTarget | null): FileItem | null
   return { path: target.path, label: name.replace(/\.md$/i, ''), size: 0 }
 }
 
-export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
+export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX.Element {
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
@@ -255,6 +257,10 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     }
   })
   const { selected, content, shown, dirty, saving, save, hostRef } = editor
+
+  useEffect(() => {
+    onOpenFile?.(selected?.label ?? null)
+  }, [selected?.label, onOpenFile])
 
   useEffect(() => {
     let live = true

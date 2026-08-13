@@ -18,6 +18,7 @@ import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { HelpOverlay } from './components/HelpOverlay'
 import { MissionControl } from './components/MissionControl'
 import { composeWindowTitle } from './tab-title'
+import { WINDOW_KIND, windowTitle } from '../../shared/window-titles'
 import { moveItem } from './tab-reorder'
 import { needsInput, nextAttentionTab } from './attention'
 import { closeTabConfirmMessage } from './close-guard'
@@ -534,6 +535,19 @@ export default function App(): React.JSX.Element {
 
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
   const showClaudeUi = !!activeStatus?.claudeActive
+  const activeTitle = tabs.find((t) => t.tabId === activeId)?.title ?? ''
+
+  // The OS window title. It leads with the fixed kind so switchers and window
+  // managers can find this window by title, then names the tab it is showing
+  // and any overlay that owns it (the help overlay lives in this window rather
+  // than one of its own).
+  useEffect(() => {
+    document.title = windowTitle(
+      WINDOW_KIND.main,
+      composeWindowTitle(activeTitle, activeStatus),
+      helpSection ? 'Help' : null
+    )
+  }, [activeTitle, activeStatus, helpSection])
 
   const openDocsFor = useCallback(
     (group: DocGroup, target?: DocTarget): void => {

@@ -23,6 +23,9 @@ export interface FileWindowSpec<Open> {
   height: number
   /** what the unsaved-changes prompt calls the open file ("document", "file") */
   subject: string
+  /** the window's own OS title, when it differs from what the renderer is told
+   *  (the renderer refines it once loaded — this is what shows until then) */
+  osTitle?: (title: string) => string
   /** query string, leading `?` included, for a freshly opened window */
   query: (tabId: TabId, title: string, open: Open) => string
   /** re-point a window that is already open (it keeps its renderer) */
@@ -123,7 +126,7 @@ export function createFileWindows<Open>(spec: FileWindowSpec<Open>): FileWindows
       width: spec.width,
       height: spec.height,
       show: false,
-      title,
+      title: spec.osTitle?.(title) ?? title,
       autoHideMenuBar: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
