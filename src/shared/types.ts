@@ -181,8 +181,8 @@ export interface TreeNode {
   size: number
 }
 
-/** Which status-bar label opened the overlay / which section to focus. */
-export type DocGroup = 'plan' | 'roadmap' | 'docs'
+/** Which status-bar label opened the file window / which group to land on. */
+export type DocGroup = 'plan' | 'roadmap' | 'docs' | 'settings'
 
 /** A folder's markdown files, shown as one section in the docs overlay. */
 export interface DocSection {
@@ -191,7 +191,8 @@ export interface DocSection {
   entries: DocEntry[]
 }
 
-/** Markdown docs available for one project (tab), grouped for the overlay. */
+/** Everything the file window's rail lists for one tab: the curated markdown
+ *  groups, the project's configuration files, and the roots of its file tree. */
 export interface ProjectDocs {
   /** plan-mode plans (~/.claude/plans) this project's sessions created, newest first */
   plans: DocEntry[]
@@ -202,6 +203,10 @@ export interface ProjectDocs {
   sections: DocSection[]
   /** folders the file tree is rooted at — the tab's cwd plus its added dirs */
   roots: TreeRoot[]
+  /** the project's configuration files, grouped by scan root */
+  config: ConfigSection[]
+  /** the pattern list that decides what `config` holds — editable in the window */
+  patternsFile: string
 }
 
 /** A specific doc for the docs window to open, instead of its group's first. */

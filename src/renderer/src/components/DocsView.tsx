@@ -133,31 +133,72 @@ function renderMarkdown(md: string): string {
   return html.join('\n')
 }
 
-/** First entry of the requested group, falling back through the others. */
-function pickInitial(d: ProjectDocs, group: DocGroup): DocEntry | null {
-  const order: DocGroup[] = [group, 'plan', 'roadmap', 'docs']
-  for (const g of order) {
-    if (g === 'plan' && d.plans[0]) return d.plans[0]
-    if (g === 'roadmap' && d.roadmap) return d.roadmap
-    if (g === 'docs' && d.sections[0]?.entries[0]) return d.sections[0].entries[0]
+/** One selectable file in the rail, whatever listing it came from: a plan, a
+ *  doc, a configuration file, or a file picked out of the tree. */
+export interface FileItem {
+  path: string
+  /** what the rail shows — a doc's title, a config file's relative path */
+  label: string
+  size: number
+}
+
+/** A labelled run of files in the rail. */
+interface RailGroup {
+  name: string
+  /** shown under the heading when a group's root isn't the tab's own cwd */
+  subtitle?: string
+  items: FileItem[]
+}
+
+const docItems = (entries: DocEntry[]): FileItem[] =>
+  entries.map((e) => ({ path: e.path, label: e.title, size: e.size }))
+
+/** The rail's groups, in order: the curated markdown first, then the project's
+ *  configuration files. The tree below them reaches everything else. */
+function railGroups(d: ProjectDocs): RailGroup[] {
+  const groups: RailGroup[] = [
+    { name: 'Plan', items: docItems(d.plans) },
+    { name: 'Roadmap', items: docItems(d.roadmap ? [d.roadmap] : []) },
+    ...d.sections.map((s) => ({ name: s.name, items: docItems(s.entries) })),
+    // the first config section is the tab's own root; later ones are added
+    // directories (and the app's own pattern list), so they name themselves
+    ...d.config.map((s, i) => ({
+      name: i === 0 ? 'Settings' : `Settings · ${s.name}`,
+      subtitle: s.subtitle,
+      items: s.entries.map((e) => ({ path: e.path, label: e.rel, size: e.size }))
+    }))
+  ]
+  return groups.filter((g) => g.items.length)
+}
+
+/** Where a landing group starts, falling back through the others so a window
+ *  opened on an empty group still shows something. */
+function pickInitial(d: ProjectDocs, group: DocGroup): FileItem | null {
+  const first = (name: DocGroup): FileItem | null => {
+    if (name === 'plan') return docItems(d.plans)[0] ?? null
+    if (name === 'roadmap') return docItems(d.roadmap ? [d.roadmap] : [])[0] ?? null
+    if (name === 'docs') return docItems(d.sections[0]?.entries ?? [])[0] ?? null
+    const e = d.config[0]?.entries[0]
+    return e ? { path: e.path, label: e.rel, size: e.size } : null
+  }
+  for (const name of [group, 'plan', 'roadmap', 'docs', 'settings'] as DocGroup[]) {
+    const hit = first(name)
+    if (hit) return hit
   }
   return null
 }
 
-/** Every listed doc, in rail order. */
-function allEntries(d: ProjectDocs): DocEntry[] {
-  return [...d.plans, ...(d.roadmap ? [d.roadmap] : []), ...d.sections.flatMap((s) => s.entries)]
-}
-
-/** The doc a target points at: its listed entry, else a stand-in built from the
- *  file name — docs more than one folder deep exist but aren't in the rail. */
-function targetEntry(d: ProjectDocs, target?: DocTarget | null): DocEntry | null {
+/** The file a target points at: its listed entry, else a stand-in built from the
+ *  file name — a file deeper than the listings reach is opened all the same. */
+function targetEntry(d: ProjectDocs, target?: DocTarget | null): FileItem | null {
   if (!target) return null
-  const hit = allEntries(d).find((e) => e.path === target.path)
+  const hit = railGroups(d)
+    .flatMap((g) => g.items)
+    .find((e) => e.path === target.path)
   if (hit) return hit
   const name = target.path.split('/').pop() ?? target.path
   // size 0: a target is a file the app just created, never something to gate
-  return { path: target.path, title: name.replace(/\.md$/i, ''), mtime: 0, size: 0 }
+  return { path: target.path, label: name.replace(/\.md$/i, ''), size: 0 }
 }
 
 export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
@@ -173,8 +214,17 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
   const [treeEntries, setTreeEntries] = useState<Map<string, TreeNode[]>>(new Map())
   // files the user answered the size warning for ("Open anyway")
   const [oversizeOk, setOversizeOk] = useState<Set<string>>(new Set())
+  const [filter, setFilter] = useState('')
+  // bumped after saving the pattern list, which changes what settings lists
+  const [rescan, setRescan] = useState(0)
+  const patternsFile = docs?.patternsFile
 
-  const editor = useFileEditor<DocEntry>({
+  // markdown opens in its rendered preview; anything else has nothing to render,
+  // so it opens in the editor — which is what the settings window always did
+  const modeFor = (path: string): 'view' | 'edit' =>
+    languageForFile(path) === MARKDOWN_LANG ? 'view' : 'edit'
+
+  const editor = useFileEditor<FileItem>({
     io: {
       read: (path) => window.claudeTerm.readDoc(tabId, path, oversizeOk.has(path)),
       write: (path, content) => window.claudeTerm.writeDoc(tabId, path, content),
@@ -188,6 +238,10 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     // offers to open it anyway, which is what puts it in `oversizeOk`
     readable: (e) => e.size <= MAX_EDIT_BYTES || oversizeOk.has(e.path),
     options: { wordWrap: 'on', renderWhitespace: 'none' },
+    // the pattern list decides what the settings groups hold — re-list once saved
+    onSaved: (e) => {
+      if (e.path === patternsFile) setRescan((n) => n + 1)
+    },
     attach: (ed, language) => {
       if (openAtEnd.current) {
         openAtEnd.current = false
@@ -207,8 +261,10 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     window.claudeTerm.listDocs(tabId).then((d) => {
       if (!live) return
       setDocs(d)
-      editor.select(targetEntry(d, target) ?? pickInitial(d, group))
+      const initial = targetEntry(d, target) ?? pickInitial(d, group)
+      editor.select(initial)
       if (target) setMode(target.edit ? 'edit' : 'view')
+      else if (initial) setMode(modeFor(initial.path))
       openAtEnd.current = !!target?.edit
       setLoading(false)
     })
@@ -217,7 +273,7 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     }
     // a re-target is only ever a new path/mode, so depend on those, not identity
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, group, target?.path, target?.edit])
+  }, [tabId, group, target?.path, target?.edit, rescan])
 
   // Expanding a folder reads it once; collapsing keeps what was read, so
   // re-opening a branch is instant.
@@ -234,13 +290,12 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     })
   }
 
-  /** Open a file picked from the tree. It is not in the rail's own listing, so
-   *  it becomes an entry of its own — titled by file name, like any doc that
-   *  lives deeper than the scan reaches. */
+  /** Open a file picked from the tree. It isn't in the rail's own listings, so
+   *  it becomes an entry of its own, labelled by file name. */
   const openFromTree = (node: TreeNode): void => {
     if (node.path === selected?.path || !editor.confirmDiscard()) return
-    editor.select({ path: node.path, title: node.name, mtime: 0, size: node.size })
-    setMode(languageForFile(node.path) === MARKDOWN_LANG ? 'view' : 'edit')
+    editor.select({ path: node.path, label: node.name, size: node.size })
+    setMode(modeFor(node.path))
   }
 
   const tooLarge = !!selected && selected.size > MAX_EDIT_BYTES && !oversizeOk.has(selected.path)
@@ -261,39 +316,50 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
     if (/^https?:\/\//.test(href)) window.open(href)
   }
 
-  const empty =
-    !docs || (!docs.plans.length && !docs.roadmap && !docs.sections.length && !docs.roots.length)
+  const groups = useMemo(() => {
+    if (!docs) return []
+    const q = filter.trim().toLowerCase()
+    if (!q) return railGroups(docs)
+    return railGroups(docs)
+      .map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(q)) }))
+      .filter((g) => g.items.length)
+  }, [docs, filter])
 
-  const selectDoc = (e: DocEntry): void => {
+  const listed = docs ? railGroups(docs).reduce((n, g) => n + g.items.length, 0) : 0
+  const empty = !docs || (!listed && !docs.roots.length)
+
+  const selectFile = (e: FileItem): void => {
     if (e.path === selected?.path || !editor.confirmDiscard()) return
-    // switching docs drops any draft (the hook's job) and returns to view
+    // switching files drops any draft — the hook's job
     editor.select(e)
-    setMode('view')
+    setMode(modeFor(e.path))
   }
 
-  const section = (label: string, entries: DocEntry[]): React.JSX.Element | null =>
-    entries.length ? (
-      <div className="docs-section" key={label}>
-        <div className="docs-section-title">{label}</div>
-        {entries.map((e) => (
-          <button
-            key={e.path}
-            className={`docs-item ${selected?.path === e.path ? 'active' : ''}`}
-            onClick={() => selectDoc(e)}
-            title={e.path}
-          >
-            {e.title}
-          </button>
-        ))}
+  const section = (g: RailGroup): React.JSX.Element => (
+    <div className="docs-section" key={g.name}>
+      <div className="docs-section-title" title={g.subtitle}>
+        {g.name}
+        {g.subtitle && <span className="config-section-sub">{g.subtitle}</span>}
       </div>
-    ) : null
+      {g.items.map((e) => (
+        <button
+          key={e.path}
+          className={`docs-item ${selected?.path === e.path ? 'active' : ''}`}
+          onClick={() => selectFile(e)}
+          title={e.path}
+        >
+          {e.label}
+        </button>
+      ))}
+    </div>
+  )
 
   return (
     <div className="docs-window">
       <div className="docs-panel">
         <div className="activity-head">
           <span className="activity-title">
-            {selected?.title ?? 'Docs'}
+            {selected?.label ?? 'Files'}
             {dirty && (
               <span className="docs-dirty" title="Unsaved changes">
                 {' '}
@@ -303,6 +369,11 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
           </span>
           {selected && (
             <div className="docs-actions">
+              {!!selected.size && (
+                <span className="config-meta" title={selected.path}>
+                  {formatBytes(selected.size)}
+                </span>
+              )}
               {dirty && (
                 <button
                   className="docs-btn docs-save"
@@ -339,9 +410,17 @@ export function DocsView({ tabId, group, target }: Props): React.JSX.Element {
           ) : (
             <>
               <div className="docs-rail">
-                {section('Plan', docs!.plans)}
-                {section('Roadmap', docs!.roadmap ? [docs!.roadmap] : [])}
-                {docs!.sections.map((s) => section(s.name, s.entries))}
+                {listed > 0 && (
+                  <input
+                    className="config-filter"
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    placeholder={`Filter ${listed} listed…`}
+                    spellCheck={false}
+                  />
+                )}
+                {groups.map(section)}
+                {!!filter && !groups.length && <p className="activity-empty">No match.</p>}
                 {!!docs!.roots.length && (
                   <FileTree
                     roots={docs!.roots}

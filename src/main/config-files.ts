@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { basename, dirname, join, relative, resolve, sep } from 'path'
 import type { ConfigEntry, ConfigSection, ProjectConfigFiles } from '../shared/types'
-import { MAX_EDIT_BYTES } from '../shared/types'
 import { matchesAny } from './config-patterns'
 
 /**
@@ -277,51 +276,4 @@ export function listConfigFiles(
   }
 
   return { sections, patternsFile }
-}
-
-/** The window may only read/write inside one of the tab's roots, or the app's
- *  own patterns file. Mirrors docs.ts — the renderer never supplies a root. */
-function allowed(roots: readonly string[], patternsFile: string, path: string): boolean {
-  const p = resolve(path)
-  if (p === resolve(patternsFile)) return true
-  return roots.some((r) => {
-    const root = resolve(r)
-    return p === root || p.startsWith(root + sep)
-  })
-}
-
-export function readConfigFile(
-  cwd: string,
-  addedDirs: readonly string[],
-  patternsFile: string,
-  path: string,
-  allowOversize = false
-): string | null {
-  const roots = resolveRoots(cwd, addedDirs)
-  if (!allowed(roots, patternsFile, path) || !existsSync(path)) return null
-  try {
-    if (!allowOversize && statSync(path).size > MAX_EDIT_BYTES) return null
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
-}
-
-/** Overwrite an existing config file from the editor. Only existing files inside
- *  the tab's roots may be written — never create new paths. */
-export function writeConfigFile(
-  cwd: string,
-  addedDirs: readonly string[],
-  patternsFile: string,
-  path: string,
-  content: string
-): boolean {
-  const roots = resolveRoots(cwd, addedDirs)
-  if (!allowed(roots, patternsFile, path) || !existsSync(path)) return false
-  try {
-    writeFileSync(path, content, 'utf8')
-    return true
-  } catch {
-    return false
-  }
 }

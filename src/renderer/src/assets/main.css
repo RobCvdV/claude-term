@@ -813,7 +813,7 @@ body {
 }
 
 .docs-rail {
-  width: 220px;
+  width: 260px;
   flex-shrink: 0;
   overflow-y: auto;
   padding: 10px;
@@ -834,6 +834,8 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Entries are titles and paths side by side, so wrap rather than ellipsize —
+   truncating the end of a path hides the file name, which is what identifies it. */
 .docs-item {
   display: block;
   width: 100%;
@@ -842,13 +844,13 @@ body {
   border: none;
   color: var(--fg);
   font: inherit;
-  font-size: 12.5px;
-  padding: 5px 6px;
+  font-size: 12px;
+  padding: 4px 6px;
   border-radius: 5px;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .docs-item:hover {
@@ -1000,23 +1002,7 @@ body {
   margin: 1.2em 0;
 }
 
-/* --- Settings window (project config files) --- */
-/* Reuses the docs window's shell (.docs-window/.docs-panel/.docs-rail/…); only
-   the extras it needs are defined here. The rail is wider because entries are
-   paths (".claude/settings.json"), not short titles. */
-.config-window .docs-rail {
-  width: 280px;
-}
-
-/* Entries are paths, so wrap rather than ellipsize — truncating the end hides
-   the file name, which is the part that identifies the entry. */
-.config-window .docs-item {
-  font-size: 12px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-}
-
+/* --- file window extras (filter, group subtitles, size) --- */
 .docs-window .config-filter {
   width: 100%;
   box-sizing: border-box;

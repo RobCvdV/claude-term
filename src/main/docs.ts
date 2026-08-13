@@ -191,7 +191,12 @@ function repoDocs(cwd: string): { roadmap: DocEntry | null; sections: DocSection
   return { roadmap, sections }
 }
 
-export function listProjectDocs(cwd: string, addedDirs: string[] = []): ProjectDocs {
+/** The markdown groups and tree roots of a project. The file window's payload
+ *  adds the configuration files to this (see the `docs:list` handler). */
+export function listProjectDocs(
+  cwd: string,
+  addedDirs: string[] = []
+): Omit<ProjectDocs, 'config' | 'patternsFile'> {
   const { roadmap, sections } = repoDocs(cwd)
   return {
     plans: plansForProject(cwd),

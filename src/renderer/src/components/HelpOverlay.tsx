@@ -162,12 +162,18 @@ function Guide(): React.JSX.Element {
         </p>
       </section>
       <section>
-        <h3>Docs, plans &amp; settings</h3>
+        <h3>The file window</h3>
         <p>
-          The status bar surfaces the project&apos;s markdown: plan-mode plans written by Claude, a{' '}
-          <code>ROADMAP.md</code>, and other docs — each opens in a separate editor window with
-          spell/grammar checking. <b>settings</b> lists every Claude/config file that applies to the
-          project (global, project and local settings, CLAUDE.md, MCP config …).
+          One detached window per tab holds everything the project has to read and edit. Its rail
+          lists the plan-mode plans Claude wrote, a <code>ROADMAP.md</code>, the project&apos;s
+          other markdown, and every Claude/config file that applies to it (global, project and local
+          settings, MCP config …) — then a tree of the project itself, so any file is reachable,
+          with added directories as sibling roots. The <b>plan</b>, <b>roadmap</b>, <b>docs</b> and{' '}
+          <b>settings</b> chips in the status bar all open that one window, each landing on its own
+          group; the filter box narrows the listed groups. Markdown opens rendered, with
+          spell/grammar checking when you edit it; anything else opens straight in the editor with
+          highlighting for its type. <code>⌘S</code> saves, a dot marks unsaved changes, and closing
+          the window (or its tab) prompts first.
         </p>
       </section>
       <section>

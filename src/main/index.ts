@@ -9,7 +9,6 @@ import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './
 import { setupUpdater, installUpdate, checkForUpdatesInteractive } from './updater'
 import { installAppMenu } from './menu'
 import { closeAllDocsWindows } from './docs-window'
-import { closeAllConfigWindows } from './config-window'
 import { CiPoller } from './ci-status'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
@@ -89,7 +88,6 @@ function createWindow(): void {
     // detached docs/settings windows would otherwise keep the app alive after
     // the main window is gone (window-all-closed never fires)
     closeAllDocsWindows()
-    closeAllConfigWindows()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

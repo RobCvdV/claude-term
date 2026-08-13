@@ -15,8 +15,7 @@ import { buildActivityReport } from './activity-log'
 import { createDoc, listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
 import { listTree } from './file-tree'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
-import { listConfigFiles, readConfigFile, writeConfigFile } from './config-files'
-import { closeConfigWindowForTab, openOrFocusConfigWindow } from './config-window'
+import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
 import { sessionHomeDir } from './session-home'
 import { settingsAddedDirs } from './project-dirs'
@@ -166,7 +165,6 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     // Flush the detached windows first (they may prompt to save) while the tab's
     // status — and thus their cwd/roots — is still resolvable.
     await closeDocsWindowForTab(tabId)
-    await closeConfigWindowForTab(tabId)
     ptys.kill(tabId)
     status.removeTab(tabId)
   })
@@ -177,10 +175,6 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       openOrFocusDocsWindow(tabId, group, title, target)
     }
   )
-
-  ipcMain.on('config:openWindow', (_e, tabId: TabId, title: string) => {
-    openOrFocusConfigWindow(tabId, title)
-  })
 
   ipcMain.handle('tab:restart', async (_e, tabId: TabId) => {
     status.markRestarted(tabId)
@@ -361,16 +355,21 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const cwd = status.getCwd(tabId)
     return { cwd, addedDirs: cwd ? mergeAddedDirs(cwd, status.getAddedDirs(tabId)) : [] }
   }
+  // What the file window may reach: the tab's roots, plus the pattern list it
+  // edits (which lives in userData, outside every project).
+  const patternsFile = join(app.getPath('userData'), 'config-file-patterns.json')
   const docRoots = (tabId: TabId): string[] => {
     const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd ? [cwd, ...addedDirs] : []
+    return cwd ? [cwd, ...addedDirs, patternsFile] : []
   }
 
   ipcMain.handle('docs:list', (_e, tabId: TabId) => {
     const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd
-      ? listProjectDocs(cwd, addedDirs)
-      : { plans: [], roadmap: null, sections: [], roots: [] }
+    if (!cwd) {
+      return { plans: [], roadmap: null, sections: [], roots: [], config: [], patternsFile }
+    }
+    const config = listConfigFiles(cwd, addedDirs, patternsFile)
+    return { ...listProjectDocs(cwd, addedDirs), config: config.sections, patternsFile }
   })
   ipcMain.handle('docs:tree', (_e, tabId: TabId, dir: string) => {
     return listTree(docRoots(tabId), dir)
@@ -389,24 +388,6 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     return cwd
       ? createDoc(cwd, path, addedDirs)
       : { ok: false, error: 'No working directory for this tab' }
-  })
-
-  // Project configuration files (the status-bar Settings window).
-  const configPatternsFile = join(app.getPath('userData'), 'config-file-patterns.json')
-
-  ipcMain.handle('config:list', (_e, tabId: TabId) => {
-    const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd
-      ? listConfigFiles(cwd, addedDirs, configPatternsFile)
-      : { sections: [], patternsFile: configPatternsFile }
-  })
-  ipcMain.handle('config:read', (_e, tabId: TabId, path: string, allowOversize?: boolean) => {
-    const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd ? readConfigFile(cwd, addedDirs, configPatternsFile, path, allowOversize) : null
-  })
-  ipcMain.handle('config:write', (_e, tabId: TabId, path: string, content: string) => {
-    const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd ? writeConfigFile(cwd, addedDirs, configPatternsFile, path, content) : false
   })
 
   ipcMain.handle('completions:commands', (_e, tabId: TabId) => {

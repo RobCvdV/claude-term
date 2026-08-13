@@ -5,7 +5,7 @@ import { join } from 'path'
 
 vi.mock('electron', () => ({ shell: { openPath: async () => '' } }))
 
-const { createDoc, newFileName, readDoc } = await import('./docs')
+const { createDoc, newFileName, readDoc, writeDoc } = await import('./docs')
 const { MAX_EDIT_BYTES } = await import('../shared/types')
 
 let dir: string
@@ -120,5 +120,40 @@ describe('readDoc', () => {
 
   it('is null for a file that does not exist', () => {
     expect(readDoc([dir], join(dir, 'nope.md'))).toBeNull()
+  })
+})
+
+describe('writeDoc', () => {
+  it('overwrites an existing file, and never creates a new one', () => {
+    const target = join(dir, 'writable.md')
+    writeFileSync(target, 'before', 'utf8')
+    expect(writeDoc([dir], target, 'after')).toBe(true)
+    expect(readFileSync(target, 'utf8')).toBe('after')
+    expect(writeDoc([dir], join(dir, 'brand-new.md'), 'x')).toBe(false)
+    expect(existsSync(join(dir, 'brand-new.md'))).toBe(false)
+  })
+
+  it('refuses a path outside every root', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'docs-write-outside-'))
+    const target = join(outside, 'theirs.md')
+    writeFileSync(target, 'theirs', 'utf8')
+    expect(writeDoc([dir], target, 'mine')).toBe(false)
+    expect(readFileSync(target, 'utf8')).toBe('theirs')
+    rmSync(outside, { recursive: true, force: true })
+  })
+
+  // the pattern list the window edits lives in userData, outside every project
+  it('reaches a single file passed as a root, and nothing else beside it', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'docs-userdata-'))
+    const patterns = join(outside, 'config-file-patterns.json')
+    writeFileSync(patterns, '{}', 'utf8')
+    expect(readDoc([dir], patterns)).toBeNull()
+    expect(readDoc([dir, patterns], patterns)).toBe('{}')
+    expect(writeDoc([dir, patterns], patterns, '{"include":[]}')).toBe(true)
+    // and that root grants nothing else in its folder
+    const sibling = join(outside, 'other.json')
+    writeFileSync(sibling, '{}', 'utf8')
+    expect(readDoc([dir, patterns], sibling)).toBeNull()
+    rmSync(outside, { recursive: true, force: true })
   })
 })

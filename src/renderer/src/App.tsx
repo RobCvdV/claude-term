@@ -558,16 +558,6 @@ export default function App(): React.JSX.Element {
     [openDocsFor]
   )
 
-  const openSettingsFor = useCallback((): void => {
-    if (!activeId) return
-    const title = tabs.find((t) => t.tabId === activeId)?.title ?? 'Settings'
-    window.claudeTerm.openConfigWindow(
-      activeId,
-      `${composeWindowTitle(title, activeStatus)} — settings`
-    )
-    restoreFocus(activeId)
-  }, [activeId, tabs, activeStatus, restoreFocus])
-
   const attentionCount = tabs.filter((t) => needsInput(statuses[t.tabId])).length
 
   const paletteActions: PaletteAction[] = [
@@ -589,14 +579,18 @@ export default function App(): React.JSX.Element {
       : []),
     ...(showClaudeUi
       ? [
-          { id: 'docs', label: 'Open docs window', run: () => openDocsFor('docs' as DocGroup) },
-          { id: 'plan', label: 'Open plans window', run: () => openDocsFor('plan' as DocGroup) },
+          { id: 'docs', label: 'Open files window', run: () => openDocsFor('docs' as DocGroup) },
+          { id: 'plan', label: 'Open files window on the plan', run: () => openDocsFor('plan') },
           {
             id: 'roadmap',
-            label: 'Open roadmap window',
-            run: () => openDocsFor('roadmap' as DocGroup)
+            label: 'Open files window on the roadmap',
+            run: () => openDocsFor('roadmap')
           },
-          { id: 'settings', label: 'Open settings window', run: openSettingsFor }
+          {
+            id: 'settings',
+            label: 'Open files window on the settings',
+            run: () => openDocsFor('settings')
+          }
         ]
       : []),
     ...(updateVersion
@@ -712,7 +706,6 @@ export default function App(): React.JSX.Element {
               status={activeStatus}
               color={activeId ? colors[activeId] : undefined}
               onOpenDocs={openDocsFor}
-              onOpenSettings={openSettingsFor}
             />
           )}
           {showClaudeUi && activeId && (

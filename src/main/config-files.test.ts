@@ -2,13 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
-  listConfigFiles,
-  readConfigFile,
-  readPatterns,
-  resolveRoots,
-  writeConfigFile
-} from './config-files'
+import { listConfigFiles, readPatterns, resolveRoots } from './config-files'
 import { MAX_EDIT_BYTES } from '../shared/types'
 
 let dir: string
@@ -187,45 +181,5 @@ describe('resolveRoots', () => {
 
   it('de-duplicates repeated added dirs', () => {
     expect(resolveRoots(dir, [added, added])).toEqual([dir, added])
-  })
-})
-
-describe('readConfigFile / writeConfigFile', () => {
-  it('reads a file inside a root', () => {
-    expect(readConfigFile(dir, [], patternsFile, join(dir, 'package.json'))).toBe('x')
-  })
-
-  it('refuses a path outside every root — the window must not become a file browser', () => {
-    expect(readConfigFile(dir, [], patternsFile, join(outside, 'secrets.json'))).toBeNull()
-  })
-
-  it('refuses a traversal that escapes a root', () => {
-    const escape = join(dir, '..', 'elsewhere', 'secrets.json')
-    expect(readConfigFile(dir, [], patternsFile, escape)).toBeNull()
-    expect(writeConfigFile(dir, [], patternsFile, escape, 'owned')).toBe(false)
-  })
-
-  it('allows a path inside an added root only once that root is passed in', () => {
-    const target = join(added, 'app.json')
-    expect(readConfigFile(dir, [], patternsFile, target)).toBeNull()
-    expect(readConfigFile(dir, [added], patternsFile, target)).toBe('{}')
-  })
-
-  it('always allows its own patterns file', () => {
-    expect(readConfigFile(dir, [], patternsFile, patternsFile)).not.toBeNull()
-  })
-
-  it('writes an existing file but never creates a new one', () => {
-    const target = join(dir, 'tsconfig.json')
-    expect(writeConfigFile(dir, [], patternsFile, target, 'edited')).toBe(true)
-    expect(readConfigFile(dir, [], patternsFile, target)).toBe('edited')
-    expect(writeConfigFile(dir, [], patternsFile, join(dir, 'brand-new.json'), '{}')).toBe(false)
-  })
-
-  it('refuses to read a file larger than the edit limit', () => {
-    const big = join(dir, 'big.json')
-    writeFileSync(big, 'y'.repeat(MAX_EDIT_BYTES + 1))
-    expect(readConfigFile(dir, [], patternsFile, big)).toBeNull()
-    rmSync(big)
   })
 })

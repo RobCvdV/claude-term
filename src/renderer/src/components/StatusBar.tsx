@@ -26,10 +26,8 @@ import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-f
 interface Props {
   status: TabStatus | null
   color?: string
-  /** open the docs overlay focused on the clicked section */
+  /** open the file window, landing on the group that was clicked */
   onOpenDocs: (group: DocGroup) => void
-  /** open the settings window (project configuration files) */
-  onOpenSettings: () => void
 }
 
 const TICKET_RE = /^([^/]*\/)?([A-Z]+-[0-9]+)(-.*)?$/
@@ -404,7 +402,7 @@ function fmtElapsed(sinceMs: number, now: number): string {
   return m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`
 }
 
-export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props): React.JSX.Element {
+export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -600,11 +598,11 @@ export function StatusBar({ status, color, onOpenDocs, onOpenSettings }: Props):
           docs {docs.sections.reduce((n, s) => n + s.entries.length, 0)}
         </button>
       )}
-      {/* No count here, unlike docs: listing config files stats every match, and
-          this re-renders on every status update. */}
+      {/* No count here, unlike docs: counting config files means stating every
+          match, and this re-renders on every status update. */}
       <button
         className="doc-link"
-        onClick={onOpenSettings}
+        onClick={() => onOpenDocs('settings')}
         title="Configuration &amp; settings files for this project"
       >
         settings
