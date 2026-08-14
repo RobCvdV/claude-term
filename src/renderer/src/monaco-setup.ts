@@ -29,6 +29,7 @@ import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices'
 import type { TabId } from '../../shared/types'
 import { appSlashCommands, getArgCompleter } from './app-commands'
+import { filterFor } from './completion-filter'
 import { registerSpellActions } from './spell'
 import { registerGrammarActions } from './grammar'
 
@@ -186,7 +187,9 @@ export function setupMonaco(): typeof monaco {
                 : monaco.languages.CompletionItemKind.Value,
               detail: it.detail,
               insertText: it.lineText ?? it.value,
-              filterText: it.lineText ? `/${argMatch[1]} ${it.value}` : it.value,
+              filterText: it.lineText
+                ? filterFor(`/${argMatch[1]} ${query}`, `/${argMatch[1]} ${it.value}`)
+                : filterFor(query, it.value),
               sortText: String(i).padStart(4, '0'),
               range: it.lineText ? lineRange : argRange,
               // dirs: reopen the popup on accept so the user descends a level
@@ -246,7 +249,7 @@ export function setupMonaco(): typeof monaco {
                 : monaco.languages.CompletionItemKind.File,
               // dirs: no trailing space + reopen the popup to descend a level
               insertText: `@${path}${isDir ? '' : ' '}`,
-              filterText: `@${path}`,
+              filterText: filterFor(`@${query}`, `@${path}`),
               sortText: String(i).padStart(4, '0'),
               range,
               command: isDir ? { id: 'editor.action.triggerSuggest', title: 'descend' } : undefined
