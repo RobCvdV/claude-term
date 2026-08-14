@@ -45,7 +45,10 @@ function HowTo(): React.JSX.Element {
         </Keys>
         <Keys k="⌘E">Mission control — every tab at a glance</Keys>
         <Keys k="⌘⇧A">Jump to the next tab waiting for input</Keys>
-        <Keys k="⌘F">Search the terminal scrollback</Keys>
+        <Keys k="⌘F">
+          Find — the session&apos;s whole conversation (or its terminal screen); Enter / ⇧Enter or ↑
+          ↓ walk the hits
+        </Keys>
         <Keys k="⌘L">Focus the prompt box</Keys>
         <Keys k="Esc">
           Prompt box → terminal; terminal → prompt box (when nothing needs answering)

@@ -6,6 +6,7 @@ import type {
   BranchGroup,
   BranchHistoryEntry,
   BranchSwitchResult,
+  ConvoSearchResult,
   CreateDocResult,
   DocGroup,
   DocTarget,
@@ -52,6 +53,13 @@ export interface ClaudeTermApi {
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   /** one-line "doing" snippet for a tab's session (mission control) */
   missionDoing(tabId: TabId): Promise<string | null>
+  /** ⌘F over the tab session's own conversation; `includeTools` widens the
+   *  search to tool calls, their output and thinking */
+  searchConversation(
+    tabId: TabId,
+    query: string,
+    includeTools?: boolean
+  ): Promise<ConvoSearchResult>
   /** projected time-to-100% of the 5h/7d rate-limit windows */
   rateForecast(): Promise<RateForecast>
   /** branches recently seen checked out in any tab, most recent first (⌘K) */
@@ -150,6 +158,8 @@ const api: ClaudeTermApi = {
   prContextMenu: (tabId, pr, root) => ipcRenderer.send('prs:contextMenu', tabId, pr, root),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   missionDoing: (tabId) => ipcRenderer.invoke('mission:doing', tabId),
+  searchConversation: (tabId, query, includeTools) =>
+    ipcRenderer.invoke('convo:search', tabId, query, includeTools),
   rateForecast: () => ipcRenderer.invoke('rate:forecast'),
   recentBranches: () => ipcRenderer.invoke('branches:recent'),
   activityReport: (rangeDays) => ipcRenderer.invoke('activity:report', rangeDays),

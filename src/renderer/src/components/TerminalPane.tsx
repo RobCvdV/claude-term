@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { TabId, TabStatus } from '../../../shared/types'
 import { createTerm, fitTerm } from '../term-registry'
-import { TermSearchBar } from './TermSearchBar'
+import { FindBar } from './FindBar'
 
 interface Props {
   tabId: TabId
@@ -56,8 +56,9 @@ export function TerminalPane({
   return (
     <div className="terminal-pane" style={{ display: active ? 'flex' : 'none' }}>
       <div className="terminal-host" ref={hostRef} />
-      <TermSearchBar
+      <FindBar
         tabId={tabId}
+        canSearchConvo={Boolean(status?.claudeActive && status.sessionId)}
         open={searchNonce > 0}
         focusNonce={searchNonce}
         onClose={onCloseSearch}

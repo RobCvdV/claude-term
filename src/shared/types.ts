@@ -135,6 +135,54 @@ export interface TabStatus {
 /** Which tab of the Help overlay to open (Help menu / ⌘/). */
 export type HelpSection = 'howto' | 'guide'
 
+/** Who said one turn of a conversation. `tool` covers both a tool call and its
+ *  result; `thinking` is the assistant's extended thinking. */
+export type ConvoRole = 'user' | 'claude' | 'tool' | 'thinking'
+
+/** Where a query matched, as offsets into a hit's `text`. */
+export interface ConvoMatch {
+  start: number
+  end: number
+}
+
+/** One conversation turn that matched a ⌘F query. */
+export interface ConvoHit {
+  /** position in the transcript, oldest = 0 — stable across searches */
+  index: number
+  role: ConvoRole
+  /** tool name, for `tool` turns */
+  tool?: string
+  /** ISO timestamp of the turn, when the transcript recorded one */
+  time: string | null
+  /** the turn's text, cut off at MAX_CONVO_HIT_CHARS */
+  text: string
+  /** the turn was longer than `text` (so later matches aren't listed) */
+  clipped: boolean
+  matches: ConvoMatch[]
+}
+
+/** Result of searching a session's transcript (⌘F with a live session). */
+export interface ConvoSearchResult {
+  /** newest first, capped at MAX_CONVO_HITS */
+  hits: ConvoHit[]
+  /** matching turns before the cap, so the bar can say "showing 200 of 412" */
+  total: number
+  /** turns searched — 0 with `found` means the transcript is still empty */
+  searched: number
+  /** a transcript for this session was found and read */
+  found: boolean
+}
+
+/** Search the conversation itself, or the terminal's own screen/scrollback. */
+export type FindScope = 'conversation' | 'screen'
+
+/** A long turn is cut off here: enough to read a full answer in the results
+ *  panel, little enough that 200 of them still cross IPC cheaply. */
+export const MAX_CONVO_HIT_CHARS = 4000
+
+/** Hits handed to the renderer per search; `total` reports what was dropped. */
+export const MAX_CONVO_HITS = 200
+
 /** One open pull request in the status bar's PR dropdown. */
 export interface PrInfo {
   number: number

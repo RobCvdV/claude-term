@@ -3,7 +3,14 @@ import { basename, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
-import type { DocGroup, DocTarget, PersistedSession, TabId, TabInfo } from '../shared/types'
+import type {
+  ConvoSearchResult,
+  DocGroup,
+  DocTarget,
+  PersistedSession,
+  TabId,
+  TabInfo
+} from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
 import { listAllBranches, listBranches, listCommands, listDirs, searchFiles } from './completions'
@@ -25,6 +32,7 @@ import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { sessionDoing } from './session-summary'
+import { searchConversation } from './conversation-search'
 import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
@@ -248,6 +256,17 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     if (!sessionId) return Promise.resolve(null)
     return sessionDoing(sessionId, () => status.snapshot(tabId) !== null)
   })
+
+  // ⌘F over the conversation itself: the tab's session transcript, since the
+  // TUI's own history never reaches the terminal's scrollback.
+  ipcMain.handle(
+    'convo:search',
+    (_e, tabId: TabId, query: string, includeTools?: boolean): ConvoSearchResult => {
+      const sessionId = status.snapshot(tabId)?.sessionId
+      if (!sessionId) return { hits: [], total: 0, searched: 0, found: false }
+      return searchConversation(sessionId, query, includeTools)
+    }
+  )
 
   // Rate-limit burn forecast, from the shared sample store (see createServices).
   ipcMain.handle('rate:forecast', () => services.rate.forecast())
