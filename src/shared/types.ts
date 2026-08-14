@@ -190,6 +190,8 @@ export interface PrInfo {
   url: string
   /** the PR context menu may offer "Merge" (GitHub repo with push access) */
   canMerge: boolean
+  /** opened by the signed-in user — false when the host can't tell us who that is */
+  mine: boolean
 }
 
 /** One workspace repo's open PRs, a group in the status-bar PR dropdown. */
@@ -337,12 +339,19 @@ export interface BranchSwitchResult {
 }
 
 /** Local branches of one workspace repo, for the status bar's branch menu. */
+/** One local branch, with whether its newest commit is the user's own. */
+export interface BranchRef {
+  name: string
+  /** the tip commit's author is this repo's configured user */
+  mine: boolean
+}
+
 export interface BranchGroup {
   root: string
   /** currently checked-out branch (null when detached) */
   current: string | null
   /** other local branches, most-recently-committed first */
-  branches: string[]
+  branches: BranchRef[]
 }
 
 export interface TabInfo {

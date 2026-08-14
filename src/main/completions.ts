@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs'
 import { homedir } from 'os'
 import { basename, join, resolve } from 'path'
 
-import type { SlashCommand } from '../shared/types'
+import type { BranchRef, SlashCommand } from '../shared/types'
 
 const CACHE_TTL_MS = 30_000
 const FILE_CACHE_TTL_MS = 15_000
@@ -309,36 +309,78 @@ function isSubsequence(needle: string, haystack: string): boolean {
 // ---- /switch branch completions ----
 
 const BRANCH_CACHE_TTL_MS = 10_000
-const branchCache = new Map<string, { at: number; branches: string[] }>()
+const branchCache = new Map<string, { at: number; branches: BranchRef[] }>()
 
-function runGitBranches(cwd: string): Promise<string[]> {
+/** `git branch` rows: current-marker, name, and the tip commit's author. */
+function runGitBranches(cwd: string): Promise<BranchRef[]> {
+  return Promise.all([gitBranchRows(cwd), gitUserEmail(cwd)]).then(([rows, me]) =>
+    parseBranchRefs(rows, me)
+  )
+}
+
+function gitBranchRows(cwd: string): Promise<string> {
   return new Promise((resolve) => {
-    // local branches, most-recently-committed first; drop the current one (the
-    // "*"-prefixed entry) since switching to it is a no-op
+    // local branches, most-recently-committed first, each with the email of
+    // whoever wrote its newest commit
     execFile(
       'git',
-      ['-C', cwd, 'branch', '--format=%(HEAD)%(refname:short)', '--sort=-committerdate'],
+      [
+        '-C',
+        cwd,
+        'branch',
+        '--format=%(HEAD)\t%(refname:short)\t%(authoremail)',
+        '--sort=-committerdate'
+      ],
       { timeout: 5_000, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8' },
-      (err, stdout) =>
-        resolve(
-          err
-            ? []
-            : stdout
-                .split('\n')
-                .filter((l) => l && !l.startsWith('*'))
-                .map((l) => l.trim())
-        )
+      (err, stdout) => resolve(err ? '' : stdout)
     )
   })
 }
 
-/** Non-current local branches, most-recently-committed first (10s cache). */
-export async function listAllBranches(cwd: string): Promise<string[]> {
+function gitUserEmail(cwd: string): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', cwd, 'config', 'user.email'],
+      { timeout: 5_000, encoding: 'utf8' },
+      (err, stdout) => resolve(err ? '' : stdout.trim())
+    )
+  })
+}
+
+/**
+ * Parse `git branch --format=%(HEAD)\t%(refname:short)\t%(authoremail)`.
+ * The checked-out branch (the `*` row) is dropped — switching to it is a no-op —
+ * and a branch counts as the user's own when its newest commit carries the
+ * repo's configured email. Without an email configured, nothing is claimed.
+ */
+export function parseBranchRefs(stdout: string, myEmail: string): BranchRef[] {
+  const me = myEmail.trim().toLowerCase()
+  const refs: BranchRef[] = []
+  for (const line of stdout.split('\n')) {
+    if (!line.trim() || line.startsWith('*')) continue
+    const [head, name, email] = line.split('\t')
+    const branch = (name ?? head).trim()
+    if (!branch) continue
+    // %(authoremail) comes wrapped: <someone@example.com>
+    const author = (email ?? '').trim().replace(/^<|>$/g, '').toLowerCase()
+    refs.push({ name: branch, mine: !!me && author === me })
+  }
+  return refs
+}
+
+/** Local branches with authorship, for the status bar's branch menu. */
+export async function listBranchRefs(cwd: string): Promise<BranchRef[]> {
   const cached = branchCache.get(cwd)
   if (cached && Date.now() - cached.at < BRANCH_CACHE_TTL_MS) return cached.branches
   const branches = await runGitBranches(cwd)
   branchCache.set(cwd, { at: Date.now(), branches })
   return branches
+}
+
+/** Just the names, for the `/switch` picker. */
+export async function listAllBranches(cwd: string): Promise<string[]> {
+  return (await listBranchRefs(cwd)).map((b) => b.name)
 }
 
 /**

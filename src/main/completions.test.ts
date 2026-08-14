@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
-import { expandHome, listDirs, searchFiles } from './completions'
+import { expandHome, listDirs, parseBranchRefs, searchFiles } from './completions'
 
 let cwd: string
 let tree: string
@@ -61,5 +61,39 @@ describe('listDirs (~ support for /add-dir)', () => {
     expect(listDirs(cwd, tree + '/')).toEqual([tree + '/sub-one/', tree + '/sub-two/'])
     const out = listDirs(cwd, '~/')
     expect(out.every((p) => p.startsWith(homedir() + '/') && p.endsWith('/'))).toBe(true)
+  })
+})
+
+describe('parseBranchRefs', () => {
+  const rows = [
+    '*\tfeat/current\t<rob@mendrix.nl>',
+    ' \tfeat/mine\t<rob@mendrix.nl>',
+    ' \tfeat/theirs\t<colleague@mendrix.nl>',
+    ' \tmain\t<ROB@Mendrix.nl>'
+  ].join('\n')
+
+  it('drops the checked-out branch and marks the ones the user wrote last', () => {
+    expect(parseBranchRefs(rows, 'rob@mendrix.nl')).toEqual([
+      { name: 'feat/mine', mine: true },
+      { name: 'feat/theirs', mine: false },
+      // git records the email as written; comparing is case-insensitive
+      { name: 'main', mine: true }
+    ])
+  })
+
+  it('claims nothing when the repo has no user.email configured', () => {
+    expect(parseBranchRefs(rows, '').every((b) => b.mine)).toBe(false)
+    expect(parseBranchRefs(rows, '   ').every((b) => b.mine)).toBe(false)
+  })
+
+  it('is empty for empty output, and skips blank lines', () => {
+    expect(parseBranchRefs('', 'rob@mendrix.nl')).toEqual([])
+    expect(parseBranchRefs('\n\n', 'rob@mendrix.nl')).toEqual([])
+  })
+
+  it('keeps a branch whose tip has no author recorded', () => {
+    expect(parseBranchRefs(' \tfeat/x\t', 'rob@mendrix.nl')).toEqual([
+      { name: 'feat/x', mine: false }
+    ])
   })
 })

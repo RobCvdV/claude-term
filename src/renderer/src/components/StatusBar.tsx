@@ -140,6 +140,17 @@ function FolderMenu({
   )
 }
 
+/** Marks a row as the user's own — their PR, or a branch whose newest commit is
+ *  theirs. Kept to a word: in a list of ten, "which of these are mine" is the
+ *  question being asked. */
+function Mine(): React.JSX.Element {
+  return (
+    <span className="pr-mine" title="yours">
+      mine
+    </span>
+  )
+}
+
 /** A branch name with the ticket number highlighted, for the branch menu. */
 function BranchLabel({ branch }: { branch: string }): React.JSX.Element {
   const m = TICKET_RE.exec(branch)
@@ -253,16 +264,21 @@ function BranchMenu({
                 {g.branches.length === 0 && <div className="pr-note">no other branches</div>}
                 {g.branches.slice(0, BRANCHES_SHOWN).map((b) => (
                   <button
-                    key={b}
-                    className={busy === b ? 'branch-busy' : undefined}
-                    title={`switch ${g.root} to ${b} — right-click opens it on the remote`}
-                    onClick={() => void pick(g.root, b)}
+                    key={b.name}
+                    className={busy === b.name ? 'branch-busy' : undefined}
+                    title={
+                      `switch ${g.root} to ${b.name}` +
+                      (b.mine ? ' — your own newest commit' : '') +
+                      ' — right-click opens it on the remote'
+                    }
+                    onClick={() => void pick(g.root, b.name)}
                     onContextMenu={(e) => {
                       e.preventDefault()
-                      openRemote(g.root, b)
+                      openRemote(g.root, b.name)
                     }}
                   >
-                    <BranchLabel branch={b} />
+                    <BranchLabel branch={b.name} />
+                    {b.mine && <Mine />}
                   </button>
                 ))}
                 {g.branches.length > BRANCHES_SHOWN && (
@@ -342,6 +358,7 @@ function PrMenu({
                   >
                     <span className="pr-number">#{pr.number}</span>
                     <span className="pr-title">{pr.title}</span>
+                    {pr.mine && <Mine />}
                   </button>
                 ))}
               </Fragment>

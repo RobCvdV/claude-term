@@ -1944,6 +1944,19 @@ body {
   font-weight: 600;
 }
 
+/* "mine": your own PR, or a branch whose newest commit is yours */
+.pr-mine {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 3px;
+}
+
 .pr-note {
   color: var(--fg-dim);
   padding: 4px 8px;

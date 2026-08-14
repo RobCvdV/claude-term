@@ -57,15 +57,40 @@ function gh(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string
 
 async function fetchGithub(cwd: string): Promise<PrInfo[]> {
   const env = await loginShellEnv()
-  const [listOut, merge] = await Promise.all([
+  const [listOut, merge, viewer] = await Promise.all([
     gh(
-      ['pr', 'list', '--state', 'open', '--limit', String(MAX_PRS), '--json', 'number,title,url'],
+      [
+        'pr',
+        'list',
+        '--state',
+        'open',
+        '--limit',
+        String(MAX_PRS),
+        '--json',
+        'number,title,url,author'
+      ],
       cwd,
       env
     ),
-    githubMergeInfo(cwd, env)
+    githubMergeInfo(cwd, env),
+    githubViewer(cwd, env)
   ])
-  return mapGithubPrs(listOut, merge.canMerge)
+  return mapGithubPrs(listOut, merge.canMerge, viewer)
+}
+
+// Who the gh CLI is signed in as. One login per machine in practice, and it
+// never changes mid-session — asked once, then remembered (null = we could not
+// tell, which leaves every PR unmarked).
+let viewerLogin: string | null | undefined
+
+async function githubViewer(cwd: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  if (viewerLogin !== undefined) return viewerLogin
+  try {
+    viewerLogin = (await gh(['api', 'user', '--jq', '.login'], cwd, env)).trim() || null
+  } catch {
+    viewerLogin = null // not signed in → nothing is "mine"
+  }
+  return viewerLogin
 }
 
 interface MergeInfo {
@@ -118,7 +143,7 @@ async function fetchBitbucket(repo: RepoRef): Promise<PrInfo[]> {
     state: 'OPEN',
     sort: '-created_on',
     pagelen: String(MAX_PRS),
-    fields: 'values.id,values.title,values.links.html.href'
+    fields: 'values.id,values.title,values.links.html.href,values.author.uuid'
   })
   const res = await fetch(
     `https://api.bitbucket.org/2.0/repositories/${repo.owner}/${repo.repo}/pullrequests?${params}`,
@@ -131,7 +156,27 @@ async function fetchBitbucket(repo: RepoRef): Promise<PrInfo[]> {
     }
   )
   if (!res.ok) throw new Error(`bitbucket ${res.status}`)
-  return mapBitbucketPrs(await res.json())
+  return mapBitbucketPrs(await res.json(), await bitbucketViewer(email, token))
+}
+
+// Our own Bitbucket uuid, for the same reason as githubViewer above.
+let viewerUuid: string | null | undefined
+
+async function bitbucketViewer(email: string, token: string): Promise<string | null> {
+  if (viewerUuid !== undefined) return viewerUuid
+  try {
+    const res = await fetch('https://api.bitbucket.org/2.0/user?fields=uuid', {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`,
+        Accept: 'application/json'
+      },
+      signal: AbortSignal.timeout(10_000)
+    })
+    viewerUuid = res.ok ? (((await res.json()) as { uuid?: string }).uuid ?? null) : null
+  } catch {
+    viewerUuid = null
+  }
+  return viewerUuid
 }
 
 /**

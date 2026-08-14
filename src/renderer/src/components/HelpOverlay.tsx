@@ -80,12 +80,12 @@ function HowTo(): React.JSX.Element {
           Folder chip: open in WebStorm / VS Code / Finder / iTerm2 / new tab
         </Keys>
         <Keys k="PRs">
-          Open PRs of every workspace repo, grouped by folder — click opens, right-click: Open /
-          Merge
+          Open PRs of every workspace repo, grouped by folder, the ones you opened marked{' '}
+          <b>mine</b> — click opens, right-click: Open / Merge
         </Keys>
         <Keys k="branch">
-          Hover the branch chip: every workspace repo&apos;s branches — click switches that repo,
-          right-click opens it on the remote
+          Hover the branch chip: every workspace repo&apos;s branches, the ones whose newest commit
+          is yours marked <b>mine</b> — click switches that repo, right-click opens it on the remote
         </Keys>
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>

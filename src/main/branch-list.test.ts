@@ -44,8 +44,9 @@ describe('isWorkspaceRoot', () => {
 })
 
 describe('workspaceBranchGroups', () => {
+  // names in, BranchRefs out — the second name of each repo is "mine"
   const lister = (branches: Record<string, string[]>) => (cwd: string) =>
-    Promise.resolve(branches[cwd] ?? [])
+    Promise.resolve((branches[cwd] ?? []).map((name, i) => ({ name, mine: i === 1 })))
 
   it('groups the tab repo and every extra repo with their current branch', async () => {
     const groups = await workspaceBranchGroups(
@@ -56,9 +57,16 @@ describe('workspaceBranchGroups', () => {
       {
         root: '/dev/cordova',
         current: 'feature/MTX-1-a',
-        branches: ['main', 'bugfix/MTX-2-b']
+        branches: [
+          { name: 'main', mine: false },
+          { name: 'bugfix/MTX-2-b', mine: true }
+        ]
       },
-      { root: '/dev/mmxlib', current: 'main', branches: ['feature/MTX-3-c'] }
+      {
+        root: '/dev/mmxlib',
+        current: 'main',
+        branches: [{ name: 'feature/MTX-3-c', mine: false }]
+      }
     ])
   })
 

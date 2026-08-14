@@ -14,7 +14,7 @@ import type {
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { StatusServer } from './status-server'
-import { listAllBranches, listBranches, listCommands, listDirs, searchFiles } from './completions'
+import { listBranches, listBranchRefs, listCommands, listDirs, searchFiles } from './completions'
 import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
 import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
@@ -517,7 +517,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   })
 
   ipcMain.handle('branches:workspace', (_e, tabId: TabId) =>
-    workspaceBranchGroups(status.snapshot(tabId), listAllBranches)
+    workspaceBranchGroups(status.snapshot(tabId), listBranchRefs)
   )
 
   ipcMain.on('pty:input', (_e, tabId: TabId, data: string) => ptys.write(tabId, data))

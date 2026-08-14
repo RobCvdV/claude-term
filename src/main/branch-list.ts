@@ -1,4 +1,4 @@
-import type { BranchGroup, TabStatus } from '../shared/types'
+import type { BranchGroup, BranchRef, TabStatus } from '../shared/types'
 
 const strip = (p: string): string => p.replace(/\/+$/, '')
 
@@ -18,10 +18,10 @@ export function isWorkspaceRoot(status: TabStatus | null, root: string): boolean
 }
 
 /** One BranchGroup per workspace repo; `list` supplies the non-current local
- *  branches for a folder (injected — see completions.listAllBranches). */
+ *  branches for a folder (injected — see completions.listBranchRefs). */
 export function workspaceBranchGroups(
   status: TabStatus | null,
-  list: (cwd: string) => Promise<string[]>
+  list: (cwd: string) => Promise<BranchRef[]>
 ): Promise<BranchGroup[]> {
   if (!status) return Promise.resolve([])
   return Promise.all(
