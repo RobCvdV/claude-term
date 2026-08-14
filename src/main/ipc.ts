@@ -26,6 +26,7 @@ import {
   newFileStartPath,
   openDoc,
   planNewFile,
+  revealDoc,
   readDoc,
   writeDoc
 } from './docs'
@@ -414,6 +415,9 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   })
   ipcMain.handle('docs:open', (_e, tabId: TabId, path: string) => {
     return openDoc(docRoots(tabId), path)
+  })
+  ipcMain.handle('docs:reveal', (_e, tabId: TabId, path: string) => {
+    return revealDoc(docRoots(tabId), path)
   })
   ipcMain.handle('docs:write', (_e, tabId: TabId, path: string, content: string) => {
     return writeDoc(docRoots(tabId), path, content)

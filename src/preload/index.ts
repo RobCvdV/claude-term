@@ -31,6 +31,9 @@ import type {
 } from '../shared/types'
 
 export interface ClaudeTermApi {
+  /** the OS this is running on ('darwin', 'win32', 'linux') — for wording that
+   *  has to name the file manager */
+  platform: string
   initialCwd(): Promise<string | null>
   createTab(cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
@@ -102,6 +105,8 @@ export interface ClaudeTermApi {
   /** a file's text; `allowOversize` answers the size warning ("Open anyway") */
   readDoc(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
+  /** show the file in Finder / Explorer, selected in its folder */
+  revealDoc(tabId: TabId, path: string): Promise<boolean>
   writeDoc(tabId: TabId, path: string, content: string): Promise<boolean>
   /** create a file under the tab's cwd (for /add-file), asking first when the
    *  path needs folders that don't exist. Null when that question was declined */
@@ -151,6 +156,7 @@ function subscribe<Args extends unknown[]>(
 }
 
 const api: ClaudeTermApi = {
+  platform: process.platform,
   initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
   createTab: (cwd, resume, addedDirs) => ipcRenderer.invoke('tab:create', cwd, resume, addedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
@@ -193,6 +199,7 @@ const api: ClaudeTermApi = {
   readDoc: (tabId, path, allowOversize) =>
     ipcRenderer.invoke('docs:read', tabId, path, allowOversize),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
+  revealDoc: (tabId, path) => ipcRenderer.invoke('docs:reveal', tabId, path),
   writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),
   createDoc: (tabId, path) => ipcRenderer.invoke('docs:create', tabId, path),
   newDocFile: (tabId, near) => ipcRenderer.invoke('docs:newFile', tabId, near),

@@ -10,6 +10,7 @@ import { useFileEditor } from '../file-editor'
 import { formatBytes } from '../format'
 import { FileTree } from './FileTree'
 import { matchesFilter } from '../../../shared/glob-match'
+import { revealLabel } from '../../../shared/reveal-label'
 
 /** The filter box searches the project on a pause in typing — the rail's own
  *  items filter as you type, since they are already here. */
@@ -411,6 +412,13 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
                   title={mode === 'edit' ? 'Preview this file' : 'Edit this file'}
                 >
                   {mode === 'edit' ? 'View' : 'Edit'}
+                </button>
+                <button
+                  className="docs-btn"
+                  onClick={() => window.claudeTerm.revealDoc(tabId, selected.path)}
+                  title={`${revealLabel(window.claudeTerm.platform)} — the folder opens with this file selected`}
+                >
+                  {revealLabel(window.claudeTerm.platform)}
                 </button>
                 <button
                   className="docs-btn"

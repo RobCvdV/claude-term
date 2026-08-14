@@ -232,6 +232,13 @@ export async function openDoc(roots: string[], path: string): Promise<boolean> {
   return err === ''
 }
 
+/** Reveal the file in Finder / Explorer (the folder opens with it selected). */
+export function revealDoc(roots: string[], path: string): boolean {
+  if (!allowed(roots, path) || !existsSync(path)) return false
+  shell.showItemInFolder(path)
+  return true
+}
+
 /** Overwrite an existing doc from the in-app editor. Only existing files inside
  *  the plans dir or the project cwd may be written — never create new paths. */
 export function writeDoc(roots: string[], path: string, content: string): boolean {
