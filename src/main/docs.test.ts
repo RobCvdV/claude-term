@@ -5,7 +5,8 @@ import { join } from 'path'
 
 vi.mock('electron', () => ({ shell: { openPath: async () => '' } }))
 
-const { createDoc, newFileName, readDoc, writeDoc } = await import('./docs')
+const { createDoc, newFileName, newFileStartPath, planNewFile, readDoc, writeDoc } =
+  await import('./docs')
 const { MAX_EDIT_BYTES } = await import('../shared/types')
 
 let dir: string
@@ -36,6 +37,79 @@ describe('newFileName', () => {
     expect(newFileName('   ')).toBeNull()
     expect(newFileName('docs/')).toBeNull()
     expect(newFileName('..')).toBeNull()
+  })
+})
+
+describe('planNewFile', () => {
+  it('names the folders it would have to create, outermost first', () => {
+    const res = planNewFile(dir, 'research/2026/notes.md')
+    expect(res).toEqual({
+      ok: true,
+      plan: {
+        path: join(dir, 'research/2026/notes.md'),
+        missingDirs: ['research', 'research/2026']
+      }
+    })
+    // nothing was created just by asking
+    expect(existsSync(join(dir, 'research'))).toBe(false)
+  })
+
+  it('has no folders to report when the parent is already there', () => {
+    mkdirSync(join(dir, 'have'), { recursive: true })
+    const res = planNewFile(dir, 'have/notes')
+    expect(res).toEqual({ ok: true, plan: { path: join(dir, 'have/notes'), missingDirs: [] } })
+  })
+
+  it('plans a file with no extension, or a dotfile, like any other', () => {
+    expect(planNewFile(dir, 'Makefile')).toEqual({
+      ok: true,
+      plan: { path: join(dir, 'Makefile'), missingDirs: [] }
+    })
+    expect(planNewFile(dir, '.gitignore')).toEqual({
+      ok: true,
+      plan: { path: join(dir, '.gitignore'), missingDirs: [] }
+    })
+  })
+
+  it('refuses the same things createDoc refuses, before touching the disk', () => {
+    writeFileSync(join(dir, 'taken.md'), '# taken\n')
+    expect(planNewFile(dir, 'taken.md')).toEqual({ ok: false, error: 'Already exists: taken.md' })
+    expect(planNewFile(dir, 'docs/')).toEqual({
+      ok: false,
+      error: 'Give a file name, e.g. docs/plan.md'
+    })
+    expect(planNewFile(dir, '../escaped.md')).toEqual({ ok: false, error: 'Outside this project' })
+  })
+
+  it('reports a folder outside the cwd by its full path', () => {
+    const other = mkdtempSync(join(tmpdir(), 'docs-added-'))
+    const res = planNewFile(dir, join(other, 'sub/notes.md'), [other])
+    expect(res).toEqual({
+      ok: true,
+      plan: { path: join(other, 'sub/notes.md'), missingDirs: [join(other, 'sub')] }
+    })
+    rmSync(other, { recursive: true, force: true })
+  })
+})
+
+describe('newFileStartPath', () => {
+  it('opens the picker next to the file the window has open', () => {
+    expect(newFileStartPath('/p', [], '/p/docs')).toBe('/p/docs/untitled.md')
+  })
+
+  it('falls back to the project root when there is nowhere better', () => {
+    expect(newFileStartPath('/p')).toBe('/p/untitled.md')
+    expect(newFileStartPath('/p', [], '')).toBe('/p/untitled.md')
+  })
+
+  it('never suggests a folder the window could not open', () => {
+    // outside every root — creating there would only earn "Outside this project"
+    expect(newFileStartPath('/p', ['/other'], '/elsewhere/tmp')).toBe('/p/untitled.md')
+    expect(newFileStartPath('/p', [], '/project-notes')).toBe('/p/untitled.md')
+  })
+
+  it('counts an added directory as somewhere to start', () => {
+    expect(newFileStartPath('/p', ['/lib'], '/lib/src')).toBe('/lib/src/untitled.md')
   })
 })
 

@@ -54,6 +54,9 @@ export const APP_COMMANDS: AppCommand[] = [
     complete: completeDir,
     run: async ({ tabId, arg, setError, editDoc }) => {
       const res = await window.claudeTerm.createDoc(tabId, arg)
+      // null = the "create the folder too?" question was declined; leave the
+      // line in the box so the path can be corrected rather than retyped
+      if (!res) return false
       if (!res.ok) {
         setError(res.error)
         return false

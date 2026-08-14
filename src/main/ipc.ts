@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
   ConvoSearchResult,
+  CreateDocResult,
   DocGroup,
   DocTarget,
   PersistedSession,
@@ -19,7 +20,15 @@ import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { buildActivityReport } from './activity-log'
-import { createDoc, listProjectDocs, openDoc, readDoc, writeDoc } from './docs'
+import {
+  createDoc,
+  listProjectDocs,
+  newFileStartPath,
+  openDoc,
+  planNewFile,
+  readDoc,
+  writeDoc
+} from './docs'
 import { listTree } from './file-tree'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
@@ -402,12 +411,64 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('docs:write', (_e, tabId: TabId, path: string, content: string) => {
     return writeDoc(docRoots(tabId), path, content)
   })
-  ipcMain.handle('docs:create', (_e, tabId: TabId, path: string) => {
+  /**
+   * Create one file, asking first when it needs folders that don't exist yet —
+   * `/add-file research/2026/notes.md` is allowed to make the whole path, but
+   * never silently. Null means the user said no; the caller leaves it at that.
+   */
+  const createWithFolders = async (
+    sender: Electron.WebContents,
+    tabId: TabId,
+    wanted: string
+  ): Promise<CreateDocResult | null> => {
     const { cwd, addedDirs } = rootsFor(tabId)
-    return cwd
-      ? createDoc(cwd, path, addedDirs)
-      : { ok: false, error: 'No working directory for this tab' }
-  })
+    if (!cwd) return { ok: false, error: 'No working directory for this tab' }
+    const planned = planNewFile(cwd, wanted, addedDirs)
+    if (!planned.ok) return planned
+    const { path, missingDirs } = planned.plan
+    if (missingDirs.length) {
+      const win = BrowserWindow.fromWebContents(sender)
+      const many = missingDirs.length > 1
+      const question = {
+        type: 'question' as const,
+        buttons: [many ? 'Create folders' : 'Create folder', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Create ${many ? 'folders' : 'the folder'} ${missingDirs.map((d) => `“${d}”`).join(', ')}?`,
+        detail: `${basename(path)} goes in a folder that doesn't exist yet.`
+      }
+      const answer = win
+        ? await dialog.showMessageBox(win, question)
+        : await dialog.showMessageBox(question)
+      if (answer.response !== 0) return null
+    }
+    return createDoc(cwd, path, addedDirs)
+  }
+
+  ipcMain.handle('docs:create', (e, tabId: TabId, path: string) =>
+    createWithFolders(e.sender, tabId, path)
+  )
+  // "New file" in the file window: the OS save dialog picks the folder and the
+  // name, we create it. Null means the user cancelled — not an error to report.
+  ipcMain.handle(
+    'docs:newFile',
+    async (e, tabId: TabId, near?: string): Promise<CreateDocResult | null> => {
+      const { cwd, addedDirs } = rootsFor(tabId)
+      if (!cwd) return { ok: false, error: 'No working directory for this tab' }
+      const options = {
+        title: 'New file',
+        buttonLabel: 'Create',
+        defaultPath: newFileStartPath(cwd, addedDirs, near),
+        properties: ['createDirectory' as const, 'showOverwriteConfirmation' as const]
+      }
+      const win = BrowserWindow.fromWebContents(e.sender)
+      const picked = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options)
+      if (picked.canceled || !picked.filePath) return null
+      return createWithFolders(e.sender, tabId, picked.filePath)
+    }
+  )
 
   ipcMain.handle('completions:commands', (_e, tabId: TabId) => {
     const cwd = status.getCwd(tabId)

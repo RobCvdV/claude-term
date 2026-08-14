@@ -119,9 +119,10 @@ function Guide(): React.JSX.Element {
           <code>/npm</code> lists the project&apos;s npm scripts (root + one folder deep) — Enter
           runs one, Tab fills <code>!npm run …</code> to add params — <code>/add-file</code>{' '}
           completes folders and creates the file you name at the end (
-          <code>/add-file docs/plan.md</code>, any extension or none), opening it in the docs
-          editor, and <code>/add-dir</code> completes directories. When Claude shows a grayed-out
-          suggested next prompt in the terminal, <b>Tab</b> in the empty box runs it.
+          <code>/add-file docs/plan.md</code>, any extension or none; folders in the path that
+          don&apos;t exist yet are created once you confirm), opening it in the docs editor, and{' '}
+          <code>/add-dir</code> completes directories. When Claude shows a grayed-out suggested next
+          prompt in the terminal, <b>Tab</b> in the empty box runs it.
         </p>
       </section>
       <section>
@@ -176,7 +177,9 @@ function Guide(): React.JSX.Element {
           group; the filter box narrows the listed groups. Markdown opens rendered, with
           spell/grammar checking when you edit it; anything else opens straight in the editor with
           highlighting for its type. <code>⌘S</code> saves, a dot marks unsaved changes, and closing
-          the window (or its tab) prompts first.
+          the window (or its tab) prompts first. <b>+ New file</b> creates one from here: the OS
+          save dialog picks the folder and the name (starting next to the open file), and the new
+          file opens in the editor ready to type in.
         </p>
       </section>
       <section>

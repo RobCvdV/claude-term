@@ -767,7 +767,17 @@ body {
 .docs-actions {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+/* why a "New file" could not be created (outside the project, name taken) */
+.docs-error {
+  padding: 6px 14px;
+  color: var(--red);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
 }
 
 .docs-btn {

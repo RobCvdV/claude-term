@@ -30,6 +30,7 @@ import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/brows
 import type { TabId } from '../../shared/types'
 import { appSlashCommands, getArgCompleter } from './app-commands'
 import { filterFor } from './completion-filter'
+import { MARKDOWN_LANG } from './config-lang'
 import { registerSpellActions } from './spell'
 import { registerGrammarActions } from './grammar'
 
@@ -38,7 +39,9 @@ self.MonacoEnvironment = {
 }
 
 export const PROMPT_LANG = 'claude-prompt'
-export const MARKDOWN_LANG = 'markdown'
+// the language ids live in config-lang, which stays monaco-free; re-exported
+// here because this is where the rest of the app has always imported them from
+export { MARKDOWN_LANG }
 
 /** The json language service's config. Monaco registers it on the `monaco`
  *  namespace at runtime, but its ESM type declaration is empty (`export {}`),

@@ -1,7 +1,7 @@
 import { shell } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { basename, dirname, join, resolve, sep } from 'path'
+import { basename, dirname, join, relative, resolve, sep } from 'path'
 import { MAX_EDIT_BYTES } from '../shared/types'
 import type { CreateDocResult, DocEntry, DocSection, ProjectDocs } from '../shared/types'
 import { expandHome } from './completions'
@@ -264,15 +264,65 @@ function seedContent(path: string): string {
   return `# ${words.charAt(0).toUpperCase() + words.slice(1)}\n\n`
 }
 
-/** Create the file `/add-file` asked for and return its absolute path. Same
- *  roots as the rest of the overlay (plans dir or project cwd); missing parent
- *  folders are created, existing files are never touched. */
-export function createDoc(cwd: string, arg: string, addedDirs: string[] = []): CreateDocResult {
+/** The name the "New file" picker opens on — markdown, since that is what
+ *  nearly every file made from the app turns out to be. */
+const SUGGESTED_NAME = 'untitled.md'
+
+/**
+ * Where the "New file" save dialog should start: next to the file the window
+ * currently has open, so a new doc lands beside its neighbours. Falls back to
+ * the project root whenever `near` is missing or outside the project — the
+ * picker must never suggest a folder the window could not then open.
+ */
+export function newFileStartPath(cwd: string, addedDirs: string[] = [], near?: string): string {
+  const dir = near && insideAny([cwd, ...addedDirs], near) ? near : cwd
+  return join(dir, SUGGESTED_NAME)
+}
+
+/** What creating one new file would do: where it lands, and which folders have
+ *  to be made for it — the folders are what the caller confirms first. */
+export interface NewFilePlan {
+  path: string
+  /** folders that do not exist yet, outermost first, relative to `cwd` where
+   *  they sit under it (`docs/plans`), absolute where they don't */
+  missingDirs: string[]
+}
+
+/**
+ * Resolve and vet a new file's path without touching the disk. Splitting this
+ * out of createDoc is what lets a caller ask before creating folders: the same
+ * checks run, and nothing has happened yet when it says what is missing.
+ */
+export function planNewFile(
+  cwd: string,
+  arg: string,
+  addedDirs: string[] = []
+): { ok: true; plan: NewFilePlan } | { ok: false; error: string } {
   const name = newFileName(arg)
   if (!name) return { ok: false, error: 'Give a file name, e.g. docs/plan.md' }
   const path = resolve(cwd, expandHome(name) ?? name)
   if (!allowed([cwd, ...addedDirs], path)) return { ok: false, error: 'Outside this project' }
   if (existsSync(path)) return { ok: false, error: `Already exists: ${basename(path)}` }
+  return { ok: true, plan: { path, missingDirs: missingDirsFor(cwd, path) } }
+}
+
+/** The folders that would have to be created for `path`, outermost first. */
+function missingDirsFor(cwd: string, path: string): string[] {
+  const missing: string[] = []
+  for (let dir = dirname(path); !existsSync(dir); dir = dirname(dir)) {
+    missing.unshift(insideAny([cwd], dir) ? relative(cwd, dir) : dir)
+    if (dirname(dir) === dir) break // reached the filesystem root
+  }
+  return missing
+}
+
+/** Create the file `/add-file` asked for and return its absolute path. Same
+ *  roots as the rest of the overlay (plans dir or project cwd); missing parent
+ *  folders are created, existing files are never touched. */
+export function createDoc(cwd: string, arg: string, addedDirs: string[] = []): CreateDocResult {
+  const planned = planNewFile(cwd, arg, addedDirs)
+  if (!planned.ok) return planned
+  const { path } = planned.plan
   try {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, seedContent(path), 'utf8')

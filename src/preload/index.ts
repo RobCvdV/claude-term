@@ -100,8 +100,12 @@ export interface ClaudeTermApi {
   readDoc(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
   writeDoc(tabId: TabId, path: string, content: string): Promise<boolean>
-  /** create a new markdown doc under the tab's cwd (for /add-file) */
-  createDoc(tabId: TabId, path: string): Promise<CreateDocResult>
+  /** create a file under the tab's cwd (for /add-file), asking first when the
+   *  path needs folders that don't exist. Null when that question was declined */
+  createDoc(tabId: TabId, path: string): Promise<CreateDocResult | null>
+  /** (file window) pick a folder + name in the OS save dialog and create that
+   *  file; `near` is where to open the picker. Null when the user cancelled */
+  newDocFile(tabId: TabId, near?: string): Promise<CreateDocResult | null>
   /** open (or focus, if already open) the docs window for a tab, on `group` —
    *  `target` selects one specific file instead of the group's first */
   openDocsWindow(tabId: TabId, group: DocGroup, title: string, target?: DocTarget): void
@@ -187,6 +191,7 @@ const api: ClaudeTermApi = {
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
   writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),
   createDoc: (tabId, path) => ipcRenderer.invoke('docs:create', tabId, path),
+  newDocFile: (tabId, near) => ipcRenderer.invoke('docs:newFile', tabId, near),
   openDocsWindow: (tabId, group, title, target) =>
     ipcRenderer.send('docs:openWindow', tabId, group, title, target),
   onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),

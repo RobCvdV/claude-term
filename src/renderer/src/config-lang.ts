@@ -10,6 +10,12 @@
 
 export const PLAINTEXT = 'plaintext'
 
+/** Markdown's language id — the one file type the app treats specially (it is
+ *  previewed rather than edited, and gets spelling + grammar). Lives here, with
+ *  the other language ids, so modules that only classify files don't have to
+ *  pull in monaco itself. */
+export const MARKDOWN_LANG = 'markdown'
+
 /** Files whose whole name determines the language. */
 const BY_NAME: Record<string, string> = {
   dockerfile: 'dockerfile',
