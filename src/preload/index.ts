@@ -96,6 +96,9 @@ export interface ClaudeTermApi {
   listDocs(tabId: TabId): Promise<ProjectDocs>
   /** one level of a folder in the docs window's file tree */
   listDocTree(tabId: TabId, dir: string): Promise<TreeNode[]>
+  /** files anywhere under the window's roots matching the filter box (plain
+   *  text matches anywhere; `*` and `?` make it a pattern) */
+  findDocFiles(tabId: TabId, query: string): Promise<TreeNode[]>
   /** a file's text; `allowOversize` answers the size warning ("Open anyway") */
   readDoc(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
@@ -186,6 +189,7 @@ const api: ClaudeTermApi = {
   listWorkspaceBranches: (tabId) => ipcRenderer.invoke('branches:workspace', tabId),
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
   listDocTree: (tabId, dir) => ipcRenderer.invoke('docs:tree', tabId, dir),
+  findDocFiles: (tabId, query) => ipcRenderer.invoke('docs:find', tabId, query),
   readDoc: (tabId, path, allowOversize) =>
     ipcRenderer.invoke('docs:read', tabId, path, allowOversize),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),

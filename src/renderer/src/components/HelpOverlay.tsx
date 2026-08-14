@@ -174,12 +174,15 @@ function Guide(): React.JSX.Element {
           settings, MCP config …) — then a tree of the project itself, so any file is reachable,
           with added directories as sibling roots. The <b>plan</b>, <b>roadmap</b>, <b>docs</b> and{' '}
           <b>settings</b> chips in the status bar all open that one window, each landing on its own
-          group; the filter box narrows the listed groups. Markdown opens rendered, with
-          spell/grammar checking when you edit it; anything else opens straight in the editor with
-          highlighting for its type. <code>⌘S</code> saves, a dot marks unsaved changes, and closing
-          the window (or its tab) prompts first. <b>+ New file</b> creates one from here: the OS
-          save dialog picks the folder and the name (starting next to the open file), and the new
-          file opens in the editor ready to type in.
+          group. The filter box narrows those groups and searches the whole project with them, so a
+          file the rail doesn&apos;t list (a <code>notes</code> with no extension, a script) still
+          turns up by name — <code>*</code> and <code>?</code> make the query a pattern (
+          <code>*.md</code>, <code>plan*</code>). Markdown opens rendered, with spell/grammar
+          checking when you edit it; anything else opens straight in the editor with highlighting
+          for its type. <code>⌘S</code> saves, a dot marks unsaved changes, and closing the window
+          (or its tab) prompts first. <b>+ New file</b> creates one from here: the OS save dialog
+          picks the folder and the name (starting next to the open file), and the new file opens in
+          the editor ready to type in.
         </p>
       </section>
       <section>

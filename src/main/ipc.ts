@@ -30,6 +30,7 @@ import {
   writeDoc
 } from './docs'
 import { listTree } from './file-tree'
+import { findFiles } from './file-find'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
@@ -401,6 +402,12 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   })
   ipcMain.handle('docs:tree', (_e, tabId: TabId, dir: string) => {
     return listTree(docRoots(tabId), dir)
+  })
+  // the filter box searches the whole project, not just what the rail lists —
+  // a file with no extension is in neither markdown nor settings group
+  ipcMain.handle('docs:find', (_e, tabId: TabId, query: string) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd ? findFiles([cwd, ...addedDirs], query) : []
   })
   ipcMain.handle('docs:read', (_e, tabId: TabId, path: string, allowOversize?: boolean) => {
     return readDoc(docRoots(tabId), path, allowOversize)

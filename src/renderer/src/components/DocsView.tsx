@@ -9,6 +9,13 @@ import { attachGrammar } from '../grammar'
 import { useFileEditor } from '../file-editor'
 import { formatBytes } from '../format'
 import { FileTree } from './FileTree'
+import { matchesFilter } from '../../../shared/glob-match'
+
+/** The filter box searches the project on a pause in typing — the rail's own
+ *  items filter as you type, since they are already here. */
+const FIND_DEBOUNCE_MS = 160
+
+const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
 
 interface Props {
   tabId: string
@@ -156,6 +163,9 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
   // follows, instead of the group's usual landing
   const justCreated = useRef<string | null>(null)
   const [newFileError, setNewFileError] = useState<string | null>(null)
+  // files the filter box found in the project, tagged with the query they
+  // answer so a stale result is never shown next to a newer one
+  const [found, setFound] = useState<{ query: string; hits: TreeNode[] } | null>(null)
   const patternsFile = docs?.patternsFile
 
   const editor = useFileEditor<FileItem>({
@@ -290,12 +300,42 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
 
   const groups = useMemo(() => {
     if (!docs) return []
-    const q = filter.trim().toLowerCase()
-    if (!q) return railGroups(docs)
+    if (!filter.trim()) return railGroups(docs)
     return railGroups(docs)
-      .map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(q)) }))
+      .map((g) => ({
+        ...g,
+        // a doc is listed under its heading ("Fixture"), so match its file name
+        // too — `*.md` is about the file, not the title above it
+        items: g.items.filter(
+          (i) => matchesFilter(filter, i.label) || matchesFilter(filter, fileName(i.path))
+        )
+      }))
       .filter((g) => g.items.length)
   }, [docs, filter])
+
+  // …and searches the project for anything the rail doesn't list (a file with
+  // no extension, a script, a lock file): those live only in the tree.
+  useEffect(() => {
+    if (!filter.trim()) return
+    let live = true
+    const timer = setTimeout(() => {
+      void window.claudeTerm.findDocFiles(tabId, filter).then((hits) => {
+        if (live) setFound({ query: filter, hits })
+      })
+    }, FIND_DEBOUNCE_MS)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [tabId, filter, rescan])
+
+  // what the rail already shows doesn't need showing twice
+  const listedPaths = useMemo(
+    () => new Set(groups.flatMap((g) => g.items.map((i) => i.path))),
+    [groups]
+  )
+  const elsewhere =
+    found && found.query === filter ? found.hits.filter((f) => !listedPaths.has(f.path)) : []
 
   const listed = docs ? railGroups(docs).reduce((n, g) => n + g.items.length, 0) : 0
   const empty = !docs || (!listed && !docs.roots.length)
@@ -401,17 +441,24 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
           ) : (
             <>
               <div className="docs-rail">
-                {listed > 0 && (
+                {(listed > 0 || !!docs!.roots.length) && (
                   <input
                     className="config-filter"
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
-                    placeholder={`Filter ${listed} listed…`}
+                    placeholder="Find a file — * allowed"
                     spellCheck={false}
                   />
                 )}
                 {groups.map(section)}
-                {!!filter && !groups.length && <p className="activity-empty">No match.</p>}
+                {!!elsewhere.length &&
+                  section({
+                    name: 'Elsewhere in the project',
+                    items: elsewhere.map((f) => ({ path: f.path, label: f.name, size: f.size }))
+                  })}
+                {!!filter.trim() && !groups.length && !elsewhere.length && (
+                  <p className="activity-empty">No file matches.</p>
+                )}
                 {!!docs!.roots.length && (
                   <FileTree
                     roots={docs!.roots}

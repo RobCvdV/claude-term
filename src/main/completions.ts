@@ -164,7 +164,9 @@ function scanPlugins(home: string, add: (c: SlashCommand) => void): void {
 
 const fileCache = new Map<string, { at: number; files: string[] }>()
 
-async function listFiles(cwd: string): Promise<string[]> {
+/** Every file under `cwd`, relative — git's list where there is a repo, a
+ *  bounded walk otherwise. Cached briefly; shared with the file window's find. */
+export async function listFiles(cwd: string): Promise<string[]> {
   const cached = fileCache.get(cwd)
   if (cached && Date.now() - cached.at < FILE_CACHE_TTL_MS) return cached.files
 
