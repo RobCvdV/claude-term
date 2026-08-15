@@ -1,7 +1,7 @@
 // Spell checking for the app's Monaco editors: misspellings become Info markers
 // (a subtle squiggle) with quick fixes for the suggestions and an "add to
 // dictionary" escape hatch for our own jargon.
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+import * as monaco from 'monaco-editor/editor/editor.api'
 import SpellWorker from './spell.worker?worker'
 import { extractWords, type SpellMode, type WordHit } from './words'
 import { TECH_WORDS } from './tech-words'
