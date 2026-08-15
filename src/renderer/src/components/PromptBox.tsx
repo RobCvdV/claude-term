@@ -554,6 +554,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       // park the unsubmitted draft (if any) so it's restored on remount, with the
       // image chips it refers to; a blank box drops the entry so a stale draft
       // can't resurrect
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- the latest map is the point; a setup-time snapshot would park the draft with stale chips
       saveDraft(tabId, editor.getValue(), imageMapRef.current)
       loanCancelRef.current?.()
       loanCancelRef.current = null
