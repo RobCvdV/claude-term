@@ -17,8 +17,9 @@ name: Release
 on:
   push:
     branches: [main]
+  # Every pull request, whatever it targets: a stacked PR based on another
+  # branch is exactly the one that would otherwise merge ungated.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: write # create tags and releases
