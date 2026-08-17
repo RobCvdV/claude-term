@@ -129,6 +129,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     async (_e, cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
       let dir = cwd && existsSync(cwd) ? cwd : homedir()
+      // Nobody picked that fallback, so the tab has no folder identity to
+      // defend: it re-homes onto the first claude session's project dir
+      // (see StatusServer.adoptDefaultHome). A chosen folder never does.
+      let homeIsDefault = dir !== cwd
       const tabId: TabId = randomUUID()
       // Resolve how to restore a persisted session (only when `resume` is set):
       //  - live daemon-managed background agent → `claude attach` (--resume
@@ -148,14 +152,17 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
         // spawned in. The tab follows its conversation, spawn dir included.
         if (target.mode !== 'shell') {
           const home = sessionHomeDir(resume)
-          if (home && existsSync(home)) dir = home
+          if (home && existsSync(home)) {
+            dir = home
+            homeIsDefault = false // the conversation's own home, not a fallback
+          }
         }
       }
       // added dirs: the persisted tab record plus the project's own settings
       // (additionalDirectories) — the latter never show up in /add-dir prompts
       // or statusline added_dirs, so this is their only way into the UI
       const seeded = [...new Set([...(addedDirs ?? []), ...settingsAddedDirs(dir)])]
-      status.registerTab(tabId, dir, seeded.filter(existsSync))
+      status.registerTab(tabId, dir, seeded.filter(existsSync), homeIsDefault)
       if (target) {
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)
