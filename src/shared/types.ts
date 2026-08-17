@@ -265,6 +265,9 @@ export interface DocTarget {
   path: string
   /** open the markdown editor straight away rather than the rendered preview */
   edit?: boolean
+  /** 1-based line to reveal the cursor on — a terminal file link carries one */
+  line?: number
+  column?: number
 }
 
 /** Outcome of creating a new doc from `/add-file`. */

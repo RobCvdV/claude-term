@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type * as monacoNs from 'monaco-editor'
 import type { DocGroup, DocTarget, ProjectDocs, TreeNode } from '../../../shared/types'
 import { MAX_EDIT_BYTES } from '../../../shared/types'
 import { MARKDOWN_LANG } from '../monaco-setup'
@@ -17,6 +18,23 @@ import { revealLabel } from '../../../shared/reveal-label'
 const FIND_DEBOUNCE_MS = 160
 
 const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+
+/** Where a terminal file link wants the cursor. */
+interface CursorAt {
+  line: number
+  column?: number
+}
+
+const editorPath = (ed: monacoNs.editor.IStandaloneCodeEditor): string | undefined =>
+  ed.getModel()?.uri.path
+
+function revealAt(ed: monacoNs.editor.IStandaloneCodeEditor, at: CursorAt): void {
+  // a stale line number (the file shrank since it was printed) still lands in it
+  const lineNumber = Math.min(at.line, ed.getModel()?.getLineCount() ?? 1)
+  ed.setPosition({ lineNumber, column: at.column ?? 1 })
+  ed.revealLineInCenter(lineNumber)
+  ed.focus()
+}
 
 interface Props {
   tabId: string
@@ -152,6 +170,11 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
   // end, under its seeded heading; consumed by the editor on mount, so a later
   // View→Edit toggle still opens at the top like any other doc
   const openAtEnd = useRef(false)
+  // Where a `path:line` terminal link wants the cursor. Applied on mount for a
+  // file the editor isn't showing yet, and straight away for one it is — a
+  // second link into the open file must still move the cursor.
+  const openAtLine = useRef<CursorAt | null>(null)
+  const edRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
   // expanded folders and the children read for them, for the file tree
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [treeEntries, setTreeEntries] = useState<Map<string, TreeNode[]>>(new Map())
@@ -193,10 +216,22 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
         const model = ed.getModel()
         if (model) ed.setPosition(model.getFullModelRange().getEndPosition())
       }
+      edRef.current = ed
+      if (openAtLine.current) {
+        revealAt(ed, openAtLine.current)
+        openAtLine.current = null
+      }
+      const subs: monacoNs.IDisposable[] = [
+        {
+          dispose: () => {
+            if (edRef.current === ed) edRef.current = null
+          }
+        }
+      ]
       // prose only: spelling and grammar on code or config would be all noise,
       // and their quick fixes are registered for markdown anyway
-      if (language !== MARKDOWN_LANG) return []
-      return [attachSpellcheck(ed, 'markdown'), attachGrammar(ed)]
+      if (language === MARKDOWN_LANG) subs.push(attachSpellcheck(ed, 'markdown'), attachGrammar(ed))
+      return subs
     }
   })
   const { selected, content, shown, dirty, saving, save, hostRef } = editor
@@ -216,6 +251,13 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
       editor.select(landing.item)
       setMode(landing.mode)
       openAtEnd.current = landing.atEnd
+      const at = landing.line ? { line: landing.line, column: landing.column } : null
+      openAtLine.current = at
+      // already the open file: no editor is mounted for this, so move the cursor
+      if (at && edRef.current && editorPath(edRef.current) === landing.item?.path) {
+        revealAt(edRef.current, at)
+        openAtLine.current = null
+      }
       setLoading(false)
     })
     return () => {
@@ -223,7 +265,7 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     }
     // a re-target is only ever a new path/mode, so depend on those, not identity
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, group, target?.path, target?.edit, rescan])
+  }, [tabId, group, target?.path, target?.edit, target?.line, target?.column, rescan])
 
   // Expanding a folder reads it once; collapsing keeps what was read, so
   // re-opening a branch is instant.

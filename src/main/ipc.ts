@@ -32,6 +32,8 @@ import {
 } from './docs'
 import { listTree } from './file-tree'
 import { findFiles } from './file-find'
+import { resolveFileLink } from './file-link'
+import { parseFileLink } from '../shared/file-link'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
@@ -417,6 +419,21 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const { cwd, addedDirs } = rootsFor(tabId)
     return cwd ? findFiles([cwd, ...addedDirs], query) : []
   })
+  // A `src/main/ipc.ts:403` the terminal printed. The raw text is resolved here
+  // rather than in the renderer: only main knows the tab's roots, and terminal
+  // output is not a trusted source of paths.
+  ipcMain.handle('file:openLink', (_e, tabId: TabId, raw: string): boolean => {
+    const link = parseFileLink(raw)
+    const { cwd, addedDirs } = rootsFor(tabId)
+    if (!link || !cwd) return false
+    const hit = resolveFileLink([cwd, ...addedDirs], link)
+    if (!hit) return false
+    // the window titles itself "File editor — <file> — <owner>", so the owner
+    // half is the project, exactly as it is when a tab opens the window
+    openOrFocusDocsWindow(tabId, 'docs', basename(cwd), { ...hit, edit: true })
+    return true
+  })
+
   ipcMain.handle('docs:read', (_e, tabId: TabId, path: string, allowOversize?: boolean) => {
     return readDoc(docRoots(tabId), path, allowOversize)
   })

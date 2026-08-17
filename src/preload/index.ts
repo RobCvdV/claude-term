@@ -117,6 +117,9 @@ export interface ClaudeTermApi {
   /** open (or focus, if already open) the docs window for a tab, on `group` —
    *  `target` selects one specific file instead of the group's first */
   openDocsWindow(tabId: TabId, group: DocGroup, title: string, target?: DocTarget): void
+  /** open a `path:line` the terminal printed, in the file window at that line.
+   *  False when it resolves to nothing inside the tab's roots */
+  openFileLink(tabId: TabId, raw: string): Promise<boolean>
   /** (docs window only) the owner tab asked to switch section / retitle */
   onDocsSetGroup(
     cb: (payload: { group: DocGroup; title: string; target?: DocTarget }) => void
@@ -205,6 +208,7 @@ const api: ClaudeTermApi = {
   newDocFile: (tabId, near) => ipcRenderer.invoke('docs:newFile', tabId, near),
   openDocsWindow: (tabId, group, title, target) =>
     ipcRenderer.send('docs:openWindow', tabId, group, title, target),
+  openFileLink: (tabId, raw) => ipcRenderer.invoke('file:openLink', tabId, raw),
   onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),

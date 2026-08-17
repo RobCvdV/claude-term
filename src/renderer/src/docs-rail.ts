@@ -85,6 +85,9 @@ export interface Landing {
   /** put the cursor at the end of the file — a new file is written into, and a
    *  seeded `# Heading` is something to type under, not over */
   atEnd: boolean
+  /** 1-based line to put the cursor on, from a `path:line` terminal link */
+  line?: number
+  column?: number
 }
 
 /**
@@ -107,8 +110,11 @@ export function landingFor(
   if (target) {
     return {
       item: targetEntry(d, target),
-      mode: target.edit ? 'edit' : 'view',
-      atEnd: !!target.edit
+      // a line to land on means the editor, whatever the file renders as
+      mode: target.edit || target.line ? 'edit' : 'view',
+      atEnd: !!target.edit && !target.line,
+      line: target.line,
+      column: target.column
     }
   }
   const item = pickInitial(d, group)

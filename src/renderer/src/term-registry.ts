@@ -10,6 +10,7 @@ import {
   hasPromptInputRow,
   PROMPT_MARKERS
 } from './terminal-scan'
+import { fileLinkProvider, fileLinksInLine } from './terminal-links'
 import { isFocusToggle } from './focus-policy'
 
 export interface TermEntry {
@@ -86,6 +87,11 @@ export function createTerm(tabId: TabId): TermEntry {
     new WebLinksAddon((event, uri) => {
       if (event.metaKey || event.ctrlKey) window.claudeTerm.openExternal(uri)
     })
+  )
+
+  // …and the same for a `src/main/ipc.ts:403`, which opens the file window there
+  term.registerLinkProvider(
+    fileLinkProvider(term, (raw) => void window.claudeTerm.openFileLink(tabId, raw))
   )
 
   const containerEl = document.createElement('div')
@@ -280,6 +286,20 @@ export function terminalAtNormalInput(tabId: TabId): boolean {
 // test hooks (CDP/DevTools): what the TUI scrapers see for a tab right now.
 ;(window as unknown as Record<string, unknown>).__agentsOverviewOpen = agentsOverviewOpen
 ;(window as unknown as Record<string, unknown>).__terminalDialogOpen = terminalDialogOpen
+;(window as unknown as Record<string, unknown>).__fileLinksInViewport = (tabId: TabId) => {
+  const term = entries.get(tabId)?.term
+  if (!term) return []
+  const buf = term.buffer.active
+  const out: { y: number; text: string; x: number }[] = []
+  for (let y = buf.baseY + 1; y <= buf.baseY + term.rows; y++) {
+    const line = buf.getLine(y - 1)
+    if (!line) continue
+    for (const link of fileLinksInLine(line, term.cols, y)) {
+      out.push({ y, text: link.text, x: link.range.start.x })
+    }
+  }
+  return out
+}
 
 // Debug helper for tuning the dim-detection against a live TUI: dumps the bottom
 // rows with per-cell fg info so the isDimCell predicate can be calibrated.
