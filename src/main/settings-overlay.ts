@@ -79,7 +79,10 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
       join(zdotdir, '.zshenv'),
       `[[ -f "$HOME/.zshenv" ]] && source "$HOME/.zshenv"\nexport ZDOTDIR="${zdotdir}"\n`
     )
-    writeFileSync(join(zdotdir, '.zprofile'), `[[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile"\n`)
+    writeFileSync(
+      join(zdotdir, '.zprofile'),
+      `[[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile"\n`
+    )
     writeFileSync(join(zdotdir, '.zlogin'), `[[ -f "$HOME/.zlogin" ]] && source "$HOME/.zlogin"\n`)
     writeFileSync(
       join(zdotdir, '.zshrc'),
