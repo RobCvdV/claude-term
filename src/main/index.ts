@@ -244,6 +244,9 @@ function shutdown(): Promise<void> {
     services.status.freeze()
     await services.ptys.disposeAll()
     services.status.stop()
+    // release the refs pinning this run's turn checkpoints — they are a
+    // session's undo history, not something to leave behind in the repo
+    services.checkpoints.forgetAll()
   })()
   return shutdownDone
 }

@@ -112,6 +112,10 @@ export class StatusServer {
    *  branch (matching the launch-time `--name`). Only fired while idle. */
   onRenameSession: (tabId: TabId, name: string) => void = () => {}
 
+  /** A turn just started in this tab (UserPromptSubmit) — the moment to take a
+   *  working-tree checkpoint, before any edit of that turn lands. */
+  onTurnStart: (tabId: TabId, cwd: string) => void = () => {}
+
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
@@ -496,6 +500,7 @@ export class StatusServer {
     if (name === 'PermissionRequest' || name === 'Elicitation') {
       this.onAttention(tabId, name)
     }
+    if (name === 'UserPromptSubmit') this.onTurnStart(tabId, tab.cwd)
     const next = map[name]
     if (!next) return
     tab.status.claudeActive = true

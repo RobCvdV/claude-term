@@ -232,7 +232,48 @@ export interface TreeNode {
 }
 
 /** Which status-bar label opened the file window / which group to land on. */
-export type DocGroup = 'plan' | 'roadmap' | 'docs' | 'settings'
+export type DocGroup = 'plan' | 'roadmap' | 'docs' | 'settings' | 'diff'
+
+export type FileChangeKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+
+/** One file that differs from HEAD. */
+export interface ChangedFile {
+  /** absolute */
+  path: string
+  /** relative to the repository root — what the rail shows */
+  rel: string
+  kind: FileChangeKind
+  added: number
+  removed: number
+}
+
+/** What reverting one file came to. `keep` means it was left alone on purpose —
+ *  it predates the turn and its old text was never saved anywhere. */
+export type RevertAction = 'restore' | 'remove' | 'keep' | 'failed'
+
+export interface RevertStep {
+  /** relative to the repository root */
+  rel: string
+  action: RevertAction
+}
+
+export interface RevertResult {
+  /** when the checkpoint that was restored had been taken, epoch ms */
+  at: number
+  steps: RevertStep[]
+}
+
+/** What the diff window shows: the working tree against HEAD, and which of
+ *  those files the turn that just ran is responsible for. */
+export interface ProjectChanges {
+  files: ChangedFile[]
+  /** absolute paths the current turn wrote to, in the order it touched them */
+  turnFiles: string[]
+  /** when that turn started, if the transcript said */
+  turnStartedAt: string | null
+  /** false when the tab's folder is not in a git repository */
+  inRepo: boolean
+}
 
 /** A folder's markdown files, shown as one section in the docs overlay. */
 export interface DocSection {
@@ -265,6 +306,9 @@ export interface DocTarget {
   path: string
   /** open the markdown editor straight away rather than the rendered preview */
   edit?: boolean
+  /** 1-based line to reveal the cursor on — a terminal file link carries one */
+  line?: number
+  column?: number
 }
 
 /** Outcome of creating a new doc from `/add-file`. */

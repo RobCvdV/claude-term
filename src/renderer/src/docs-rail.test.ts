@@ -140,6 +140,24 @@ describe('landingFor', () => {
     ).toMatchObject({ mode: 'edit', atEnd: true })
   })
 
+  it('opens the editor at the line a terminal link carried', () => {
+    const landing = landingFor(docs(), {
+      target: { path: '/p/ROADMAP.md', line: 42, column: 7 },
+      group: 'plan'
+    })
+    // markdown would normally open in its preview; a line means the editor
+    expect(landing).toMatchObject({ mode: 'edit', line: 42, column: 7, atEnd: false })
+  })
+
+  it('opens a file no listing reaches, labelled by its name', () => {
+    const landing = landingFor(docs(), {
+      target: { path: '/p/src/main/ipc.ts', line: 403 },
+      group: 'docs'
+    })
+    expect(landing.item).toEqual({ path: '/p/src/main/ipc.ts', label: 'ipc.ts', size: 0 })
+    expect(landing.line).toBe(403)
+  })
+
   it('otherwise lands on the group, in the mode that file deserves', () => {
     expect(landingFor(docs(), { group: 'roadmap' })).toEqual({
       item: { path: '/p/ROADMAP.md', label: 'Roadmap', size: 10 },
