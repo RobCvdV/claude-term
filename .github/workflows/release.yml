@@ -38,10 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # .node-version pins 24, the version electron 43 bundles
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
 
       - name: Install dependencies
@@ -126,7 +127,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
 
       - name: Install dependencies
