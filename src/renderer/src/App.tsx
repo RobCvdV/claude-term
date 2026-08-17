@@ -615,6 +615,11 @@ export default function App(): React.JSX.Element {
     ...(showClaudeUi
       ? [
           { id: 'docs', label: 'Open files window', run: () => openDocsFor('docs' as DocGroup) },
+          {
+            id: 'diff',
+            label: 'Review this turn’s changes',
+            run: () => openDocsFor('diff')
+          },
           { id: 'plan', label: 'Open files window on the plan', run: () => openDocsFor('plan') },
           {
             id: 'roadmap',

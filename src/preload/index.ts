@@ -17,6 +17,7 @@ import type {
   PersistedSession,
   PrGroup,
   PrInfo,
+  ProjectChanges,
   ProjectDocs,
   RateForecast,
   SlashCommand,
@@ -120,6 +121,11 @@ export interface ClaudeTermApi {
   /** open a `path:line` the terminal printed, in the file window at that line.
    *  False when it resolves to nothing inside the tab's roots */
   openFileLink(tabId: TabId, raw: string): Promise<boolean>
+  /** everything that differs from HEAD, with the current turn's files marked */
+  gitChanges(tabId: TabId): Promise<ProjectChanges>
+  /** a file's committed text — the left side of the diff. Null when HEAD has
+   *  no such file (just added) or it is too big to show */
+  gitFileAtHead(tabId: TabId, path: string): Promise<string | null>
   /** (docs window only) the owner tab asked to switch section / retitle */
   onDocsSetGroup(
     cb: (payload: { group: DocGroup; title: string; target?: DocTarget }) => void
@@ -209,6 +215,8 @@ const api: ClaudeTermApi = {
   openDocsWindow: (tabId, group, title, target) =>
     ipcRenderer.send('docs:openWindow', tabId, group, title, target),
   openFileLink: (tabId, raw) => ipcRenderer.invoke('file:openLink', tabId, raw),
+  gitChanges: (tabId) => ipcRenderer.invoke('git:changes', tabId),
+  gitFileAtHead: (tabId, path) => ipcRenderer.invoke('git:fileAtHead', tabId, path),
   onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),

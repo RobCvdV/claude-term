@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DocGroup, DocTarget } from '../../../shared/types'
 import { WINDOW_KIND, windowTitle } from '../../../shared/window-titles'
 import { DocsView } from './DocsView'
+import { DiffView } from './DiffView'
 
 const params = new URLSearchParams(location.search)
 const TAB_ID = params.get('tabId') ?? ''
@@ -43,12 +44,11 @@ export function DocsWindow(): React.JSX.Element {
     document.title = windowTitle(WINDOW_KIND.files, openFile, owner)
   }, [openFile, owner])
 
-  return (
-    <DocsView
-      tabId={TAB_ID}
-      group={group}
-      target={target}
-      onOpenFile={useCallback((label: string | null) => setOpenFile(label), [])}
-    />
-  )
+  const onOpenFile = useCallback((label: string | null) => setOpenFile(label), [])
+
+  // The diff group is its own view: it lists what changed rather than what the
+  // project holds, and shows two sides of a file instead of one.
+  if (group === 'diff') return <DiffView tabId={TAB_ID} onOpenFile={onOpenFile} />
+
+  return <DocsView tabId={TAB_ID} group={group} target={target} onOpenFile={onOpenFile} />
 }

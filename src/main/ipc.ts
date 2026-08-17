@@ -30,9 +30,11 @@ import {
   readDoc,
   writeDoc
 } from './docs'
-import { listTree } from './file-tree'
+import { insideAny, listTree } from './file-tree'
 import { findFiles } from './file-find'
 import { resolveFileLink } from './file-link'
+import { fileAtHead } from './git-diff'
+import { projectChanges } from './turn-changes'
 import { parseFileLink } from '../shared/file-link'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
@@ -50,7 +52,7 @@ import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
-import type { PrGroup, PrInfo } from '../shared/types'
+import type { PrGroup, PrInfo, ProjectChanges } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
@@ -419,6 +421,18 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const { cwd, addedDirs } = rootsFor(tabId)
     return cwd ? findFiles([cwd, ...addedDirs], query) : []
   })
+  // The diff window's two reads: what changed, and a file's committed side.
+  ipcMain.handle('git:changes', async (_e, tabId: TabId): Promise<ProjectChanges> => {
+    const { cwd } = rootsFor(tabId)
+    if (!cwd) return { files: [], turnFiles: [], turnStartedAt: null, inRepo: false }
+    return projectChanges(cwd, status.snapshot(tabId)?.sessionId ?? null)
+  })
+  ipcMain.handle('git:fileAtHead', async (_e, tabId: TabId, path: string) => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    if (!cwd || !insideAny([cwd, ...addedDirs], path)) return null
+    return fileAtHead(cwd, path)
+  })
+
   // A `src/main/ipc.ts:403` the terminal printed. The raw text is resolved here
   // rather than in the renderer: only main knows the tab's roots, and terminal
   // output is not a trusted source of paths.

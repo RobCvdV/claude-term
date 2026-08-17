@@ -560,7 +560,17 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
         ))}
       {git && (
         <span className="git-stats">
-          {git.changed > 0 && <span className="stat-changed">~{git.changed}</span>}
+          {/* the changed count is the way into the diff — it is what you are
+              looking at when you want to know what just happened */}
+          {git.changed > 0 && (
+            <button
+              className="stat-changed stat-link"
+              onClick={() => onOpenDocs('diff')}
+              title="Review what changed since the last commit"
+            >
+              ~{git.changed}
+            </button>
+          )}
           {git.unpushed > 0 && <span className="stat-ahead">↑{git.unpushed}</span>}
           {git.behind > 0 && <span className="stat-behind">↓{git.behind}</span>}
         </span>

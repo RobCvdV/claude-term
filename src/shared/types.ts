@@ -232,7 +232,32 @@ export interface TreeNode {
 }
 
 /** Which status-bar label opened the file window / which group to land on. */
-export type DocGroup = 'plan' | 'roadmap' | 'docs' | 'settings'
+export type DocGroup = 'plan' | 'roadmap' | 'docs' | 'settings' | 'diff'
+
+export type FileChangeKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+
+/** One file that differs from HEAD. */
+export interface ChangedFile {
+  /** absolute */
+  path: string
+  /** relative to the repository root — what the rail shows */
+  rel: string
+  kind: FileChangeKind
+  added: number
+  removed: number
+}
+
+/** What the diff window shows: the working tree against HEAD, and which of
+ *  those files the turn that just ran is responsible for. */
+export interface ProjectChanges {
+  files: ChangedFile[]
+  /** absolute paths the current turn wrote to, in the order it touched them */
+  turnFiles: string[]
+  /** when that turn started, if the transcript said */
+  turnStartedAt: string | null
+  /** false when the tab's folder is not in a git repository */
+  inRepo: boolean
+}
 
 /** A folder's markdown files, shown as one section in the docs overlay. */
 export interface DocSection {
