@@ -6,7 +6,7 @@ import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
 import { attachSpellcheck } from '../spell'
 import { SpellToggle } from './SpellToggle'
 import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
-import { focusAfterSubmit, type FocusState } from '../focus-policy'
+import { focusAfterSubmit, isFocusToggle, type FocusState } from '../focus-policy'
 import { runFocusLoan, type LoanMode } from '../focus-loan'
 import { promptHistoryFor, pushPrompt } from '../prompt-history'
 import { draftFor, lastImageNumber, saveDraft } from '../prompt-drafts'
@@ -444,6 +444,19 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         }
         return
       }
+      // ⌥Tab hands focus to the terminal; the same combo there hands it back
+      // (see term-registry), so one key toggles between the two. Handled at the
+      // keydown layer like Enter, since Monaco owns Tab. Any running focus loan
+      // is cancelled: asking for the terminal outranks a loan that would pull
+      // focus back to the box a moment later.
+      if (isFocusToggle(e.browserEvent)) {
+        e.preventDefault()
+        e.stopPropagation()
+        loanCancelRef.current?.()
+        loanCancelRef.current = null
+        focusTerm(tabId)
+        return
+      }
       // Tab in an empty box runs Claude Code's suggested next prompt where it
       // lives — the TUI input line: forward Tab (accept the suggestion) and,
       // a beat later, Enter (submit it) to the PTY. The PTY doesn't need DOM
@@ -487,7 +500,18 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         lendFocus('handover')
       }
     })
-    editor.addCommand(monaco.KeyCode.Escape, () => focusTerm(tabId), '!suggestWidgetVisible')
+    // Esc belongs to Claude Code (clear the input line, double-Esc rewind), so
+    // it is forwarded to the PTY rather than swallowed, and focus follows it
+    // into the terminal — a second Esc then completes the rewind where the
+    // cursor already is. ⌥Tab is the way back.
+    editor.addCommand(
+      monaco.KeyCode.Escape,
+      () => {
+        window.claudeTerm.ptyInput(tabId, '\x1b')
+        focusTerm(tabId)
+      },
+      '!suggestWidgetVisible'
+    )
     editor.addCommand(
       monaco.KeyMod.Shift | monaco.KeyCode.Tab,
       () => window.claudeTerm.ptyInput(tabId, '\x1b[Z'),
@@ -590,7 +614,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
           <div className="editor-placeholder">
             {disabled
               ? 'session ended'
-              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, Esc to terminal (⌘L here), ⌘/ cheat sheet'}
+              : 'Prompt — Enter to send, Shift+Enter newline, / commands, @ files, ↑ history, ← agents, Tab runs suggestion, ⌥Tab toggles terminal, Esc to Claude Code, ⌘/ cheat sheet'}
           </div>
         )}
       </div>

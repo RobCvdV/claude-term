@@ -50,8 +50,10 @@ function HowTo(): React.JSX.Element {
           ↓ walk the hits
         </Keys>
         <Keys k="⌘L">Focus the prompt box</Keys>
+        <Keys k="⌥Tab">Toggle focus between the prompt box and the terminal, either way</Keys>
         <Keys k="Esc">
-          Prompt box → terminal; terminal → prompt box (when nothing needs answering)
+          Goes to Claude Code (clear the line, twice to rewind); from the box it also moves focus to
+          the terminal, so the second Esc lands there
         </Keys>
         <div className="help-note">
           A red <b>“N waiting”</b> pill appears in the tab bar when sessions are blocked on a
@@ -66,6 +68,7 @@ function HowTo(): React.JSX.Element {
         <Keys k="↑ ↓">Prompt history</Keys>
         <Keys k="Tab">Run Claude&apos;s grayed-out suggestion</Keys>
         <Keys k="⇧Tab">Cycle the permission mode</Keys>
+        <Keys k="⌥Tab">Hand focus to the terminal (and back again)</Keys>
         <Keys k="←">Agents overview (on an empty box)</Keys>
         <div className="help-note">
           Drop files anywhere: they become @-mentions; images attach as compact chips.
@@ -130,8 +133,10 @@ function Guide(): React.JSX.Element {
         <p>
           You rarely need to click: when a permission prompt or picker opens, the terminal takes
           focus so arrows + Enter work immediately; when the turn finishes, focus returns to the
-          prompt box. Esc hops between the two manually. When several sessions run in parallel, the{' '}
-          <b>“N waiting”</b> pill and <b>⌘⇧A</b> queue you through everything that&apos;s blocked.
+          prompt box. <b>⌥Tab</b> hops between the two manually, in either direction, whenever the
+          automatic rules leave focus somewhere you didn&apos;t want it. When several sessions run
+          in parallel, the <b>“N waiting”</b> pill and <b>⌘⇧A</b> queue you through everything
+          that&apos;s blocked.
         </p>
       </section>
       <section>

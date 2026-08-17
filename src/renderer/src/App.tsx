@@ -29,6 +29,7 @@ import {
   disposeTerm,
   focusTerm,
   setTerminalEscapeHandler,
+  setTerminalFocusToggleHandler,
   setTerminalTitleHandler,
   terminalAtNormalInput
 } from './term-registry'
@@ -219,6 +220,21 @@ export default function App(): React.JSX.Element {
         if (activeIdRef.current !== tabId) return
         applyFocus(tabId, focusOnTerminalEscape(focusStateOf(statusesRef.current[tabId])))
       }, 120)
+    })
+  }, [])
+
+  // ⌥Tab in the terminal takes focus back to the prompt box, the other half of
+  // the box's own ⌥Tab. Unlike every rule in focus-policy this is the user
+  // saying where focus goes, so it ignores the tab's state entirely — the only
+  // reason to decline is having no box to focus, which lets the key through to
+  // the PTY instead (a plain terminal keeps its old behaviour).
+  useEffect(() => {
+    setTerminalFocusToggleHandler((tabId) => {
+      if (tabId !== activeIdRef.current) return false
+      const box = promptRefs.current.get(tabId)
+      if (!box) return false
+      box.focus()
+      return true
     })
   }, [])
 
