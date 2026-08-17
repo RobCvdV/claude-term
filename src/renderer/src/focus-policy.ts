@@ -10,6 +10,32 @@ import type { ActivityState, TabStatus } from '../../shared/types'
 /** Where keyboard focus should go. 'none' = leave it where it is. */
 export type FocusTarget = 'box' | 'terminal' | 'none'
 
+/** The modifier state of a keypress, as both xterm and Monaco report it. */
+export interface ToggleKey {
+  altKey: boolean
+  shiftKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  key: string
+  code: string
+}
+
+/**
+ * ⌥Tab — the one focus move the user makes by hand, from either side. The rules
+ * above are automatic and occasionally leave focus where it isn't wanted; this
+ * is the manual override, and it reads the same on both sides of the boundary.
+ *
+ * `code` is checked as well as `key` because Option can rewrite `key` on some
+ * layouts, while `code` stays the physical key. Every other Tab combination is
+ * left alone: plain Tab runs Claude's suggestion and ⇧Tab cycles the permission
+ * mode, so ⌥⇧Tab must not be mistaken for this.
+ */
+export function isFocusToggle(e: ToggleKey): boolean {
+  return (
+    e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'Tab' || e.code === 'Tab')
+  )
+}
+
 /** The subset of a tab's status the focus rules read. */
 export interface FocusState {
   claudeActive: boolean

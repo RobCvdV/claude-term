@@ -10,6 +10,7 @@ import {
   hasPromptInputRow,
   PROMPT_MARKERS
 } from './terminal-scan'
+import { isFocusToggle } from './focus-policy'
 
 export interface TermEntry {
   term: Terminal
@@ -32,6 +33,15 @@ let dataUnsub: (() => void) | null = null
 let escapeHandler: (tabId: TabId) => void = () => {}
 export function setTerminalEscapeHandler(fn: (tabId: TabId) => void): void {
   escapeHandler = fn
+}
+
+/** App registers this to move focus to the prompt box on ⌥Tab — the other half
+ *  of the box's own ⌥Tab, so one combo toggles between the two. Returns false
+ *  when there is no box to focus (a plain terminal), and the key falls through
+ *  to the PTY as before. */
+let focusToggleHandler: (tabId: TabId) => boolean = () => false
+export function setTerminalFocusToggleHandler(fn: (tabId: TabId) => boolean): void {
+  focusToggleHandler = fn
 }
 
 /** App registers this to update a tab's title from the shell's OSC title. */
@@ -89,6 +99,20 @@ export function createTerm(tabId: TabId): TermEntry {
   // Return true so xterm still sends the key to the PTY (Claude Code closes its
   // overlay); after that dispatches, App decides whether to refocus the box.
   term.attachCustomKeyEventHandler((e) => {
+    // ⌥Tab is ours: it hands focus back to the prompt box rather than reaching
+    // the PTY, where Option+Tab was only ever another Tab. Claimed on keydown
+    // (which is where xterm would emit the data) and only when a box exists —
+    // in a plain terminal it still falls through.
+    //
+    // preventDefault is on us: returning false only stops xterm from sending
+    // the key, it does not suppress the browser's own Tab focus traversal —
+    // which otherwise walks straight past the box to the next control.
+    if (e.type === 'keydown' && isFocusToggle(e)) {
+      if (!focusToggleHandler(tabId)) return true
+      e.preventDefault()
+      e.stopPropagation()
+      return false
+    }
     if (e.type === 'keydown' && e.key === 'Escape') {
       window.setTimeout(() => escapeHandler(tabId), 0)
     }

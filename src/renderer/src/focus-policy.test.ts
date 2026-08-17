@@ -3,6 +3,7 @@ import type { ActivityState, TabStatus } from '../../shared/types'
 import {
   focusAfterSubmit,
   focusForTab,
+  isFocusToggle,
   focusOnStatusChange,
   focusOnTerminalEscape,
   focusStateOf,
@@ -151,5 +152,46 @@ describe('focusOnTerminalEscape', () => {
   it('leaves a plain terminal alone', () => {
     expect(focusOnTerminalEscape(state(false, 'idle'))).toBe('none')
     expect(focusOnTerminalEscape(null)).toBe('none')
+  })
+})
+
+describe('isFocusToggle (⌥Tab, the manual override)', () => {
+  type Mods = Parameters<typeof isFocusToggle>[0]
+  const key = (over: Partial<Mods>): Mods => ({
+    altKey: false,
+    shiftKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    key: 'Tab',
+    code: 'Tab',
+    ...over
+  })
+
+  it('claims Option+Tab', () => {
+    expect(isFocusToggle(key({ altKey: true }))).toBe(true)
+  })
+
+  it('still claims it when Option rewrote the key value', () => {
+    // some layouts hand back a dead key for ⌥ combos; `code` is the physical key
+    expect(isFocusToggle(key({ altKey: true, key: 'Dead', code: 'Tab' }))).toBe(true)
+  })
+
+  it("leaves a plain Tab alone — it runs Claude's suggestion", () => {
+    expect(isFocusToggle(key({}))).toBe(false)
+  })
+
+  it('leaves ⇧Tab and ⌥⇧Tab alone — ⇧Tab cycles the permission mode', () => {
+    expect(isFocusToggle(key({ shiftKey: true }))).toBe(false)
+    expect(isFocusToggle(key({ altKey: true, shiftKey: true }))).toBe(false)
+  })
+
+  it('wants Option on its own, not paired with Ctrl or Cmd', () => {
+    expect(isFocusToggle(key({ altKey: true, ctrlKey: true }))).toBe(false)
+    expect(isFocusToggle(key({ altKey: true, metaKey: true }))).toBe(false)
+  })
+
+  it('ignores Option with any other key', () => {
+    expect(isFocusToggle(key({ altKey: true, key: 'a', code: 'KeyA' }))).toBe(false)
+    expect(isFocusToggle(key({ altKey: true, key: 'Escape', code: 'Escape' }))).toBe(false)
   })
 })
