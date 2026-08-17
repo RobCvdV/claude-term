@@ -34,9 +34,12 @@
     "dictionary-nl": "^2.0.0",
     "electron-updater": "^6.8.9",
     "harper.js": "2.7.0",
-    "monaco-editor": "^0.55.1",
+    "monaco-editor": "^0.56.0",
     "node-pty": "^1.1.0",
     "nspell": "^2.1.5"
+  },
+  "overrides": {
+    "dompurify": "^3.4.13"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

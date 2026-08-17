@@ -6,7 +6,7 @@
 // shape, and nothing else. Spelling caches verdicts per word and runs in both
 // editors; grammar lints whole documents and only runs here, so the prompt box
 // never pays for a 15MB wasm load.
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+import * as monaco from 'monaco-editor/editor/editor.api'
 import GrammarWorker from './harper.worker?worker'
 import { usableFindings } from './findings'
 import type { Finding, WorkerRequest, WorkerResponse } from './protocol'
