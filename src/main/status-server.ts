@@ -20,6 +20,7 @@ import { sessionNameForBranch } from './session-name'
 import { attachedActivity } from './attached-activity'
 import { transcriptPathFor } from './session-home'
 import { readJobState } from './agents'
+import { settingsAddedDirs } from './project-dirs'
 
 const GIT_CACHE_MS = 5_000
 const GIT_TIMER_MS = 10_000
@@ -40,6 +41,10 @@ interface AttachedFeed {
 interface TabState {
   status: TabStatus
   cwd: string
+  /** True while the tab still sits at the home-dir fallback nobody chose. Such a
+   *  tab adopts the first claude session's project_dir as its own (see
+   *  handleStatusline); a tab opened ON a folder never does. */
+  homeIsDefault: boolean
   gitFetchedAt: number
   /** Rename queued by a branch switch, waiting for the session to go idle so we
    *  don't inject `/rename` mid-turn. Null once applied. */
@@ -235,9 +240,10 @@ export class StatusServer {
     }
   }
 
-  registerTab(tabId: TabId, cwd: string, addedDirs: string[] = []): void {
+  registerTab(tabId: TabId, cwd: string, addedDirs: string[] = [], homeIsDefault = false): void {
     this.tabs.set(tabId, {
       cwd,
+      homeIsDefault,
       gitFetchedAt: 0,
       pendingRename: null,
       lastRenamedName: null,
@@ -399,16 +405,45 @@ export class StatusServer {
     tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
-    // The tab's cwd is NEVER re-homed from payloads. current_dir follows the
-    // Bash tool's persistent cwd, and even project_dir moves mid-session (the
-    // CLI's /cd + set_cwd relocate the session and rewrite originalCwd) — and a
-    // resumed session chdirs back to its recorded home on its own. Adopting
-    // either drifts the tab's identity into another repo, gets persisted, and
-    // corrupts the restore (wrong spawn dir + resume from the wrong project).
-    // The session's own workspace, when different, is shown by the renderer as
-    // a secondary folder chip instead (StatusBar).
+    // A tab the user chose a folder for is NEVER re-homed from payloads.
+    // current_dir follows the Bash tool's persistent cwd, and even project_dir
+    // moves mid-session (the CLI's /cd + set_cwd relocate the session and
+    // rewrite originalCwd) — and a resumed session chdirs back to its recorded
+    // home on its own. Adopting either drifts the tab's identity into another
+    // repo, gets persisted, and corrupts the restore (wrong spawn dir + resume
+    // from the wrong project). The session's own workspace, when different, is
+    // shown by the renderer as a secondary folder chip instead (StatusBar).
+    //
+    // The one exception is a tab still sitting at the home-dir fallback: nobody
+    // chose it, so there is no identity to protect. `cd`ing into a project and
+    // running claude there is the ordinary way to start, and leaving such a tab
+    // homed at ~ showed the project as a *secondary* folder while ~ held the
+    // main slot. It adopts once, off the first payload that names a real
+    // project_dir, and is an ordinary chosen tab from then on.
+    this.adoptDefaultHome(tab, payload)
     this.onUpdate(tab.status)
     void this.refreshGit(tabId)
+  }
+
+  /**
+   * Re-home a tab that never had a folder of its own onto the project its first
+   * claude session actually runs in. No-op for every other tab.
+   *
+   * The tab's seeded added dirs came from the home dir's settings, so they are
+   * re-read from the project instead — keeping any runtime `/add-dir` the tab
+   * already observed, which belongs to the session rather than to a folder.
+   */
+  private adoptDefaultHome(tab: TabState, payload: StatuslinePayload): void {
+    if (!tab.homeIsDefault) return
+    const dir = payload.workspace?.project_dir
+    if (!dir || dir === tab.cwd || !existsSync(dir)) return
+    const staleSeed = settingsAddedDirs(tab.cwd)
+    tab.homeIsDefault = false
+    tab.cwd = dir
+    tab.status.cwd = dir
+    const observed = tab.status.addedDirs.filter((d) => !staleSeed.includes(d))
+    tab.status.addedDirs = [...new Set([...observed, ...settingsAddedDirs(dir)])].filter(existsSync)
+    tab.gitFetchedAt = 0 // the branch/PR data belongs to the old folder
   }
 
   // Hooks drive only the activity state (busy/idle/needs-attention) and the

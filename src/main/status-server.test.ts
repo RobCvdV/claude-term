@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { StatusServer } from './status-server'
 import type { StatuslinePayload, TabStatus } from '../shared/types'
 
@@ -92,6 +95,71 @@ describe('StatusServer', () => {
       const s = server.snapshot(tabId)
       expect(s?.sessionId).toBe('sess-2')
       expect(s?.payload?.workspace?.current_dir).toBe('/other-repo')
+    })
+  })
+
+  // ⌘T opens a tab at the home dir because there is nothing better to open it
+  // at — not because anyone picked home. `cd`ing into a project and running
+  // claude there is the ordinary way to start one, and that used to leave the
+  // tab homed at ~ with the actual project demoted to a secondary folder chip.
+  describe('a tab still at the default home dir', () => {
+    const real = (): string => mkdtempSync(join(tmpdir(), 'ct-home-'))
+
+    /** Registered at `home` as the unchosen fallback, with a live session. */
+    function withDefaultHomeTab(home: string): { server: StatusServer; tabId: string } {
+      const server = new StatusServer()
+      const tabId = 'tab-1'
+      server.registerTab(tabId, home, [], true)
+      server.markClaudeActive(tabId, 'sess-1')
+      return { server, tabId }
+    }
+
+    it('adopts the project the first session actually runs in', () => {
+      const home = real()
+      const project = real()
+      const { server, tabId } = withDefaultHomeTab(home)
+      statusline(server, tabId, {
+        session_id: 'sess-1',
+        workspace: { current_dir: project, project_dir: project }
+      })
+      expect(server.getCwd(tabId)).toBe(project)
+      expect(server.snapshot(tabId)?.cwd).toBe(project)
+    })
+
+    it('adopts once — a later /cd does not re-home it again', () => {
+      const home = real()
+      const project = real()
+      const elsewhere = real()
+      const { server, tabId } = withDefaultHomeTab(home)
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: project } })
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: elsewhere } })
+      expect(server.getCwd(tabId)).toBe(project)
+    })
+
+    it('stays put when the project_dir does not exist', () => {
+      const home = real()
+      const { server, tabId } = withDefaultHomeTab(home)
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: '/nope/gone' } })
+      expect(server.getCwd(tabId)).toBe(home)
+    })
+
+    it('never adopts current_dir — only project_dir', () => {
+      const home = real()
+      const bashCwd = real()
+      const { server, tabId } = withDefaultHomeTab(home)
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { current_dir: bashCwd } })
+      expect(server.getCwd(tabId)).toBe(home)
+    })
+
+    // The PR #33 invariant, unchanged: a folder the user opened is identity.
+    it('does not apply to a tab opened ON a folder', () => {
+      const project = real()
+      const server = new StatusServer()
+      const tabId = 'tab-1'
+      server.registerTab(tabId, project) // no homeIsDefault flag
+      server.markClaudeActive(tabId, 'sess-1')
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: real() } })
+      expect(server.getCwd(tabId)).toBe(project)
     })
   })
 
