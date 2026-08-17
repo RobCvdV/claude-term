@@ -465,6 +465,9 @@ export interface ActivityBucket {
   project: string
   /** wall-clock engaged hours (idle gaps capped out), 2-decimal float */
   hours: number
+  /** the part of `hours` that happened after the day's settled window — what is
+   *  still to be booked. Equals `hours` on a day that was never booked. */
+  unsettledHours: number
 }
 
 export interface ActivityDay {
@@ -472,12 +475,22 @@ export interface ActivityDay {
   date: string
   totalHours: number
   buckets: ActivityBucket[]
-  /** epoch seconds of the first / last beat seen this day (whole workday span,
-   *  including non-ticket work) — drives the suggested day length. 0 if none. */
+  /** epoch seconds of the first / last work activity this day (personal
+   *  projects excluded) — the workday span. 0 if there was none. */
   firstTs: number
   lastTs: number
-  /** first→last span rounded UP to the next 30 min, or 8h when there's no span.
-   *  The default (editable) total to dispatch across the day's tickets. */
+  /** workday length: work activity merged across short breaks, so a coffee or a
+   *  call still counts but an evening off doesn't. Excludes personal projects
+   *  and never double-counts parallel sessions. */
+  workHours: number
+  /** epoch seconds of the window already settled in Jira (0 when none). Booking
+   *  a day settles it up to its last activity, however many hours were booked. */
+  settledFromTs: number
+  settledToTs: number
+  /** hours booked for that settled window */
+  settledHours: number
+  /** work hours after the settled window, rounded UP to the next 30 min — the
+   *  default (editable) total to dispatch across the day's tickets. */
   suggestedHours: number
 }
 
@@ -510,6 +523,22 @@ export interface LoggedWorklog {
   hours: number
   activity: WorklogActivity
   worklogId: string
+  at: number
+}
+
+/** A stretch of a day whose work has been settled in Jira — recorded when the
+ *  panel books a day, so the rest of that day stops asking to be booked no
+ *  matter how few hours were actually logged for it. Stored in
+ *  ~/.claude/activity-worklog-coverage.json under { coverage: [...] }. */
+export interface WorklogCoverage {
+  /** local YYYY-MM-DD the settled work happened */
+  date: string
+  /** epoch seconds of the window this booking settled */
+  fromTs: number
+  toTs: number
+  /** hours actually booked for the window */
+  hours: number
+  /** when it was recorded (epoch ms) */
   at: number
 }
 

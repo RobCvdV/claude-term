@@ -1352,6 +1352,14 @@ body {
   margin-right: 8px;
 }
 
+.day-work {
+  color: var(--fg-dim);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
 /* worklog prepare view */
 .wl-intro,
 .wl-saved {
@@ -1407,6 +1415,15 @@ body {
   color: var(--fg-dim);
   font-size: 11.5px;
   margin-left: auto;
+}
+
+.wl-settled {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 
 .wl-row {

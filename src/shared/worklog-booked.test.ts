@@ -50,6 +50,11 @@ describe('dayBookedState', () => {
   it('full when there is no ticket work at all', () => {
     expect(dayBookedState(0, 0)).toBe('full')
   })
+  it('judges a settled day on its unsettled tail, not on the hours booked', () => {
+    // 13.5h tracked, booked as 8h — that day is done
+    expect(dayBookedState(13.5, 8, { unsettledHours: 0 })).toBe('full')
+    expect(dayBookedState(13.5, 8, { unsettledHours: 1.5 })).toBe('partial')
+  })
 })
 
 describe('defaultDayChecked', () => {
@@ -57,5 +62,16 @@ describe('defaultDayChecked', () => {
     expect(defaultDayChecked([{ toBook: 0 }, { toBook: 0.5 }])).toBe(true)
     expect(defaultDayChecked([{ toBook: 0 }, { toBook: 0 }])).toBe(false)
     expect(defaultDayChecked([])).toBe(false)
+  })
+
+  it('leaves a day that already has worklogs for the user to tick', () => {
+    const rows = [{ toBook: 2 }]
+    expect(defaultDayChecked(rows, { bookedHours: 0, settled: false })).toBe(true)
+    expect(defaultDayChecked(rows, { bookedHours: 4, settled: false })).toBe(false)
+  })
+
+  it('still offers the tail of a settled day', () => {
+    expect(defaultDayChecked([{ toBook: 1.5 }], { bookedHours: 8, settled: true })).toBe(true)
+    expect(defaultDayChecked([{ toBook: 0 }], { bookedHours: 8, settled: true })).toBe(false)
   })
 })
