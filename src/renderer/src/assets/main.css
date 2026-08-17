@@ -2283,3 +2283,19 @@ body {
 .stat-link:hover {
   text-decoration: underline;
 }
+
+/* Revert destroys work, so it reads as the one dangerous control here. */
+.diff-revert {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.diff-revert:hover:not(:disabled) {
+  color: #fff;
+  background: var(--red);
+}
+
+/* What a revert came to — dismissed by clicking it. */
+.diff-note {
+  color: var(--fg-dim);
+}

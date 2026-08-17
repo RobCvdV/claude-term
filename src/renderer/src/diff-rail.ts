@@ -1,7 +1,7 @@
 /** What the diff window lists, and which of it the turn is responsible for.
  *  Pure — the view renders these. */
 
-import type { ChangedFile, FileChangeKind, ProjectChanges } from '../../shared/types'
+import type { ChangedFile, FileChangeKind, ProjectChanges, RevertResult } from '../../shared/types'
 
 /** Which changes are on screen: only what the last turn wrote, or everything
  *  that differs from HEAD. */
@@ -61,4 +61,30 @@ export function emptyReason(changes: ProjectChanges, scope: DiffScope): string |
   if (changes.files.length === 0) return 'Nothing has changed since the last commit.'
   if (scopedFiles(changes, scope).length === 0) return 'This turn did not change any files.'
   return null
+}
+
+/** What the user is agreeing to when they undo a turn. Spells out the file
+ *  list, because "revert" is the one button here that destroys work. */
+export function revertConfirmText(files: ChangedFile[]): string {
+  const list = files.map((f) => `  ${changeBadge(f.kind)}  ${f.rel}`).join('\n')
+  return [
+    `Undo this turn's changes to ${files.length} file${files.length === 1 ? '' : 's'}?`,
+    '',
+    list,
+    '',
+    'Each goes back to how it was when the turn started, and files the turn',
+    'created are deleted. Your own edits to other files are left alone.',
+    'This cannot be undone.'
+  ].join('\n')
+}
+
+/** What a revert actually did, for the header line. */
+export function revertSummary(result: RevertResult): string {
+  const n = (action: string): number => result.steps.filter((s) => s.action === action).length
+  const parts: string[] = []
+  if (n('restore')) parts.push(`${n('restore')} restored`)
+  if (n('remove')) parts.push(`${n('remove')} deleted`)
+  if (n('keep')) parts.push(`${n('keep')} left alone`)
+  if (n('failed')) parts.push(`${n('failed')} failed`)
+  return parts.length ? `Reverted: ${parts.join(', ')}` : 'Nothing to revert'
 }

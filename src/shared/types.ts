@@ -247,6 +247,22 @@ export interface ChangedFile {
   removed: number
 }
 
+/** What reverting one file came to. `keep` means it was left alone on purpose —
+ *  it predates the turn and its old text was never saved anywhere. */
+export type RevertAction = 'restore' | 'remove' | 'keep' | 'failed'
+
+export interface RevertStep {
+  /** relative to the repository root */
+  rel: string
+  action: RevertAction
+}
+
+export interface RevertResult {
+  /** when the checkpoint that was restored had been taken, epoch ms */
+  at: number
+  steps: RevertStep[]
+}
+
 /** What the diff window shows: the working tree against HEAD, and which of
  *  those files the turn that just ran is responsible for. */
 export interface ProjectChanges {

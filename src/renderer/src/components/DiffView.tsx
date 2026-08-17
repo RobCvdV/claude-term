@@ -9,6 +9,8 @@ import {
   initialScope,
   inTurn,
   reselectChange,
+  revertConfirmText,
+  revertSummary,
   scopedFiles,
   totals,
   type DiffScope
@@ -41,6 +43,8 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
   const [sides, setSides] = useState<Sides | null>(null)
   const [sideBySide, setSideBySide] = useState(true)
   const [reloads, setReloads] = useState(0)
+  const [reverting, setReverting] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
   const reload = useCallback(() => setReloads((n) => n + 1), [])
 
   useEffect(() => {
@@ -130,7 +134,21 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
   }, [selected, sides, sideBySide])
 
   const empty = changes && scope ? emptyReason(changes, scope) : null
-  const turnCount = changes ? scopedFiles(changes, 'turn').length : 0
+  const turnFiles = changes ? scopedFiles(changes, 'turn') : []
+  const turnCount = turnFiles.length
+
+  const revert = async (): Promise<void> => {
+    if (!turnFiles.length || !window.confirm(revertConfirmText(turnFiles))) return
+    setReverting(true)
+    const result = await window.claudeTerm.revertTurn(tabId)
+    setReverting(false)
+    setNote(
+      result
+        ? revertSummary(result)
+        : 'No checkpoint for this turn — it started before the app did.'
+    )
+    reload()
+  }
 
   const row = (file: ChangedFile): React.JSX.Element => (
     <button
@@ -191,11 +209,26 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
             >
               {sideBySide ? 'Inline' : 'Side by side'}
             </button>
+            {scope === 'turn' && turnCount > 0 && (
+              <button
+                className="docs-btn diff-revert"
+                onClick={() => void revert()}
+                disabled={reverting}
+                title="Put these files back to how they were when the turn started"
+              >
+                {reverting ? 'Reverting…' : 'Revert this turn'}
+              </button>
+            )}
             <button className="docs-btn" onClick={reload} title="Re-read the working tree">
               Refresh
             </button>
           </div>
         </div>
+        {note && (
+          <div className="docs-error diff-note" onClick={() => setNote(null)}>
+            {note}
+          </div>
+        )}
         <div className="docs-body">
           <div className="docs-rail">
             <div className="docs-section">

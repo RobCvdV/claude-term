@@ -35,6 +35,8 @@ import { findFiles } from './file-find'
 import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
 import { projectChanges } from './turn-changes'
+import { dropCheckpoint, revertFiles, takeCheckpoint } from './checkpoints'
+import { CheckpointStore } from './checkpoint-store'
 import { parseFileLink } from '../shared/file-link'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
@@ -52,7 +54,7 @@ import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
-import type { PrGroup, PrInfo, ProjectChanges } from '../shared/types'
+import type { PrGroup, PrInfo, ProjectChanges, RevertResult } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
@@ -60,6 +62,7 @@ export interface AppServices {
   status: StatusServer
   rate: RateStore
   branches: BranchHistory
+  checkpoints: CheckpointStore
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
@@ -69,6 +72,8 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   // rate limits are account-global: every tab's payload feeds one shared store
   const rate = new RateStore(() => join(app.getPath('userData'), 'rate-samples.jsonl'))
   const branches = new BranchHistory(() => join(app.getPath('userData'), 'branch-history.json'))
+  // a checkpoint pins a commit with a ref, so eviction has to release it
+  const checkpoints = new CheckpointStore((cp) => void dropCheckpoint(cp))
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()
@@ -115,11 +120,21 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     backfilled.add(root)
     void reflogBranches(root).then((found) => branches.backfill(root, found))
   }
-  return { ptys, status, rate, branches }
+  // Before the turn's first edit lands: snapshot the working tree, so the whole
+  // turn can be undone as a unit. Fire and forget — a turn must never wait on it.
+  let turnSeq = 0
+  status.onTurnStart = (tabId, cwd) => {
+    const id = `${tabId}-${++turnSeq}`
+    void takeCheckpoint(cwd, id).then((cp) => {
+      if (cp) checkpoints.add(tabId, cp)
+    })
+  }
+
+  return { ptys, status, rate, branches, checkpoints }
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
-  const { ptys, status } = services
+  const { ptys, status, checkpoints } = services
 
   // Started when the renderer loads the persisted session (which is where we
   // first see every id about to be revived) and awaited by each revive.
@@ -197,6 +212,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     await closeDocsWindowForTab(tabId)
     ptys.kill(tabId)
     status.removeTab(tabId)
+    checkpoints.forget(tabId)
   })
 
   ipcMain.on(
@@ -431,6 +447,20 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const { cwd, addedDirs } = rootsFor(tabId)
     if (!cwd || !insideAny([cwd, ...addedDirs], path)) return null
     return fileAtHead(cwd, path)
+  })
+
+  /**
+   * Undo the current turn: put the checkpoint's version of the files it wrote
+   * back. Only those files — anything else that changed since is the user's own
+   * work. The renderer confirms first; this is the point of no return.
+   */
+  ipcMain.handle('git:revertTurn', async (_e, tabId: TabId): Promise<RevertResult | null> => {
+    const { cwd } = rootsFor(tabId)
+    const cp = checkpoints.latest(tabId)
+    if (!cwd || !cp) return null
+    const changes = await projectChanges(cwd, status.snapshot(tabId)?.sessionId ?? null)
+    if (!changes.turnFiles.length) return { at: cp.at, steps: [] }
+    return revertFiles(cp, changes.turnFiles)
   })
 
   // A `src/main/ipc.ts:403` the terminal printed. The raw text is resolved here

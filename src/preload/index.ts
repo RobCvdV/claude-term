@@ -20,6 +20,7 @@ import type {
   ProjectChanges,
   ProjectDocs,
   RateForecast,
+  RevertResult,
   SlashCommand,
   TabId,
   TreeNode,
@@ -126,6 +127,10 @@ export interface ClaudeTermApi {
   /** a file's committed text — the left side of the diff. Null when HEAD has
    *  no such file (just added) or it is too big to show */
   gitFileAtHead(tabId: TabId, path: string): Promise<string | null>
+  /** undo the current turn: put back the checkpoint taken when it started, for
+   *  the files it wrote and nothing else. Null when there is no checkpoint
+   *  (no repository, or no turn has started since the app did) */
+  revertTurn(tabId: TabId): Promise<RevertResult | null>
   /** (docs window only) the owner tab asked to switch section / retitle */
   onDocsSetGroup(
     cb: (payload: { group: DocGroup; title: string; target?: DocTarget }) => void
@@ -217,6 +222,7 @@ const api: ClaudeTermApi = {
   openFileLink: (tabId, raw) => ipcRenderer.invoke('file:openLink', tabId, raw),
   gitChanges: (tabId) => ipcRenderer.invoke('git:changes', tabId),
   gitFileAtHead: (tabId, path) => ipcRenderer.invoke('git:fileAtHead', tabId, path),
+  revertTurn: (tabId) => ipcRenderer.invoke('git:revertTurn', tabId),
   onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),

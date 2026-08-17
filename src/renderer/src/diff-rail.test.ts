@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { ChangedFile, ProjectChanges } from '../../shared/types'
+import type { ChangedFile, ProjectChanges, RevertResult } from '../../shared/types'
 import {
   changeBadge,
   emptyReason,
   initialScope,
   inTurn,
   reselectChange,
+  revertConfirmText,
+  revertSummary,
   scopedFiles,
   totals
 } from './diff-rail'
@@ -94,5 +96,40 @@ describe('emptyReason', () => {
 
   it('is null when there is something to show', () => {
     expect(emptyReason(changes(), 'turn')).toBeNull()
+  })
+})
+
+describe('revertConfirmText', () => {
+  it('names every file and says what cannot be undone', () => {
+    const text = revertConfirmText([file('a.ts'), file('new.ts', { kind: 'untracked' })])
+    expect(text).toContain('2 files')
+    expect(text).toContain('M  a.ts')
+    expect(text).toContain('U  new.ts')
+    expect(text).toContain('cannot be undone')
+  })
+
+  it('counts one file in the singular', () => {
+    expect(revertConfirmText([file('a.ts')])).toContain('1 file?')
+  })
+})
+
+describe('revertSummary', () => {
+  const result = (actions: string[]): RevertResult => ({
+    at: 0,
+    steps: actions.map((action, i) => ({ rel: `f${i}.ts`, action: action as never }))
+  })
+
+  it('reports each outcome that happened', () => {
+    expect(revertSummary(result(['restore', 'restore', 'remove', 'keep']))).toBe(
+      'Reverted: 2 restored, 1 deleted, 1 left alone'
+    )
+  })
+
+  it('calls out failures', () => {
+    expect(revertSummary(result(['failed']))).toBe('Reverted: 1 failed')
+  })
+
+  it('says so when there was nothing to do', () => {
+    expect(revertSummary(result([]))).toBe('Nothing to revert')
   })
 })
