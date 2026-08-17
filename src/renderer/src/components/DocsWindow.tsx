@@ -8,8 +8,17 @@ const TAB_ID = params.get('tabId') ?? ''
 const INITIAL_GROUP = (params.get('group') as DocGroup) ?? 'docs'
 const INITIAL_TITLE = params.get('title') ?? ''
 const INITIAL_PATH = params.get('path')
+const positive = (name: string): number | undefined => {
+  const n = Number(params.get(name))
+  return Number.isInteger(n) && n > 0 ? n : undefined
+}
 const INITIAL_TARGET: DocTarget | null = INITIAL_PATH
-  ? { path: INITIAL_PATH, edit: params.get('edit') === '1' }
+  ? {
+      path: INITIAL_PATH,
+      edit: params.get('edit') === '1',
+      line: positive('line'),
+      column: positive('column')
+    }
   : null
 
 /** Top-level component for the standalone file window. Owns which group to
