@@ -35,6 +35,7 @@ import { findFiles } from './file-find'
 import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
 import { projectChanges } from './turn-changes'
+import { readProjectSettings, writeProjectSettings } from './project-settings'
 import { dropCheckpoint, revertFiles, takeCheckpoint } from './checkpoints'
 import { CheckpointStore } from './checkpoint-store'
 import { parseFileLink } from '../shared/file-link'
@@ -54,7 +55,14 @@ import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
-import type { PrGroup, PrInfo, ProjectChanges, RevertResult } from '../shared/types'
+import type {
+  PrGroup,
+  PrInfo,
+  ProjectChanges,
+  ProjectSettings,
+  ProjectSettingsPatch,
+  RevertResult
+} from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 export interface AppServices {
@@ -437,6 +445,19 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const { cwd, addedDirs } = rootsFor(tabId)
     return cwd ? findFiles([cwd, ...addedDirs], query) : []
   })
+  // The app's own settings for the tab's project, kept with the project.
+  ipcMain.handle('project:settings', (_e, tabId: TabId): ProjectSettings => {
+    const { cwd } = rootsFor(tabId)
+    return cwd ? readProjectSettings(cwd) : {}
+  })
+  ipcMain.handle(
+    'project:setSettings',
+    (_e, tabId: TabId, patch: ProjectSettingsPatch): boolean => {
+      const { cwd } = rootsFor(tabId)
+      return cwd ? writeProjectSettings(cwd, patch) : false
+    }
+  )
+
   // The diff window's two reads: what changed, and a file's committed side.
   ipcMain.handle('git:changes', async (_e, tabId: TabId): Promise<ProjectChanges> => {
     const { cwd } = rootsFor(tabId)

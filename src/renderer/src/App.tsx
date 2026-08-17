@@ -127,6 +127,23 @@ export default function App(): React.JSX.Element {
   // clobber the saved session with an empty/partial tab list
   const restoredRef = useRef(false)
 
+  // A project's colour is stored with the project, so a tab opened there picks
+  // it up — including the moment a default-home tab adopts its session's folder
+  // (which is why this follows cwd rather than tab creation). Read once per
+  // tab+folder; a later /color writes the file, so re-reading agrees with it.
+  const colorReadFor = useRef(new Map<TabId, string>())
+  useEffect(() => {
+    for (const [tabId, status] of Object.entries(statuses)) {
+      const cwd = status?.cwd
+      if (!cwd || colorReadFor.current.get(tabId) === cwd) continue
+      colorReadFor.current.set(tabId, cwd)
+      void window.claudeTerm.projectSettings(tabId).then(({ tabColor }) => {
+        if (tabColor)
+          setColors((prev) => (prev[tabId] === tabColor ? prev : { ...prev, [tabId]: tabColor }))
+      })
+    }
+  }, [statuses])
+
   // The one place focus actually moves. Every decision comes from focus-policy.
   const applyFocus = (tabId: TabId, target: FocusTarget): void => {
     if (target === 'box') promptRefs.current.get(tabId)?.focus()
@@ -448,7 +465,8 @@ export default function App(): React.JSX.Element {
     void window.claudeTerm.restartTab(tabId)
   }, [])
 
-  // /color <name|#hex|off> from the prompt box tints this tab's accent border.
+  // /color <name|#hex|off> from the prompt box tints this tab's accent border,
+  // and the choice stays with the project (see the settings effect below).
   const setTabColor = useCallback((tabId: TabId, color: string): void => {
     const off = ['off', 'none', 'clear', 'reset', 'default'].includes(color)
     setColors((prev) => {
@@ -457,6 +475,7 @@ export default function App(): React.JSX.Element {
       else next[tabId] = color
       return next
     })
+    void window.claudeTerm.setProjectSettings(tabId, { tabColor: off ? null : color })
   }, [])
 
   // step to the prev/next tab, wrapping around

@@ -19,6 +19,8 @@ import type {
   PrInfo,
   ProjectChanges,
   ProjectDocs,
+  ProjectSettings,
+  ProjectSettingsPatch,
   RateForecast,
   RevertResult,
   SlashCommand,
@@ -122,6 +124,11 @@ export interface ClaudeTermApi {
   /** open a `path:line` the terminal printed, in the file window at that line.
    *  False when it resolves to nothing inside the tab's roots */
   openFileLink(tabId: TabId, raw: string): Promise<boolean>
+  /** this project's own claude-term settings (.claude/claude-term-settings.local.json) */
+  projectSettings(tabId: TabId): Promise<ProjectSettings>
+  /** merge a change into them; a null value removes that key. False when the
+   *  file is there but unparsable — it is not ours to overwrite blindly */
+  setProjectSettings(tabId: TabId, patch: ProjectSettingsPatch): Promise<boolean>
   /** everything that differs from HEAD, with the current turn's files marked */
   gitChanges(tabId: TabId): Promise<ProjectChanges>
   /** a file's committed text — the left side of the diff. Null when HEAD has
@@ -220,6 +227,8 @@ const api: ClaudeTermApi = {
   openDocsWindow: (tabId, group, title, target) =>
     ipcRenderer.send('docs:openWindow', tabId, group, title, target),
   openFileLink: (tabId, raw) => ipcRenderer.invoke('file:openLink', tabId, raw),
+  projectSettings: (tabId) => ipcRenderer.invoke('project:settings', tabId),
+  setProjectSettings: (tabId, patch) => ipcRenderer.invoke('project:setSettings', tabId, patch),
   gitChanges: (tabId) => ipcRenderer.invoke('git:changes', tabId),
   gitFileAtHead: (tabId, path) => ipcRenderer.invoke('git:fileAtHead', tabId, path),
   revertTurn: (tabId) => ipcRenderer.invoke('git:revertTurn', tabId),
