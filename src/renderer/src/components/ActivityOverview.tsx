@@ -124,8 +124,6 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
 
   useEffect(() => {
     let live = true
-    setLoading(true)
-    setSavedMsg(null)
     Promise.all([
       window.claudeTerm.activityReport(RANGE_DAYS[range]),
       window.claudeTerm.worklogLogged()
@@ -226,7 +224,13 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
               <button
                 key={r}
                 className={`range-btn ${range === r ? 'active' : ''}`}
-                onClick={() => setRange(r)}
+                onClick={() => {
+                  // reset here rather than in the fetch effect: same result,
+                  // without a setState cascade on every range render
+                  setLoading(true)
+                  setSavedMsg(null)
+                  setRange(r)
+                }}
               >
                 {RANGE_LABEL[r]}
               </button>

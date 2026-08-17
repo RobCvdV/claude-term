@@ -170,7 +170,10 @@ export function buildActivityReport(rangeDays: number): ActivityReport {
   }
 
   const cutoff = cutoffDate(rangeDays)
-  const dates = [...perDay.keys()].filter((d) => d >= cutoff).sort().reverse()
+  const dates = [...perDay.keys()]
+    .filter((d) => d >= cutoff)
+    .sort()
+    .reverse()
 
   const days: ActivityDay[] = dates.map((date) => {
     const buckets = [...perDay.get(date)!.values()]

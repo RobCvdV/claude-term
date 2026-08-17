@@ -108,16 +108,21 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
+  // Latest-value mirrors, read from callbacks and rAF that outlive the render
+  // they were created in. Synced from an effect (never during render) and
+  // declared before every consumer effect, so those see the current values.
   const activeIdRef = useRef(activeId)
-  activeIdRef.current = activeId
-  // exposed for scripted E2E testing (CDP) — harmless at runtime
-  ;(window as unknown as Record<string, unknown>).__activeTabId = activeId
   const statusesRef = useRef(statuses)
-  statusesRef.current = statuses
   const tabsRef = useRef(tabs)
-  tabsRef.current = tabs
   const colorsRef = useRef(colors)
-  colorsRef.current = colors
+  useEffect(() => {
+    activeIdRef.current = activeId
+    statusesRef.current = statuses
+    tabsRef.current = tabs
+    colorsRef.current = colors
+    // exposed for scripted E2E testing (CDP) — harmless at runtime
+    ;(window as unknown as Record<string, unknown>).__activeTabId = activeId
+  })
   // gate persistence until the initial restore finishes, so an early save can't
   // clobber the saved session with an empty/partial tab list
   const restoredRef = useRef(false)

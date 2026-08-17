@@ -4,14 +4,14 @@
 // languages), but Monaco's package `exports` map doesn't expose that deep path
 // to TypeScript's bundler resolution. Its types are identical to the package
 // root, so re-export them for the deep specifiers we use.
-declare module 'monaco-editor/esm/vs/editor/editor.api' {
+declare module 'monaco-editor/editor/editor.api' {
   export * from 'monaco-editor'
 }
-declare module 'monaco-editor/esm/vs/editor/editor.all.js'
+declare module 'monaco-editor/features/register.all.js'
 
 // Internal, but the only way to install service overrides before Monaco's first
 // API call locks the service collection (see monaco-setup).
-declare module 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices' {
+declare module 'monaco-editor/editor/standalone/browser/standaloneServices' {
   export const StandaloneServices: {
     initialize(overrides: Record<string, unknown>): unknown
   }

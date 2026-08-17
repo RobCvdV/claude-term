@@ -4,7 +4,16 @@ import type { VolumeOp, VolumeState } from '../../../shared/types'
 function SpeakerIcon({ muted, pct }: { muted: boolean; pct: number }): React.JSX.Element {
   // waves scale with level: none when muted, one wave when quiet, two otherwise
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" stroke="none" />
       {muted ? (
         <path d="M17 9l6 6M23 9l-6 6" />
@@ -34,15 +43,22 @@ export function VolumeControl(): React.JSX.Element | null {
 
   if (!vol || !vol.available) return null
 
-  const act = (op: VolumeOp) => (e: React.MouseEvent): void => {
-    e.stopPropagation()
-    window.claudeTerm.volumeSet(op).then(setVol)
-  }
+  const act =
+    (op: VolumeOp) =>
+    (e: React.MouseEvent): void => {
+      e.stopPropagation()
+      window.claudeTerm.volumeSet(op).then(setVol)
+    }
 
   const { pct, muted } = vol
   return (
     <span className={`volume ${muted ? 'muted' : ''}`}>
-      <button className="vol-step" onClick={act('down')} title="Quieter (−10%)" aria-label="Quieter">
+      <button
+        className="vol-step"
+        onClick={act('down')}
+        title="Quieter (−10%)"
+        aria-label="Quieter"
+      >
         −
       </button>
       <button

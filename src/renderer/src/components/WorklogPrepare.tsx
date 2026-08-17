@@ -125,6 +125,7 @@ export function WorklogPrepare({
   useEffect(() => {
     const totals: Record<string, number> = {}
     for (const d of report.days) totals[d.date] = d.suggestedHours
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting derived state off a prop change; costs one extra render when the range switches
     setDayTotals(totals)
     setActivities({})
     setPins({})
