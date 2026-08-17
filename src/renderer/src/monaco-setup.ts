@@ -3,30 +3,30 @@
 // bundled languages or its TS/JSON/CSS/HTML language services — we only ever
 // register our own empty `claude-prompt` language, so those are dead weight.
 // (The full `monaco-editor` entry = editor.all + all of that.)
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
-import 'monaco-editor/esm/vs/editor/editor.all.js'
+import * as monaco from 'monaco-editor/editor/editor.api'
+import 'monaco-editor/features/register.all.js'
 // The languages we opt into, each self-registering on import. Markdown is for
 // the docs editor; the rest cover the config files the settings window edits
 // (see config-lang.ts for the file → language mapping). These are tokenizers
 // only — no language service, no extra worker.
-import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'
-import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution'
-import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution'
-import 'monaco-editor/esm/vs/basic-languages/ini/ini.contribution'
-import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution'
-import 'monaco-editor/esm/vs/basic-languages/dockerfile/dockerfile.contribution'
-import 'monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution'
-import 'monaco-editor/esm/vs/basic-languages/java/java.contribution'
-import 'monaco-editor/esm/vs/basic-languages/pascal/pascal.contribution'
-import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution'
-import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
+import 'monaco-editor/languages/definitions/markdown/register.js'
+import 'monaco-editor/languages/definitions/yaml/register.js'
+import 'monaco-editor/languages/definitions/xml/register.js'
+import 'monaco-editor/languages/definitions/ini/register.js'
+import 'monaco-editor/languages/definitions/shell/register.js'
+import 'monaco-editor/languages/definitions/dockerfile/register.js'
+import 'monaco-editor/languages/definitions/ruby/register.js'
+import 'monaco-editor/languages/definitions/java/register.js'
+import 'monaco-editor/languages/definitions/pascal/register.js'
+import 'monaco-editor/languages/definitions/typescript/register.js'
+import 'monaco-editor/languages/definitions/javascript/register.js'
 // JSON is the exception: it gets the full language service (its own worker), so
 // a trailing comma or duplicate key in a settings file is flagged before saving
 // rather than silently breaking whatever reads it.
-import 'monaco-editor/esm/vs/language/json/monaco.contribution'
-import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
-import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
-import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices'
+import 'monaco-editor/language/json/monaco.contribution'
+import editorWorker from 'monaco-editor/editor/editor.worker?worker'
+import jsonWorker from 'monaco-editor/language/json/json.worker?worker'
+import { StandaloneServices } from 'monaco-editor/editor/standalone/browser/standaloneServices'
 import type { TabId } from '../../shared/types'
 import { appSlashCommands, getArgCompleter } from './app-commands'
 import { filterFor } from './completion-filter'

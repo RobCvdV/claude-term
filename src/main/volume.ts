@@ -71,8 +71,7 @@ function toggleMuteDirect(): void {
 
 export async function setVolume(op: VolumeOp): Promise<VolumeState> {
   if (existsSync(VOL_SH)) {
-    const arg =
-      op === 'up' ? '+' : op === 'down' ? '-' : op === 'toggle' ? 'm' : String(op)
+    const arg = op === 'up' ? '+' : op === 'down' ? '-' : op === 'toggle' ? 'm' : String(op)
     await runVolSh(arg)
   } else {
     const now = readPct()

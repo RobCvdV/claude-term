@@ -6,8 +6,9 @@ name: Release
 # files. The computed version is injected into the build via electron-builder's
 # extraMetadata; the tag + release are created by the publish step.
 #
-# Structure (three jobs) keeps the release single-tagged while fanning builds out
+# Structure (four jobs) keeps the release single-tagged while fanning builds out
 # across platforms:
+#   quality → lint + format + typecheck + tests; everything below is gated on it
 #   version → compute the next semver ONCE and pre-create the draft release
 #   build   → matrix (macOS arm64 / Windows / Linux); each uploads its own
 #             artifacts into the SAME pre-created draft
@@ -16,21 +17,56 @@ name: Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write # create tags and releases
 
+# Serialize releases on main, but let a new PR push cancel the previous run's
+# checks — nobody needs the result of a superseded commit.
 concurrency:
-  group: release-main
-  cancel-in-progress: false
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Gate everything below on lint + format + typecheck + tests. Runs on pull
+  # requests too, so a red check shows up on the PR instead of only after a
+  # merge has already started cutting a release.
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npx eslint --max-warnings 0 .
+
+      - name: Check formatting
+        run: npx prettier --check .
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npx vitest run
+
   # Compute the next semver from commits since the last tag and pre-create the
   # draft the build matrix uploads into. dry_run means the tag is NOT created
   # here (publishing the draft mints it), so a failed build leaves no orphan
   # tag. default_bump: false skips the whole release when no feat/fix warrants
   # one (all downstream jobs are gated on the version output).
   version:
+    needs: quality
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.new_version }}

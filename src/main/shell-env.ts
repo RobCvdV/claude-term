@@ -14,20 +14,15 @@ let cachedClaudePath: string | null = null
 export async function loginShellEnv(): Promise<NodeJS.ProcessEnv> {
   if (cachedEnv) return cachedEnv
   const env = await new Promise<NodeJS.ProcessEnv>((resolve) => {
-    execFile(
-      '/bin/zsh',
-      ['-ilc', 'env'],
-      { timeout: 10_000, encoding: 'utf8' },
-      (err, stdout) => {
-        if (err || !stdout) return resolve({})
-        const parsed: NodeJS.ProcessEnv = {}
-        for (const line of stdout.split('\n')) {
-          const eq = line.indexOf('=')
-          if (eq > 0) parsed[line.slice(0, eq)] = line.slice(eq + 1)
-        }
-        resolve(parsed)
+    execFile('/bin/zsh', ['-ilc', 'env'], { timeout: 10_000, encoding: 'utf8' }, (err, stdout) => {
+      if (err || !stdout) return resolve({})
+      const parsed: NodeJS.ProcessEnv = {}
+      for (const line of stdout.split('\n')) {
+        const eq = line.indexOf('=')
+        if (eq > 0) parsed[line.slice(0, eq)] = line.slice(eq + 1)
       }
-    )
+      resolve(parsed)
+    })
   })
   cachedEnv = { ...process.env, ...env }
   return cachedEnv
