@@ -247,6 +247,21 @@ export interface ChangedFile {
   removed: number
 }
 
+/**
+ * The app's own settings for one project, stored with it in
+ * `.claude/claude-term-settings.local.json`. Everything here is optional: the
+ * file is only as full as the user has bothered to make it.
+ */
+export interface ProjectSettings {
+  /** accent colour of a tab opened in this project (`/color` writes it here) */
+  tabColor?: string
+}
+
+/** A change to a project's settings; null removes the key from the file. */
+export type ProjectSettingsPatch = {
+  [K in keyof ProjectSettings]?: ProjectSettings[K] | null
+}
+
 /** What reverting one file came to. `keep` means it was left alone on purpose —
  *  it predates the turn and its old text was never saved anywhere. */
 export type RevertAction = 'restore' | 'remove' | 'keep' | 'failed'
