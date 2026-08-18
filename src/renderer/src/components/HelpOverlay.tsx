@@ -167,7 +167,11 @@ function Guide(): React.JSX.Element {
         <p>
           A global hook logs engaged time per ticket while you work (idle gaps capped). The 🕐 view
           aggregates it per day and per MTX ticket; connect a Jira API token once and book the
-          suggested worklogs straight from the panel — already-booked entries show a ✓.
+          suggested worklogs straight from the panel — already-booked entries show a ✓. The
+          suggested day total is the workday itself: only work checkouts count, short breaks are
+          included, and parallel sessions count once. Booking a day <b>settles</b> it up to its last
+          activity, whatever you booked it as, so 12h of tracked time booked as 8h leaves nothing to
+          book — only work done after that window comes back as unbooked.
         </p>
       </section>
       <section>

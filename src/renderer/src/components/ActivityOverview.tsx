@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useModalOverlay } from '../modal-overlay'
 import type {
+  ActivityDay,
   ActivityReport,
   BookedWorklog,
   JiraStatus,
@@ -175,10 +176,16 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
   const bookedByDate = booked ? sumBookedByDate(booked) : null
   const bookedByKey = booked ? sumBookedByKey(booked) : null
 
-  const dayBadge = (date: string, ticketTracked: number): React.JSX.Element | null => {
+  const dayBadge = (day: ActivityDay, ticketTracked: number): React.JSX.Element | null => {
     if (!bookedByDate) return null
-    const b = bookedByDate[date] ?? 0
-    const state = dayBookedState(ticketTracked, b)
+    const b = bookedByDate[day.date] ?? 0
+    // A settled day is judged on the work done after its booked window, not on
+    // the hours booked — 12h tracked booked as 8h is done.
+    const state = dayBookedState(
+      ticketTracked,
+      b,
+      day.settledToTs > 0 ? { unsettledHours: day.suggestedHours } : undefined
+    )
     if (state === 'full' && ticketTracked <= 0) return null
     if (state === 'none') return <span className="booked-badge none">not booked</span>
     return (
@@ -313,8 +320,21 @@ export function ActivityOverview({ onClose, onFillPrompt }: Props): React.JSX.El
                     <div className="day-block" key={day.date}>
                       <div className="day-head">
                         <span className="day-date">{fmtDate(day.date)}</span>
-                        {dayBadge(day.date, ticketTracked)}
-                        <span className="day-total">{fmtHours(day.totalHours)}</span>
+                        {dayBadge(day, ticketTracked)}
+                        {day.workHours > 0 && (
+                          <span
+                            className="day-work"
+                            title="Workday length: work activity merged across short breaks, parallel sessions counted once"
+                          >
+                            work {fmtHours(day.workHours)}
+                          </span>
+                        )}
+                        <span
+                          className="day-total"
+                          title="Engaged hours summed per ticket (parallel sessions add up)"
+                        >
+                          {fmtHours(day.totalHours)}
+                        </span>
                       </div>
                       {day.buckets.map((b) => (
                         <div className="day-row" key={b.key}>

@@ -43,11 +43,18 @@ function fmtDate(iso: string): string {
   })
 }
 
+function fmtClock(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
 interface Row {
   ticket: string
   branches: string[]
   project: string
+  /** hours still open for booking (the whole day, or the tail after a settled window) */
   actual: number
+  /** engaged hours this ticket got all day */
+  tracked: number
   booked: number
   toBook: number
 }
@@ -100,12 +107,18 @@ export function WorklogPrepare({
     if (!day) return []
     const tickets = day.buckets.filter((b) => b.ticket)
     const total = totals[date] ?? day.suggestedHours
+    // On a settled day the earlier booking already covers its window, so what's
+    // in Jira isn't subtracted again — only the work after it is up for booking.
+    const settled = day.settledToTs > 0
+    const hasTail = tickets.some((b) => b.unsettledHours > 0)
+    const open = (b: (typeof tickets)[number]): number =>
+      settled && hasTail ? b.unsettledHours : b.hours
     const split = dispatchRemaining(
       total,
       tickets.map((b) => ({
         id: b.key,
-        actual: b.hours,
-        booked: bookedByKey[bookedKey(date, b.ticket as string)] ?? 0,
+        actual: open(b),
+        booked: settled ? 0 : (bookedByKey[bookedKey(date, b.ticket as string)] ?? 0),
         pinned: pinned[bookedKey(date, b.ticket as string)]
       }))
     )
@@ -114,7 +127,8 @@ export function WorklogPrepare({
       ticket: b.ticket as string,
       branches: b.branches,
       project: b.project,
-      actual: b.hours,
+      actual: open(b),
+      tracked: b.hours,
       booked: bookedByKey[bookedKey(date, b.ticket as string)] ?? 0,
       toBook: byId.get(b.key)?.toBook ?? 0
     }))
@@ -131,7 +145,13 @@ export function WorklogPrepare({
     setPins({})
     setPrepared(false)
     const checked: Record<string, boolean> = {}
-    for (const d of report.days) checked[d.date] = defaultDayChecked(rowsFor(d.date, totals, {}))
+    for (const d of report.days) {
+      const rows = rowsFor(d.date, totals, {})
+      checked[d.date] = defaultDayChecked(rows, {
+        bookedHours: rows.reduce((s, r) => s + r.booked, 0),
+        settled: d.settledToTs > 0
+      })
+    }
     setCheckedDays(checked)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rowsFor reads only report + bookedByKey
   }, [report, bookedByKey])
@@ -209,7 +229,7 @@ export function WorklogPrepare({
     <div className="wl">
       <div className="wl-intro">
         {jiraConnected
-          ? 'Tick the days to book, review the split, then book straight to Jira. Already-booked hours are subtracted.'
+          ? 'Tick the days to book, review the split, then book straight to Jira. Booking a day settles it — only work done after that comes back as unbooked.'
           : 'Review the split, then prepare it — the hours are handed to Claude to post to Jira.'}
       </div>
 
@@ -252,8 +272,18 @@ export function WorklogPrepare({
                 />
                 h
               </label>
+              {day.settledToTs > 0 && (
+                <span
+                  className="wl-settled"
+                  title={`Booked as ${fmtHours(day.settledHours)} — that stretch of the day is done`}
+                >
+                  settled {fmtClock(day.settledFromTs)}–{fmtClock(day.settledToTs)}
+                </span>
+              )}
               <span className="wl-meta">
-                tracked {fmtHours(day.totalHours)}
+                <span title={`${fmtHours(day.totalHours)} summed per ticket`}>
+                  work {fmtHours(day.workHours)}
+                </span>
                 {span > 0 && ` · span ${fmtHours(span)}`}
                 {dayBooked > 0 && (
                   <span className="wl-booked-meta"> · booked {fmtHours(dayBooked)}</span>
@@ -277,7 +307,16 @@ export function WorklogPrepare({
                       )}
                       <span className="wl-project">{row.project}</span>
                     </span>
-                    <span className="wl-actual-h">{fmtHours(row.actual)}</span>
+                    <span
+                      className="wl-actual-h"
+                      title={
+                        row.actual === row.tracked
+                          ? 'Tracked hours'
+                          : `Tracked after the settled window (${fmtHours(row.tracked)} all day)`
+                      }
+                    >
+                      {fmtHours(row.actual)}
+                    </span>
                     {row.booked > 0 && (
                       <span className="wl-booked" title="Already booked in Jira">
                         ✓ {fmtHours(row.booked)}

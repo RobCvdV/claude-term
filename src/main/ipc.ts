@@ -19,7 +19,7 @@ import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
 import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
-import { buildActivityReport } from './activity-log'
+import { buildActivityReport, workSpansForDates } from './activity-log'
 import {
   createDoc,
   listProjectDocs,
@@ -45,6 +45,7 @@ import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
 import { sessionHomeDir } from './session-home'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
+import { recordCoverage } from './worklog-coverage'
 import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } from './jira-client'
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
@@ -334,7 +335,14 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('jira:connect', (_e, email: string, token: string) => jiraConnect(email, token))
   ipcMain.handle('jira:disconnect', () => jiraDisconnect())
   ipcMain.handle('jira:booked', (_e, rangeDays: number) => fetchBooked(rangeDays))
-  ipcMain.handle('jira:book', (_e, entries: WorklogPlanEntry[]) => bookWorklogs(entries))
+  // Booking a day also settles it: the window it covered is recorded so the rest
+  // of that day's tracked time stops asking to be booked (only later work does).
+  ipcMain.handle('jira:book', async (_e, entries: WorklogPlanEntry[]) => {
+    const results = await bookWorklogs(entries)
+    const done = results.filter((r) => r.ok)
+    if (done.length > 0) recordCoverage(done, workSpansForDates(done.map((r) => r.date)))
+    return results
+  })
 
   // Notification volume: reflects/controls the audio-notifications plugin's live
   // scale knob (shared across all Claude sessions).
