@@ -216,6 +216,18 @@ describe('CheckpointStore', () => {
     expect(store.latest('t2')).toBeNull()
   })
 
+  it('finds the point a turn started from by time', () => {
+    const t0 = 1_760_000_000_000
+    for (const at of [t0, t0 + 600_000, t0 + 1_200_000]) store.add('t1', cp(at))
+    // the transcript stamps the user message a moment after the hook fired
+    expect(store.near('t1', t0 + 600_500)?.at).toBe(t0 + 600_000)
+    // closest wins, not merely "within tolerance"
+    expect(store.near('t1', t0 + 1_150_000)?.at).toBe(t0 + 1_200_000)
+    // a turn from before this app run has none, and gets no false match
+    expect(store.near('t1', t0 - 3_600_000)).toBeNull()
+    expect(store.near('t2', t0)).toBeNull()
+  })
+
   it('evicts the oldest past the cap, so its ref can be released', () => {
     for (const at of [1, 2, 3, 4, 5]) store.add('t1', cp(at))
     expect(store.count('t1')).toBe(3)

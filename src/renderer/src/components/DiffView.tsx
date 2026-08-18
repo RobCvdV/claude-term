@@ -13,6 +13,9 @@ import {
   revertSummary,
   scopedFiles,
   totals,
+  turnDepths,
+  turnLabel,
+  turnStep,
   type DiffScope
 } from '../diff-rail'
 
@@ -39,6 +42,8 @@ interface Sides {
 export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
   const [changes, setChanges] = useState<ProjectChanges | null>(null)
   const [scope, setScope] = useState<DiffScope | null>(null)
+  /** how many turns back the turn scope reaches (1 = the turn that just ran) */
+  const [depth, setDepth] = useState(1)
   const [openPath, setOpenPath] = useState<string | undefined>(undefined)
   const [sides, setSides] = useState<Sides | null>(null)
   const [sideBySide, setSideBySide] = useState(true)
@@ -69,8 +74,8 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
   }, [reload])
 
   const files = useMemo(
-    () => (changes && scope ? scopedFiles(changes, scope) : []),
-    [changes, scope]
+    () => (changes && scope ? scopedFiles(changes, scope, depth) : []),
+    [changes, scope, depth]
   )
   const selected = useMemo(() => reselectChange(files, openPath), [files, openPath])
   const sum = useMemo(() => totals(files), [files])
@@ -133,19 +138,23 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
     }
   }, [selected, sides, sideBySide])
 
-  const empty = changes && scope ? emptyReason(changes, scope) : null
-  const turnFiles = changes ? scopedFiles(changes, 'turn') : []
+  const empty = changes && scope ? emptyReason(changes, scope, depth) : null
+  const turnFiles = changes ? scopedFiles(changes, 'turn', depth) : []
   const turnCount = turnFiles.length
+  const depths = changes ? turnDepths(changes) : []
+  const step = changes ? turnStep(changes, depth) : null
 
   const revert = async (): Promise<void> => {
-    if (!turnFiles.length || !window.confirm(revertConfirmText(turnFiles))) return
+    if (!turnFiles.length || !window.confirm(revertConfirmText(turnFiles, depth))) return
     setReverting(true)
-    const result = await window.claudeTerm.revertTurn(tabId)
+    const result = await window.claudeTerm.revertTurn(tabId, depth)
     setReverting(false)
     setNote(
       result
         ? revertSummary(result)
-        : 'No checkpoint for this turn — it started before the app did.'
+        : `No checkpoint for ${
+            depth === 1 ? 'this turn' : `turn ${depth}`
+          } — it started before the app did.`
     )
     reload()
   }
@@ -159,8 +168,8 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
     >
       <span className={`diff-badge diff-${file.kind}`}>{changeBadge(file.kind)}</span>
       <span className="diff-path">{file.rel}</span>
-      {changes && inTurn(changes, file) && (
-        <span className="diff-turn-dot" title="Changed by this turn">
+      {changes && inTurn(changes, file, depth) && (
+        <span className="diff-turn-dot" title={`Changed by ${turnLabel(depth).toLowerCase()}`}>
           ●
         </span>
       )}
@@ -187,13 +196,33 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
               onClick={() => setScope('turn')}
               disabled={!changes}
               title={
-                changes?.turnStartedAt
-                  ? `Files this turn wrote to, since ${new Date(changes.turnStartedAt).toLocaleTimeString()}`
-                  : 'Files this turn wrote to'
+                step?.startedAt
+                  ? `Files written since ${new Date(step.startedAt).toLocaleTimeString()}`
+                  : 'Files the turn wrote to'
               }
             >
-              This turn ({turnCount})
+              {turnLabel(depth)} ({turnCount})
             </button>
+            {scope === 'turn' && depths.length > 1 && (
+              <select
+                className="docs-btn diff-depth"
+                value={depth}
+                onChange={(e) => setDepth(Number(e.target.value))}
+                title="How far back to go — one step per turn"
+              >
+                {depths.map((d) => {
+                  const t = turnStep(changes!, d)
+                  const at = t?.startedAt ? new Date(t.startedAt).toLocaleTimeString() : null
+                  return (
+                    <option key={d} value={d}>
+                      {d === 1 ? '1 turn' : `${d} turns`}
+                      {at ? ` · from ${at}` : ''}
+                      {t?.revertable ? '' : ' · no undo'}
+                    </option>
+                  )
+                })}
+              </select>
+            )}
             <button
               className={`docs-btn ${scope === 'all' ? 'docs-save' : ''}`}
               onClick={() => setScope('all')}
@@ -213,10 +242,14 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
               <button
                 className="docs-btn diff-revert"
                 onClick={() => void revert()}
-                disabled={reverting}
-                title="Put these files back to how they were when the turn started"
+                disabled={reverting || !step?.revertable}
+                title={
+                  step?.revertable
+                    ? 'Put these files back to how they were when that turn started'
+                    : 'No restore point for that turn — it started before the app did'
+                }
               >
-                {reverting ? 'Reverting…' : 'Revert this turn'}
+                {reverting ? 'Reverting…' : `Revert ${turnLabel(depth).toLowerCase()}`}
               </button>
             )}
             <button className="docs-btn" onClick={reload} title="Re-read the working tree">
@@ -233,7 +266,7 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
           <div className="docs-rail">
             <div className="docs-section">
               <div className="docs-section-title">
-                {scope === 'turn' ? 'This turn' : 'Working tree'}
+                {scope === 'turn' ? turnLabel(depth) : 'Working tree'}
               </div>
               {files.map(row)}
             </div>

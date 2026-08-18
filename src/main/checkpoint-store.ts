@@ -10,6 +10,10 @@ import type { Checkpoint } from './checkpoints'
 /** Enough to undo the last few turns; a session's whole history is what git is for. */
 const PER_TAB = 10
 
+/** A checkpoint is taken as the prompt is submitted and the transcript stamps
+ *  the same message, so the two are seconds apart at most. */
+const TOLERANCE_MS = 60_000
+
 export class CheckpointStore {
   private byTab = new Map<TabId, Checkpoint[]>()
 
@@ -32,6 +36,27 @@ export class CheckpointStore {
   latest(tabId: TabId): Checkpoint | null {
     const list = this.byTab.get(tabId)
     return list?.length ? list[list.length - 1] : null
+  }
+
+  /**
+   * The point taken closest to `atMs` — how a turn from the transcript finds its
+   * checkpoint. Matched on time rather than by counting back, because the two
+   * lists can drift: a prompt the app injects (a `/rename`, a branch-switch FYI)
+   * takes a checkpoint without leaving a user message behind, and turns from
+   * before this app run have no checkpoint at all. Nothing within the tolerance
+   * means that turn cannot be undone, and the UI says so.
+   */
+  near(tabId: TabId, atMs: number, toleranceMs = TOLERANCE_MS): Checkpoint | null {
+    let best: Checkpoint | null = null
+    let bestGap = Infinity
+    for (const cp of this.byTab.get(tabId) ?? []) {
+      const gap = Math.abs(cp.at - atMs)
+      if (gap <= toleranceMs && gap < bestGap) {
+        best = cp
+        bestGap = gap
+      }
+    }
+    return best
   }
 
   count(tabId: TabId): number {

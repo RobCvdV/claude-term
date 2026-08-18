@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChangedFile, ProjectChanges, RevertResult } from '../../shared/types'
+import type { ChangedFile, ProjectChanges, RevertResult, TurnStep } from '../../shared/types'
 import {
   changeBadge,
   emptyReason,
@@ -9,7 +9,10 @@ import {
   revertConfirmText,
   revertSummary,
   scopedFiles,
-  totals
+  totals,
+  turnDepths,
+  turnLabel,
+  turnStep
 } from './diff-rail'
 
 const file = (rel: string, over: Partial<ChangedFile> = {}): ChangedFile => ({
@@ -21,10 +24,16 @@ const file = (rel: string, over: Partial<ChangedFile> = {}): ChangedFile => ({
   ...over
 })
 
+const turn = (depth: number, files: string[], revertable = true): TurnStep => ({
+  depth,
+  startedAt: '2026-08-17T10:00:00Z',
+  files,
+  revertable
+})
+
 const changes = (over: Partial<ProjectChanges> = {}): ProjectChanges => ({
   files: [file('a.ts'), file('b.ts'), file('c.ts', { kind: 'untracked', added: 0, removed: 0 })],
-  turnFiles: ['/p/a.ts', '/p/c.ts'],
-  turnStartedAt: '2026-08-17T10:00:00Z',
+  turns: [turn(1, ['/p/a.ts', '/p/c.ts'])],
   inRepo: true,
   ...over
 })
@@ -51,9 +60,9 @@ describe('scope', () => {
   })
 
   it('opens on everything when the turn changed nothing', () => {
-    expect(initialScope(changes({ turnFiles: [] }))).toBe('all')
+    expect(initialScope(changes({ turns: [turn(1, [])] }))).toBe('all')
     // a turn that wrote a file which has since been committed
-    expect(initialScope(changes({ turnFiles: ['/p/committed.ts'] }))).toBe('all')
+    expect(initialScope(changes({ turns: [turn(1, ['/p/committed.ts'])] }))).toBe('all')
   })
 
   it('marks the turn’s own files', () => {
@@ -91,7 +100,7 @@ describe('emptyReason', () => {
   })
 
   it('says when only this turn is empty', () => {
-    expect(emptyReason(changes({ turnFiles: [] }), 'turn')).toMatch(/turn did not change/)
+    expect(emptyReason(changes({ turns: [turn(1, [])] }), 'turn')).toMatch(/turn did not change/)
   })
 
   it('is null when there is something to show', () => {
@@ -131,5 +140,50 @@ describe('revertSummary', () => {
 
   it('says so when there was nothing to do', () => {
     expect(revertSummary(result([]))).toBe('Nothing to revert')
+  })
+})
+
+describe('going further back than one turn', () => {
+  const deep = changes({
+    turns: [
+      turn(1, ['/p/a.ts']),
+      turn(2, ['/p/a.ts', '/p/b.ts']),
+      turn(3, ['/p/a.ts', '/p/b.ts', '/p/c.ts'], false)
+    ]
+  })
+
+  it('scopes to the cumulative file set of the chosen depth', () => {
+    expect(scopedFiles(deep, 'turn', 1).map((f) => f.rel)).toEqual(['a.ts'])
+    expect(scopedFiles(deep, 'turn', 2).map((f) => f.rel)).toEqual(['a.ts', 'b.ts'])
+    expect(scopedFiles(deep, 'turn', 3).map((f) => f.rel)).toEqual(['a.ts', 'b.ts', 'c.ts'])
+  })
+
+  it('offers one depth per turn on record, and keeps their undo state', () => {
+    expect(turnDepths(deep)).toEqual([1, 2, 3])
+    expect(turnStep(deep, 2)?.revertable).toBe(true)
+    expect(turnStep(deep, 3)?.revertable).toBe(false)
+    expect(turnStep(deep, 4)).toBeNull()
+  })
+
+  it('names the depth the way the buttons read', () => {
+    expect(turnLabel(1)).toBe('This turn')
+    expect(turnLabel(3)).toBe('Last 3 turns')
+  })
+
+  it('marks a file as the turn’s own only within the chosen depth', () => {
+    expect(inTurn(deep, file('b.ts'), 1)).toBe(false)
+    expect(inTurn(deep, file('b.ts'), 2)).toBe(true)
+  })
+
+  it('confirms in the plural, and says which turn the files go back to', () => {
+    const text = revertConfirmText([file('a.ts'), file('b.ts')], 2)
+    expect(text).toMatch(/Undo the last 2 turns' changes to 2 files\?/)
+    expect(text).toMatch(/when turn 2 started/)
+    expect(revertConfirmText([file('a.ts')], 1)).toMatch(/Undo this turn's changes to 1 file\?/)
+  })
+
+  it('explains an empty deep scope in the plural', () => {
+    const none = changes({ turns: [turn(1, []), turn(2, [])] })
+    expect(emptyReason(none, 'turn', 2)).toMatch(/The last 2 turns did not change any files/)
   })
 })

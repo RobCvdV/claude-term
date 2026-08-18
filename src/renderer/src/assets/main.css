@@ -2302,6 +2302,11 @@ body {
 }
 
 /* Revert destroys work, so it reads as the one dangerous control here. */
+/* How many turns the turn scope covers — sits right of the scope button. */
+.diff-depth {
+  padding-right: 4px;
+}
+
 .diff-revert {
   color: var(--red);
   border-color: var(--red);

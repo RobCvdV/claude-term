@@ -137,7 +137,8 @@ export interface ClaudeTermApi {
   /** undo the current turn: put back the checkpoint taken when it started, for
    *  the files it wrote and nothing else. Null when there is no checkpoint
    *  (no repository, or no turn has started since the app did) */
-  revertTurn(tabId: TabId): Promise<RevertResult | null>
+  /** undo the last `depth` turns (1 = the turn that just ran) */
+  revertTurn(tabId: TabId, depth?: number): Promise<RevertResult | null>
   /** (docs window only) the owner tab asked to switch section / retitle */
   onDocsSetGroup(
     cb: (payload: { group: DocGroup; title: string; target?: DocTarget }) => void
@@ -231,7 +232,7 @@ const api: ClaudeTermApi = {
   setProjectSettings: (tabId, patch) => ipcRenderer.invoke('project:setSettings', tabId, patch),
   gitChanges: (tabId) => ipcRenderer.invoke('git:changes', tabId),
   gitFileAtHead: (tabId, path) => ipcRenderer.invoke('git:fileAtHead', tabId, path),
-  revertTurn: (tabId) => ipcRenderer.invoke('git:revertTurn', tabId),
+  revertTurn: (tabId, depth) => ipcRenderer.invoke('git:revertTurn', tabId, depth),
   onDocsSetGroup: (cb) => subscribe('docs:setGroup', cb),
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),

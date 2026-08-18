@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { turnFiles } from './turn-files'
+import { turnFiles, turnSteps } from './turn-files'
 
 const line = (o: unknown): string => JSON.stringify(o)
 
@@ -92,5 +92,52 @@ describe('turnFiles', () => {
   it('falls back to the whole transcript when the user never spoke', () => {
     const t = [toolResult(), edited('Edit', '/p/a.ts')].join('\n')
     expect(turnFiles(t).files).toEqual(['/p/a.ts'])
+  })
+})
+
+describe('turnSteps', () => {
+  const wrote = (path: string): string =>
+    JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', name: 'Edit', input: { file_path: path } }] }
+    })
+  const said = (text: string, ts: string): string =>
+    JSON.stringify({ type: 'user', timestamp: ts, message: { content: [{ type: 'text', text }] } })
+
+  const tail = [
+    said('first', '2026-08-18T10:00:00Z'),
+    wrote('/p/a.ts'),
+    said('second', '2026-08-18T10:10:00Z'),
+    wrote('/p/b.ts'),
+    said('third', '2026-08-18T10:20:00Z'),
+    wrote('/p/c.ts'),
+    wrote('/p/b.ts')
+  ].join('\n')
+
+  it('walks back one turn per step, accumulating the files', () => {
+    const steps = turnSteps(tail)
+    expect(steps.map((s) => s.files)).toEqual([
+      ['/p/c.ts', '/p/b.ts'],
+      ['/p/b.ts', '/p/c.ts'],
+      ['/p/a.ts', '/p/b.ts', '/p/c.ts']
+    ])
+    expect(steps.map((s) => s.startedAt)).toEqual([
+      '2026-08-18T10:20:00Z',
+      '2026-08-18T10:10:00Z',
+      '2026-08-18T10:00:00Z'
+    ])
+  })
+
+  it('stops at the cap', () => {
+    expect(turnSteps(tail, 2)).toHaveLength(2)
+  })
+
+  it('agrees with turnFiles about the newest turn', () => {
+    expect(turnSteps(tail)[0]).toEqual(turnFiles(tail))
+  })
+
+  it('treats everything in view as one turn when no user message is left', () => {
+    const steps = turnSteps([wrote('/p/a.ts'), wrote('/p/b.ts')].join('\n'))
+    expect(steps).toEqual([{ files: ['/p/a.ts', '/p/b.ts'], startedAt: null }])
   })
 })

@@ -1,7 +1,13 @@
 /** What the diff window lists, and which of it the turn is responsible for.
  *  Pure — the view renders these. */
 
-import type { ChangedFile, FileChangeKind, ProjectChanges, RevertResult } from '../../shared/types'
+import type {
+  ChangedFile,
+  FileChangeKind,
+  ProjectChanges,
+  RevertResult,
+  TurnStep
+} from '../../shared/types'
 
 /** Which changes are on screen: only what the last turn wrote, or everything
  *  that differs from HEAD. */
@@ -23,14 +29,29 @@ export function changeBadge(kind: FileChangeKind): string {
   }
 }
 
-/** Did the current turn write this file? */
-export function inTurn(changes: ProjectChanges, file: ChangedFile): boolean {
-  return changes.turnFiles.includes(file.path)
+/** The step `depth` turns back, if the session reaches that far. */
+export function turnStep(changes: ProjectChanges, depth = 1): TurnStep | null {
+  return changes.turns.find((t) => t.depth === depth) ?? null
 }
 
-export function scopedFiles(changes: ProjectChanges, scope: DiffScope): ChangedFile[] {
+/** Did the last `depth` turns write this file? */
+export function inTurn(changes: ProjectChanges, file: ChangedFile, depth = 1): boolean {
+  return !!turnStep(changes, depth)?.files.includes(file.path)
+}
+
+export function scopedFiles(changes: ProjectChanges, scope: DiffScope, depth = 1): ChangedFile[] {
   if (scope === 'all') return changes.files
-  return changes.files.filter((f) => inTurn(changes, f))
+  return changes.files.filter((f) => inTurn(changes, f, depth))
+}
+
+/** How deep the turn scope can go — one entry per turn still on record. */
+export function turnDepths(changes: ProjectChanges): number[] {
+  return changes.turns.map((t) => t.depth)
+}
+
+/** Label for a depth, in the scope button and the rail heading. */
+export function turnLabel(depth: number): string {
+  return depth === 1 ? 'This turn' : `Last ${depth} turns`
 }
 
 /**
@@ -56,23 +77,29 @@ export function totals(files: ChangedFile[]): { added: number; removed: number }
 }
 
 /** Why the pane is empty, or null when it isn't. */
-export function emptyReason(changes: ProjectChanges, scope: DiffScope): string | null {
+export function emptyReason(changes: ProjectChanges, scope: DiffScope, depth = 1): string | null {
   if (!changes.inRepo) return 'This folder is not in a git repository.'
   if (changes.files.length === 0) return 'Nothing has changed since the last commit.'
-  if (scopedFiles(changes, scope).length === 0) return 'This turn did not change any files.'
+  if (scopedFiles(changes, scope, depth).length === 0) {
+    return depth === 1
+      ? 'This turn did not change any files.'
+      : `The last ${depth} turns did not change any files.`
+  }
   return null
 }
 
 /** What the user is agreeing to when they undo a turn. Spells out the file
  *  list, because "revert" is the one button here that destroys work. */
-export function revertConfirmText(files: ChangedFile[]): string {
+export function revertConfirmText(files: ChangedFile[], depth = 1): string {
   const list = files.map((f) => `  ${changeBadge(f.kind)}  ${f.rel}`).join('\n')
+  const what = depth === 1 ? "this turn's changes" : `the last ${depth} turns' changes`
+  const when = depth === 1 ? 'the turn started' : `turn ${depth} started`
   return [
-    `Undo this turn's changes to ${files.length} file${files.length === 1 ? '' : 's'}?`,
+    `Undo ${what} to ${files.length} file${files.length === 1 ? '' : 's'}?`,
     '',
     list,
     '',
-    'Each goes back to how it was when the turn started, and files the turn',
+    `Each goes back to how it was when ${when}, and files those turns`,
     'created are deleted. Your own edits to other files are left alone.',
     'This cannot be undone.'
   ].join('\n')

@@ -36,7 +36,7 @@ import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
 import { projectChanges } from './turn-changes'
 import { readProjectSettings, writeProjectSettings } from './project-settings'
-import { dropCheckpoint, revertFiles, takeCheckpoint } from './checkpoints'
+import { dropCheckpoint, revertFiles, takeCheckpoint, type Checkpoint } from './checkpoints'
 import { CheckpointStore } from './checkpoint-store'
 import { parseFileLink } from '../shared/file-link'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
@@ -62,7 +62,8 @@ import type {
   ProjectChanges,
   ProjectSettings,
   ProjectSettingsPatch,
-  RevertResult
+  RevertResult,
+  TurnStep
 } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
@@ -466,12 +467,25 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     }
   )
 
-  // The diff window's two reads: what changed, and a file's committed side.
-  ipcMain.handle('git:changes', async (_e, tabId: TabId): Promise<ProjectChanges> => {
+  /** The checkpoint a turn can be undone to, matched on when the turn started. */
+  const checkpointFor = (tabId: TabId, step: TurnStep): Checkpoint | null => {
+    if (!step.startedAt) return step.depth === 1 ? checkpoints.latest(tabId) : null
+    return checkpoints.near(tabId, Date.parse(step.startedAt))
+  }
+
+  const changesFor = async (tabId: TabId): Promise<ProjectChanges> => {
     const { cwd } = rootsFor(tabId)
-    if (!cwd) return { files: [], turnFiles: [], turnStartedAt: null, inRepo: false }
-    return projectChanges(cwd, status.snapshot(tabId)?.sessionId ?? null)
-  })
+    if (!cwd) return { files: [], turns: [], inRepo: false }
+    const changes = await projectChanges(cwd, status.snapshot(tabId)?.sessionId ?? null)
+    // only main knows which turns still have a restore point
+    return {
+      ...changes,
+      turns: changes.turns.map((t) => ({ ...t, revertable: !!checkpointFor(tabId, t) }))
+    }
+  }
+
+  // The diff window's two reads: what changed, and a file's committed side.
+  ipcMain.handle('git:changes', (_e, tabId: TabId): Promise<ProjectChanges> => changesFor(tabId))
   ipcMain.handle('git:fileAtHead', async (_e, tabId: TabId, path: string) => {
     const { cwd, addedDirs } = rootsFor(tabId)
     if (!cwd || !insideAny([cwd, ...addedDirs], path)) return null
@@ -479,18 +493,21 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   })
 
   /**
-   * Undo the current turn: put the checkpoint's version of the files it wrote
-   * back. Only those files — anything else that changed since is the user's own
-   * work. The renderer confirms first; this is the point of no return.
+   * Undo the last `depth` turns: put the checkpoint's version of the files those
+   * turns wrote back. Only those files — anything else that changed since is the
+   * user's own work. The renderer confirms first; this is the point of no return.
    */
-  ipcMain.handle('git:revertTurn', async (_e, tabId: TabId): Promise<RevertResult | null> => {
-    const { cwd } = rootsFor(tabId)
-    const cp = checkpoints.latest(tabId)
-    if (!cwd || !cp) return null
-    const changes = await projectChanges(cwd, status.snapshot(tabId)?.sessionId ?? null)
-    if (!changes.turnFiles.length) return { at: cp.at, steps: [] }
-    return revertFiles(cp, changes.turnFiles)
-  })
+  ipcMain.handle(
+    'git:revertTurn',
+    async (_e, tabId: TabId, depth = 1): Promise<RevertResult | null> => {
+      const changes = await changesFor(tabId)
+      const step = changes.turns.find((t) => t.depth === depth)
+      const cp = step ? checkpointFor(tabId, step) : null
+      if (!step || !cp) return null
+      if (!step.files.length) return { at: cp.at, steps: [] }
+      return revertFiles(cp, step.files)
+    }
+  )
 
   // A `src/main/ipc.ts:403` the terminal printed. The raw text is resolved here
   // rather than in the renderer: only main knows the tab's roots, and terminal
