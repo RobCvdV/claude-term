@@ -11,6 +11,7 @@ const status = (overrides: Partial<TabStatus>): TabStatus => ({
   exitCode: null,
   cwd: '/dev/repo',
   addedDirs: [],
+  removedDirs: [],
   payload: null,
   git: null,
   ci: null,

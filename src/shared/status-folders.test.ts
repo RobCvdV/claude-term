@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { statusFolders } from './status-folders'
+import { addedFolders, matchExtraDir, statusFolders } from './status-folders'
 import type { StatuslinePayload, TabStatus } from '../../shared/types'
 
 const status = (overrides: Partial<TabStatus>): TabStatus => ({
@@ -11,6 +11,7 @@ const status = (overrides: Partial<TabStatus>): TabStatus => ({
   exitCode: null,
   cwd: '/dev/cordova',
   addedDirs: [],
+  removedDirs: [],
   payload: null,
   git: null,
   ci: null,
@@ -116,5 +117,69 @@ describe('statusFolders', () => {
       { path: '/dev/extra', name: 'extra' },
       { path: '/dev/mmxlib', name: 'mmxlib' }
     ])
+  })
+})
+
+describe('addedFolders / removal', () => {
+  const s = (over: Partial<TabStatus>): TabStatus =>
+    status({
+      cwd: '/dev/cordova',
+      payload: payload({
+        current_dir: '/dev/cordova',
+        project_dir: '/dev/cordova',
+        added_dirs: ['/dev/qedit']
+      }),
+      addedDirs: ['/dev/mmxlib'],
+      ...over
+    })
+
+  it('lists the extra folders from both sources, /cd moves aside', () => {
+    expect(addedFolders(s({}))).toEqual([
+      { path: '/dev/qedit', name: 'qedit' },
+      { path: '/dev/mmxlib', name: 'mmxlib' }
+    ])
+  })
+
+  it('drops a removed folder even while the payload still reports it', () => {
+    const removed = s({ removedDirs: ['/dev/qedit'] })
+    expect(addedFolders(removed)).toEqual([{ path: '/dev/mmxlib', name: 'mmxlib' }])
+    expect(statusFolders(removed).others).toEqual([{ path: '/dev/mmxlib', name: 'mmxlib' }])
+  })
+
+  it('leaves a /cd move alone — only extra folders are removable', () => {
+    const moved = s({
+      payload: payload({ current_dir: '/dev/elsewhere', project_dir: '/dev/cordova' }),
+      removedDirs: ['/dev/elsewhere']
+    })
+    expect(addedFolders(moved)).toEqual([{ path: '/dev/mmxlib', name: 'mmxlib' }])
+    expect(statusFolders(moved).others[0]).toEqual({ path: '/dev/elsewhere', name: 'elsewhere' })
+  })
+})
+
+describe('matchExtraDir', () => {
+  const extras = [
+    { path: '/dev/mendrix-mobile-mmxlib', name: 'mmxlib' },
+    { path: '/dev/qedit', name: 'qedit' }
+  ]
+
+  it('takes a full path, trailing slash or not', () => {
+    expect(matchExtraDir('/dev/qedit', extras)).toBe('/dev/qedit')
+    expect(matchExtraDir(' /dev/qedit/ ', extras)).toBe('/dev/qedit')
+  })
+
+  it('takes the name as the UI shows it, or the real folder name', () => {
+    expect(matchExtraDir('mmxlib', extras)).toBe('/dev/mendrix-mobile-mmxlib')
+    expect(matchExtraDir('MENDRIX-MOBILE-MMXLIB', extras)).toBe('/dev/mendrix-mobile-mmxlib')
+  })
+
+  it('refuses what it cannot pin down', () => {
+    expect(matchExtraDir('', extras)).toBe(null)
+    expect(matchExtraDir('/dev/other', extras)).toBe(null)
+    expect(matchExtraDir('lib', extras)).toBe(null)
+    const twins = [
+      { path: '/a/ui', name: 'ui' },
+      { path: '/b/ui', name: 'ui' }
+    ]
+    expect(matchExtraDir('ui', twins)).toBe(null)
   })
 })

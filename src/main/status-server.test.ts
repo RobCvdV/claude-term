@@ -163,6 +163,33 @@ describe('StatusServer', () => {
     })
   })
 
+  describe('extra directories', () => {
+    it('records an /add-dir and drops it again on removal', () => {
+      const { server, tabId } = withLiveTab()
+      server.addDirectory(tabId, '/lib')
+      expect(server.getAddedDirs(tabId)).toEqual(['/lib'])
+      expect(server.removeDirectory(tabId, '/lib')).toBe(true)
+      expect(server.getAddedDirs(tabId)).toEqual([])
+      // suppressed, or the payload / settings chain would hand it straight back
+      expect(server.getRemovedDirs(tabId)).toEqual(['/lib'])
+    })
+
+    it('lifts the suppression when the folder is added again', () => {
+      const { server, tabId } = withLiveTab()
+      server.addDirectory(tabId, '/lib')
+      server.removeDirectory(tabId, '/lib')
+      server.addDirectory(tabId, '/lib')
+      expect(server.getAddedDirs(tabId)).toEqual(['/lib'])
+      expect(server.getRemovedDirs(tabId)).toEqual([])
+    })
+
+    it('never seeds a removed folder at register time', () => {
+      const server = new StatusServer()
+      server.registerTab('tab-2', '/repo', ['/lib', '/other'], false, ['/lib'])
+      expect(server.getAddedDirs('tab-2')).toEqual(['/other'])
+    })
+  })
+
   describe('freeze', () => {
     it('keeps a live session live when the PTY is killed on quit', () => {
       const { server, tabId } = withLiveTab()

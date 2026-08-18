@@ -31,15 +31,34 @@ const openInITerm = (dir: string): void => {
   })
 }
 
-/** Right-click menu for a folder chip in the status bar. */
-export function showFolderContextMenu(win: BrowserWindow, dir: string): void {
+/**
+ * Right-click menu for a folder chip in the status bar. `onRemove` is passed
+ * only for an extra folder (an `/add-dir`'d one), which can be dropped from the
+ * tab again — the tab's own folder and a /cd move cannot.
+ */
+export function showFolderContextMenu(
+  win: BrowserWindow,
+  dir: string,
+  onRemove?: () => void
+): void {
   const menu = Menu.buildFromTemplate([
     { label: 'Open in WebStorm…', click: () => openInApp('WebStorm', dir) },
     { label: 'Open in VS Code…', click: () => openInApp('Visual Studio Code', dir) },
     { label: 'Open in Finder…', click: () => void shell.openPath(dir) },
     { type: 'separator' },
     { label: 'Open in iTerm2…', click: () => openInITerm(dir) },
-    { label: 'Open in New Tab…', click: () => win.webContents.send('folder:openTab', dir) }
+    { label: 'Open in New Tab…', click: () => win.webContents.send('folder:openTab', dir) },
+    ...(onRemove
+      ? [
+          { type: 'separator' as const },
+          {
+            label: 'Remove from this tab',
+            toolTip:
+              'Claude Code keeps the folder for the running session — restart the tab to drop it there too',
+            click: onRemove
+          }
+        ]
+      : [])
   ])
   menu.popup({ window: win })
 }

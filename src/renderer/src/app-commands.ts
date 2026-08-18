@@ -66,6 +66,28 @@ export const APP_COMMANDS: AppCommand[] = [
     }
   },
   {
+    name: 'remove-dir',
+    description: 'Drop an extra folder from this tab (Claude keeps it until restart)',
+    hint: '<folder>',
+    runOnPick: true,
+    validate: (arg) => arg.trim().length > 0,
+    complete: async (tabId, query) => {
+      const dirs = await window.claudeTerm.extraDirs(tabId)
+      const q = query.trim().toLowerCase()
+      return dirs
+        .filter((d) => !q || d.name.toLowerCase().includes(q) || d.path.toLowerCase().includes(q))
+        .map((d) => ({ label: d.name, value: d.path, detail: d.path }))
+    },
+    run: async ({ tabId, arg, setError }) => {
+      const res = await window.claudeTerm.removeDir(tabId, arg)
+      if (!res.ok) {
+        setError(res.error)
+        return false
+      }
+      return true
+    }
+  },
+  {
     name: 'color',
     description: 'Tint this tab (a color name, #rrggbb, or "off")',
     hint: '<color>',

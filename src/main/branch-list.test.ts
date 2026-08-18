@@ -12,6 +12,7 @@ function status(over: Partial<TabStatus> = {}): TabStatus {
     exitCode: null,
     cwd: '/dev/cordova',
     addedDirs: [],
+    removedDirs: [],
     payload: null,
     git: { ...gitInfo, branch: 'feature/MTX-1-a' },
     ci: null,

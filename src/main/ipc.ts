@@ -42,6 +42,7 @@ import { parseFileLink } from '../shared/file-link'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
+import { addedFolders, matchExtraDir, type FolderChip } from '../shared/status-folders'
 import { sessionHomeDir } from './session-home'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
@@ -154,7 +155,13 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   ipcMain.handle(
     'tab:create',
-    async (_e, cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo> => {
+    async (
+      _e,
+      cwd?: string,
+      resume?: string,
+      addedDirs?: string[],
+      removedDirs?: string[]
+    ): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
       let dir = cwd && existsSync(cwd) ? cwd : homedir()
       // Nobody picked that fallback, so the tab has no folder identity to
@@ -190,7 +197,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       // (additionalDirectories) — the latter never show up in /add-dir prompts
       // or statusline added_dirs, so this is their only way into the UI
       const seeded = [...new Set([...(addedDirs ?? []), ...settingsAddedDirs(dir)])]
-      status.registerTab(tabId, dir, seeded.filter(existsSync), homeIsDefault)
+      status.registerTab(tabId, dir, seeded.filter(existsSync), homeIsDefault, removedDirs ?? [])
       if (target) {
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)
@@ -256,10 +263,34 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     if (existsSync(dir)) void shell.openPath(dir)
   })
 
-  ipcMain.on('folder:contextMenu', (e, dir: string) => {
+  // Extra folders of a tab (`/add-dir`'d or settings-sourced) and dropping one:
+  // `/remove-dir` and the folder chip's context menu share this. Claude Code has
+  // no removal of its own, so this only drops it app-side (see added-dirs.ts).
+  const extraDirsOf = (tabId: TabId): FolderChip[] => addedFolders(status.snapshot(tabId))
+
+  ipcMain.handle('dirs:extra', (_e, tabId: TabId) => extraDirsOf(tabId))
+
+  ipcMain.handle('dirs:remove', (_e, tabId: TabId, arg: string) => {
+    const dir = matchExtraDir(arg, extraDirsOf(tabId))
+    if (!dir) return { ok: false as const, error: 'Not an extra folder of this tab' }
+    status.removeDirectory(tabId, dir)
+    return { ok: true as const, dir }
+  })
+
+  // The tab is passed so an extra folder can offer "Remove from this tab" —
+  // the home folder (and a /cd move) never can.
+  ipcMain.on('folder:contextMenu', (e, dir: string, tabId?: TabId) => {
     if (!existsSync(dir)) return
     const win = BrowserWindow.fromWebContents(e.sender)
-    if (win) showFolderContextMenu(win, dir)
+    if (!win) return
+    const removable =
+      !!tabId &&
+      extraDirsOf(tabId).some((f) => f.path.replace(/\/+$/, '') === dir.replace(/\/+$/, ''))
+    showFolderContextMenu(
+      win,
+      dir,
+      removable ? () => status.removeDirectory(tabId, dir) : undefined
+    )
   })
 
   // Status-bar PR dropdown: open PRs of every workspace repo (the tab's own
@@ -426,7 +457,12 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   // resolved here from the tab's own state, never passed in by a renderer.
   const rootsFor = (tabId: TabId): { cwd: string | null; addedDirs: string[] } => {
     const cwd = status.getCwd(tabId)
-    return { cwd, addedDirs: cwd ? mergeAddedDirs(cwd, status.getAddedDirs(tabId)) : [] }
+    return {
+      cwd,
+      addedDirs: cwd
+        ? mergeAddedDirs(cwd, status.getAddedDirs(tabId), status.getRemovedDirs(tabId))
+        : []
+    }
   }
   // What the file window may reach: the tab's roots, plus the pattern list it
   // edits (which lives in userData, outside every project).

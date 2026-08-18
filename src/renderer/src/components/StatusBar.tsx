@@ -71,14 +71,16 @@ function ExternalLink({
 
 /** Home folder + a "(+N)" badge; hovering/clicking the badge drops down the
  *  extra folders. Every entry opens in Finder; right-click shows the open-in
- *  menu. The dropdown is fixed-positioned because the status bar clips
- *  overflow. */
+ *  menu, which for an `/add-dir`'d folder also offers to remove it from the tab.
+ *  The dropdown is fixed-positioned because the status bar clips overflow. */
 function FolderMenu({
   home,
-  others
+  others,
+  tabId
 }: {
   home: FolderChip
   others: FolderChip[]
+  tabId: TabId | undefined
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ left: 0, bottom: 0 })
@@ -128,7 +130,7 @@ function FolderMenu({
               onContextMenu={(e) => {
                 e.preventDefault()
                 setOpen(false)
-                window.claudeTerm.folderContextMenu(f.path)
+                window.claudeTerm.folderContextMenu(f.path, tabId)
               }}
             >
               {f.name}
@@ -551,7 +553,7 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
   return (
     <div className="status-bar" style={color ? { borderTopColor: color } : undefined}>
       {activityEl}
-      {home && <FolderMenu home={home} others={others} />}
+      {home && <FolderMenu home={home} others={others} tabId={tabId} />}
       {branchEl &&
         (tabId && cwd ? (
           <BranchMenu tabId={tabId} cwd={cwd} chip={branchEl} remoteByRoot={remoteByRoot} />

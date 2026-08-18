@@ -244,7 +244,14 @@ export class StatusServer {
     }
   }
 
-  registerTab(tabId: TabId, cwd: string, addedDirs: string[] = [], homeIsDefault = false): void {
+  registerTab(
+    tabId: TabId,
+    cwd: string,
+    addedDirs: string[] = [],
+    homeIsDefault = false,
+    removedDirs: string[] = []
+  ): void {
+    const removed = new Set(removedDirs)
     this.tabs.set(tabId, {
       cwd,
       homeIsDefault,
@@ -259,7 +266,8 @@ export class StatusServer {
         sessionId: null,
         exitCode: null,
         cwd,
-        addedDirs,
+        addedDirs: addedDirs.filter((d) => !removed.has(d)),
+        removedDirs,
         payload: null,
         git: null,
         ci: null,
@@ -321,12 +329,37 @@ export class StatusServer {
   }
 
   /** Record a directory the tab's session was told to add. Idempotent, so
-   *  re-issuing `/add-dir` for the same folder doesn't duplicate the section. */
+   *  re-issuing `/add-dir` for the same folder doesn't duplicate the section.
+   *  Adding a folder again also lifts an earlier removal. */
   addDirectory(tabId: TabId, dir: string): void {
     const tab = this.tabs.get(tabId)
-    if (!tab || this.frozen || tab.status.addedDirs.includes(dir)) return
-    tab.status.addedDirs = [...tab.status.addedDirs, dir]
+    if (!tab || this.frozen) return
+    const wasRemoved = tab.status.removedDirs.includes(dir)
+    if (tab.status.addedDirs.includes(dir) && !wasRemoved) return
+    if (wasRemoved) tab.status.removedDirs = tab.status.removedDirs.filter((d) => d !== dir)
+    if (!tab.status.addedDirs.includes(dir)) tab.status.addedDirs = [...tab.status.addedDirs, dir]
     this.onUpdate(tab.status)
+  }
+
+  /** Folders the user removed again — suppressed wherever extra dirs come from. */
+  getRemovedDirs(tabId: TabId): string[] {
+    return this.tabs.get(tabId)?.status.removedDirs ?? []
+  }
+
+  /**
+   * Drop an extra folder from a tab: out of the record, and onto the suppression
+   * list so the statusline payload and the settings chain can't bring it back.
+   * Claude Code has no removal of its own, so the live session keeps its access.
+   */
+  removeDirectory(tabId: TabId, dir: string): boolean {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen) return false
+    tab.status.addedDirs = tab.status.addedDirs.filter((d) => d !== dir)
+    if (!tab.status.removedDirs.includes(dir)) {
+      tab.status.removedDirs = [...tab.status.removedDirs, dir]
+    }
+    this.onUpdate(tab.status)
+    return true
   }
 
   /** How many tabs have a Claude session actively working right now. */
@@ -446,7 +479,10 @@ export class StatusServer {
     tab.cwd = dir
     tab.status.cwd = dir
     const observed = tab.status.addedDirs.filter((d) => !staleSeed.includes(d))
-    tab.status.addedDirs = [...new Set([...observed, ...settingsAddedDirs(dir)])].filter(existsSync)
+    const removed = new Set(tab.status.removedDirs)
+    tab.status.addedDirs = [...new Set([...observed, ...settingsAddedDirs(dir)])]
+      .filter((d) => !removed.has(d))
+      .filter(existsSync)
     tab.gitFetchedAt = 0 // the branch/PR data belongs to the old folder
   }
 

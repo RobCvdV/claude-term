@@ -123,6 +123,11 @@ export interface TabStatus {
    *  Only those submitted through the app's prompt box are seen — see
    *  added-dirs.ts. Persisted with the tab so they survive a restart. */
   addedDirs: string[]
+  /** extra folders the user dropped again (`/remove-dir`, or the folder chip's
+   *  context menu). Kept as a suppression list because the folder would
+   *  otherwise come straight back: from the statusline payload while the
+   *  session runs, or from the settings chain on the next restore. */
+  removedDirs: string[]
   payload: StatuslinePayload | null
   git: GitInfo | null
   /** live CI state for this tab's repo+branch (null until the poller knows) */
@@ -439,6 +444,8 @@ export interface PersistedTab {
   /** `/add-dir` directories seen in this tab (absent for tabs saved before this
    *  was tracked, hence optional) */
   addedDirs?: string[]
+  /** extra folders removed again, so a restore doesn't re-seed them */
+  removedDirs?: string[]
   /** the tab's most recent submitted prompts, oldest first, so ↑ still recalls
    *  them after a restart. Trimmed on write — see prompt-history.ts. */
   promptHistory?: string[]

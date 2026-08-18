@@ -19,6 +19,10 @@ import { isAbsolute, join, resolve } from 'path'
  * KNOWN GAP: `/add-dir` typed straight into the terminal bypasses the prompt
  * box and cannot be observed. Put it in `permissions.additionalDirectories` to
  * make it stick.
+ *
+ * Removal is app-side only: Claude Code has no `/remove-dir`, so `/remove-dir`
+ * here drops the folder from the tab's record and suppresses it (StatusServer
+ * keeps the list) — the running session keeps its access until it is restarted.
  */
 
 /** Settings files Claude Code merges, lowest precedence first. All optional. */
@@ -81,10 +85,15 @@ export function addedDirFromPrompt(text: string, cwd: string): string | null {
 /**
  * Every extra directory for a tab: the ones we saw submitted, merged with the
  * settings chain's. Order is preserved (observed first), duplicates and
- * non-existent paths dropped.
+ * non-existent paths dropped. `removed` folders are left out — including
+ * settings-sourced ones, which would otherwise reappear on every call.
  */
-export function mergeAddedDirs(cwd: string, observed: readonly string[]): string[] {
-  const seen = new Set<string>()
+export function mergeAddedDirs(
+  cwd: string,
+  observed: readonly string[],
+  removed: readonly string[] = []
+): string[] {
+  const seen = new Set(removed.map((d) => resolve(d)))
   const out: string[] = []
   const fromSettings = additionalDirectoriesFromSettings(cwd).map(
     (d) => resolveAddedDir(d, cwd) ?? d
