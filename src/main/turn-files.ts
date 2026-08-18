@@ -25,6 +25,9 @@ export interface TurnFiles {
   startedAt: string | null
 }
 
+/** How far back the turn list goes — the checkpoint store keeps ten. */
+export const MAX_TURN_STEPS = 10
+
 /**
  * A record is the start of a turn when it is something the *user* actually
  * said: a plain user message. Tool results come back as `type: 'user'` too, and
@@ -43,13 +46,7 @@ function writtenPath(block: ToolBlock): string | null {
   return block.input?.file_path ?? block.input?.notebook_path ?? null
 }
 
-/**
- * The files written since the last thing the user said. Subagent records count:
- * a file a subagent edited is still a file this turn changed. Unparsable lines
- * are skipped — a transcript is appended to while it is read, so the last line
- * is often half-written.
- */
-export function turnFiles(text: string): TurnFiles {
+function parseRecords(text: string): Record_[] {
   const records: Record_[] = []
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
@@ -57,16 +54,17 @@ export function turnFiles(text: string): TurnFiles {
     try {
       records.push(JSON.parse(trimmed) as Record_)
     } catch {
+      // a transcript is appended to while it is read, so the last line is
+      // often half-written — and a tail read starts mid-line
       continue
     }
   }
-  let start = 0
-  for (let i = records.length - 1; i >= 0; i--) {
-    if (isUserMessage(records[i])) {
-      start = i
-      break
-    }
-  }
+  return records
+}
+
+/** Files written by `records` from `start` on. Subagent records count: a file a
+ *  subagent edited is still a file that turn changed. */
+function writtenFrom(records: Record_[], start: number): string[] {
   const files = new Set<string>()
   for (const rec of records.slice(start)) {
     const content = rec.message?.content
@@ -76,6 +74,32 @@ export function turnFiles(text: string): TurnFiles {
       if (path) files.add(path)
     }
   }
-  const startedAt = records[start]?.timestamp ?? null
-  return { files: [...files], startedAt: typeof startedAt === 'string' ? startedAt : null }
+  return [...files]
+}
+
+/**
+ * One step back per turn, newest first: what the last turn wrote, what the last
+ * two wrote, and so on. Each step is CUMULATIVE, because that is what undoing
+ * "the last three turns" means. Stops at whatever the text reaches back to.
+ */
+export function turnSteps(text: string, max = MAX_TURN_STEPS): TurnFiles[] {
+  const records = parseRecords(text)
+  const starts: number[] = []
+  for (let i = records.length - 1; i >= 0 && starts.length < max; i--) {
+    if (isUserMessage(records[i])) starts.push(i)
+  }
+  // no user message in view: treat everything we have as the current turn
+  if (starts.length === 0) return [{ files: writtenFrom(records, 0), startedAt: null }]
+  return starts.map((start) => {
+    const at = records[start]?.timestamp
+    return {
+      files: writtenFrom(records, start),
+      startedAt: typeof at === 'string' ? at : null
+    }
+  })
+}
+
+/** The files written since the last thing the user said. */
+export function turnFiles(text: string): TurnFiles {
+  return turnSteps(text, 1)[0] ?? { files: [], startedAt: null }
 }

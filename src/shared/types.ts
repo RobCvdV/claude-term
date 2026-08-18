@@ -285,12 +285,23 @@ export interface RevertResult {
 
 /** What the diff window shows: the working tree against HEAD, and which of
  *  those files the turn that just ran is responsible for. */
+/** One step back through a session's turns — the unit the diff window shows and
+ *  the revert button undoes. */
+export interface TurnStep {
+  /** 1 = the turn that just ran */
+  depth: number
+  /** when that turn started, if the transcript said (ISO) */
+  startedAt: string | null
+  /** absolute paths this turn AND every later one wrote to, first touched first */
+  files: string[]
+  /** a checkpoint from that moment is still around, so this depth can be undone */
+  revertable: boolean
+}
+
 export interface ProjectChanges {
   files: ChangedFile[]
-  /** absolute paths the current turn wrote to, in the order it touched them */
-  turnFiles: string[]
-  /** when that turn started, if the transcript said */
-  turnStartedAt: string | null
+  /** the last turns, newest (depth 1) first; empty outside a session */
+  turns: TurnStep[]
   /** false when the tab's folder is not in a git repository */
   inRepo: boolean
 }

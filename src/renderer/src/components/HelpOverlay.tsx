@@ -91,6 +91,9 @@ function HowTo(): React.JSX.Element {
           Hover the branch chip: every workspace repo&apos;s branches, the ones whose newest commit
           is yours marked <b>mine</b> — click switches that repo, right-click opens it on the remote
         </Keys>
+        <Keys k="~N">
+          Changed-file count opens the diff window — review this turn&apos;s changes, or undo them
+        </Keys>
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
@@ -129,6 +132,32 @@ function Guide(): React.JSX.Element {
           of the tab, completing the extra folders it currently has (the folder chip&apos;s
           right-click menu does the same). When Claude shows a grayed-out suggested next prompt in
           the terminal, <b>Tab</b> in the empty box runs it.
+        </p>
+      </section>
+      <section>
+        <h3>Undoing a turn</h3>
+        <p>
+          Every prompt you send snapshots the repo first, so a turn can be undone as a unit. It
+          costs nothing and leaves nothing behind: <code>git stash create</code> writes a commit
+          object without touching your index or the stash list, and a ref under{' '}
+          <code>refs/claude-term/</code> keeps it alive until the app quits, which deletes it again.
+        </p>
+        <p>
+          Click the <b>~N</b> changed-file count in the status bar (or ⌘K → “Review this turn’s
+          changes”) to open the diff window. <b>This turn</b> lists what the turn wrote — its{' '}
+          <code>Edit</code>/<code>Write</code> calls, read from the transcript — <b>All</b> lists
+          everything that differs from HEAD, and the dropdown next to the scope button walks further
+          back, a step per turn, up to ten. <b>Revert</b> then puts exactly those files back to how
+          they were when that turn started: files the turns created are deleted, files that were
+          already untracked are left alone (their old text was never saved anywhere), and your own
+          edits to any other file are untouched. It confirms with the file list first, and cannot be
+          undone.
+        </p>
+        <p>
+          Two limits worth knowing: restore points live only as long as the app runs, so a turn from
+          before this launch says so instead of offering an undo, and only what Claude wrote through
+          its edit tools is in a turn — files changed by a command it ran (an install, a codegen)
+          show up under <b>All</b> and are yours to undo with git.
         </p>
       </section>
       <section>
