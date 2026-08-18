@@ -33,13 +33,19 @@ import type {
   WorklogPlan,
   WorklogPlanEntry
 } from '../shared/types'
+import type { FolderChip } from '../shared/status-folders'
 
 export interface ClaudeTermApi {
   /** the OS this is running on ('darwin', 'win32', 'linux') — for wording that
    *  has to name the file manager */
   platform: string
   initialCwd(): Promise<string | null>
-  createTab(cwd?: string, resume?: string, addedDirs?: string[]): Promise<TabInfo>
+  createTab(
+    cwd?: string,
+    resume?: string,
+    addedDirs?: string[],
+    removedDirs?: string[]
+  ): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
@@ -47,7 +53,14 @@ export interface ClaudeTermApi {
   /** reveal a folder in Finder */
   openFolder(dir: string): Promise<void>
   /** native right-click menu for a folder chip (WebStorm / VS Code / Finder / iTerm2 / new tab) */
-  folderContextMenu(dir: string): void
+  folderContextMenu(dir: string, tabId?: TabId): void
+  /** extra folders of a tab — `/add-dir`'d or settings-sourced, removable */
+  extraDirs(tabId: TabId): Promise<FolderChip[]>
+  /** drop one extra folder (a path, or the name as shown) from a tab */
+  removeDir(
+    tabId: TabId,
+    dir: string
+  ): Promise<{ ok: true; dir: string } | { ok: false; error: string }>
   /** "Open in New Tab…" was picked in the folder context menu */
   onOpenFolderTab(cb: (dir: string) => void): () => void
   /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
@@ -179,13 +192,16 @@ function subscribe<Args extends unknown[]>(
 const api: ClaudeTermApi = {
   platform: process.platform,
   initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
-  createTab: (cwd, resume, addedDirs) => ipcRenderer.invoke('tab:create', cwd, resume, addedDirs),
+  createTab: (cwd, resume, addedDirs, removedDirs) =>
+    ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openFolder: (dir) => ipcRenderer.invoke('shell:openFolder', dir),
-  folderContextMenu: (dir) => ipcRenderer.send('folder:contextMenu', dir),
+  folderContextMenu: (dir, tabId) => ipcRenderer.send('folder:contextMenu', dir, tabId),
+  extraDirs: (tabId) => ipcRenderer.invoke('dirs:extra', tabId),
+  removeDir: (tabId, dir) => ipcRenderer.invoke('dirs:remove', tabId, dir),
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
   onShowHelp: (cb) => subscribe('help:show', cb),

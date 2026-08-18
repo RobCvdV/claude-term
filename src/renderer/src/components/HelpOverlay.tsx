@@ -80,7 +80,8 @@ function HowTo(): React.JSX.Element {
           Folder chip opens Finder — (+N) lists the session&apos;s other folders
         </Keys>
         <Keys k="right-click">
-          Folder chip: open in WebStorm / VS Code / Finder / iTerm2 / new tab
+          Folder chip: open in WebStorm / VS Code / Finder / iTerm2 / new tab — an extra folder can
+          also be removed from the tab
         </Keys>
         <Keys k="PRs">
           Open PRs of every workspace repo, grouped by folder, the ones you opened marked{' '}
@@ -124,8 +125,10 @@ function Guide(): React.JSX.Element {
           completes folders and creates the file you name at the end (
           <code>/add-file docs/plan.md</code>, any extension or none; folders in the path that
           don&apos;t exist yet are created once you confirm), opening it in the docs editor, and{' '}
-          <code>/add-dir</code> completes directories. When Claude shows a grayed-out suggested next
-          prompt in the terminal, <b>Tab</b> in the empty box runs it.
+          <code>/add-dir</code> completes directories — <code>/remove-dir</code> takes one back out
+          of the tab, completing the extra folders it currently has (the folder chip&apos;s
+          right-click menu does the same). When Claude shows a grayed-out suggested next prompt in
+          the terminal, <b>Tab</b> in the empty box runs it.
         </p>
       </section>
       <section>

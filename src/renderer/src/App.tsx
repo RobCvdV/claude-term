@@ -338,7 +338,7 @@ export default function App(): React.JSX.Element {
     const statusInit: Record<TabId, TabStatus | null> = {}
     for (const t of saved.tabs) {
       const resume = t.claudeActive && t.sessionId ? t.sessionId : undefined
-      const tab = await window.claudeTerm.createTab(t.cwd, resume, t.addedDirs)
+      const tab = await window.claudeTerm.createTab(t.cwd, resume, t.addedDirs, t.removedDirs)
       created.push({ ...tab, title: t.title || tab.title })
       lastKnown.current.set(tab.tabId, {
         sessionId: t.sessionId ?? null,
@@ -387,6 +387,7 @@ export default function App(): React.JSX.Element {
           manualTitle: manualTitles.current.has(t.tabId),
           color: colorsRef.current[t.tabId],
           addedDirs: st?.addedDirs ?? [],
+          removedDirs: st?.removedDirs ?? [],
           promptHistory: persistedHistoryFor(t.tabId),
           promptDraft: persistedDraftFor(t.tabId),
           ...persistedSessionOf(st, lastKnown.current.get(t.tabId))

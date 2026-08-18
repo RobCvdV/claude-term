@@ -144,4 +144,15 @@ describe('mergeAddedDirs', () => {
     )
     expect(mergeAddedDirs(cwd, [])).toContain(join(cwd, 'packages', 'ui'))
   })
+
+  it('leaves out a removed folder, settings-sourced ones included', () => {
+    writeFileSync(
+      join(cwd, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { additionalDirectories: [sibling] } })
+    )
+    const observed = join(cwd, 'packages', 'ui')
+    expect(mergeAddedDirs(cwd, [observed], [observed])).not.toContain(observed)
+    // the settings chain would otherwise hand it back on every call
+    expect(mergeAddedDirs(cwd, [], [sibling])).not.toContain(sibling)
+  })
 })
