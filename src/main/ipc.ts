@@ -22,6 +22,7 @@ import type {
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { ConversationFeed } from './companion/conversation-feed'
+import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
 import { ScreenRequests } from './screen-requests'
 import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
@@ -91,6 +92,7 @@ export interface AppServices {
   branches: BranchHistory
   checkpoints: CheckpointStore
   parked: ParkedPrompts
+  queue: PromptQueue
   companion: CompanionServer
   devices: DeviceRegistry
   pairing: Pairing
@@ -158,6 +160,15 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   // Only the renderer's xterm knows what is on a tab's screen, so asking is a
   // round trip over the otherwise one-way main→renderer channel.
   const screens = new ScreenRequests((requestId, tabId) => send('screen:request', requestId, tabId))
+  // A dialog owns the keyboard, so a prompt arriving then would answer it
+  // instead of asking anything — hold it until the tab can take input again.
+  const queue = new PromptQueue({
+    deliver: (tabId, text) => ptys.injectPrompt(tabId, text),
+    ready: (tabId) => {
+      const snap = status.snapshot(tabId)
+      return Boolean(snap?.claudeActive) && tabCanTakeInput(snap?.activity)
+    }
+  })
   const feed = new ConversationFeed({
     turnsFor: (sessionId) => conversationTurns(sessionId),
     sessionOf: (tabId) => status.snapshot(tabId)?.sessionId ?? null
@@ -168,7 +179,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     feed,
     snapshots: () => status.allSnapshots(),
     snapshot: (tabId) => status.snapshot(tabId),
-    injectPrompt: (tabId, text) => ptys.injectPrompt(tabId, text),
+    queue,
     screen: (tabId) => screens.request(tabId),
     onChanged: updateSleepBlocker
   })
@@ -239,6 +250,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     branches,
     checkpoints,
     parked,
+    queue,
     companion,
     devices,
     pairing,
@@ -249,7 +261,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
-  const { ptys, status, checkpoints, parked } = services
+  const { ptys, status, checkpoints, parked, queue } = services
 
   // Started when the renderer loads the persisted session (which is where we
   // first see every id about to be revived) and awaited by each revive.
@@ -397,8 +409,9 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     // status — and thus their cwd/roots — is still resolvable.
     await closeDocsWindowForTab(tabId)
     ptys.kill(tabId)
-    // the session is going away; anything held for it can never be answered
+    // the session is going away; nothing held for it can be answered or delivered
     parked.releaseTab(tabId)
+    queue.forget(tabId)
     status.removeTab(tabId)
     checkpoints.forget(tabId)
   })

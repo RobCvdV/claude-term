@@ -239,6 +239,18 @@ function Guide(): React.JSX.Element {
           simply waits in the terminal exactly as it would have anyway. A held prompt is handed back
           whenever the last device disconnects, the tab closes, or the app quits.
         </p>
+        <p>
+          Answering with <b>allow and stop asking</b> writes a rule into the project&apos;s{' '}
+          <code>.claude/settings.local.json</code>, the same file Claude Code&apos;s own “don&apos;t
+          ask again” uses. Rules are only offered for shell commands, and never for one containing{' '}
+          <code>&amp;&amp;</code>, a pipe or a subshell — a rule read off{' '}
+          <code>mkdir a &amp;&amp; rm -rf b</code> would license the second half too.
+        </p>
+        <p>
+          A prompt sent from a phone is held while the session is showing a dialog, since anything
+          typed then would answer the dialog instead; it goes in as soon as that clears. A session
+          that is merely busy needs no such care — Claude Code queues typed input itself.
+        </p>
       </section>
       <section>
         <h3>The file window</h3>

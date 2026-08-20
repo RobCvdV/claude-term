@@ -1,8 +1,10 @@
 import { basename } from 'path'
 import type { ClientFrame, CompanionSession } from '../../shared/companion'
 import type { TabId, TabStatus } from '../../shared/types'
+import { addAllowRule } from './allow-rule'
 import type { ConversationFeed } from './conversation-feed'
 import type { ParkedPrompts } from './parked-prompts'
+import { tabCanTakeInput, type PromptQueue } from './prompt-queue'
 import type { CompanionServer } from './server'
 
 /** How often a followed conversation is checked for new turns. A poll is a stat
@@ -29,10 +31,11 @@ export interface CompanionHubDeps {
   server: CompanionServer
   parked: ParkedPrompts
   feed: ConversationFeed
+  queue: PromptQueue
   snapshots: () => TabStatus[]
   snapshot: (tabId: TabId) => TabStatus | null
-  /** The app's own prompt-box path — bracketed paste, then Enter. */
-  injectPrompt: (tabId: TabId, text: string) => void
+  /** Add a permission rule to the project's Claude Code settings. */
+  addRule?: (cwd: string, rule: string) => boolean
   /** The tab's visible terminal rows, or null if the renderer did not answer. */
   screen: (tabId: TabId) => Promise<string[] | null>
   /** Anything that changes whether a device is waiting on live work. */
@@ -77,6 +80,11 @@ export class CompanionHub {
       this.stopPollingIfIdle()
     }
     server.onFrame = (deviceId, frame) => this.handle(deviceId, frame)
+
+    const { queue } = this.deps
+    queue.onQueued = (tabId, position) =>
+      server.broadcast({ type: 'submitQueued', tabId, position })
+    queue.onDelivered = (tabId) => server.broadcast({ type: 'submitDelivered', tabId })
   }
 
   stop(): void {
@@ -124,6 +132,8 @@ export class CompanionHub {
   /** A tab changed — push just that session rather than the whole list. */
   publishStatus(status: TabStatus): void {
     this.deps.onChanged?.()
+    // A dialog that just closed is the moment anything held becomes deliverable.
+    if (tabCanTakeInput(status.activity)) this.deps.queue.flush(status.tabId)
     this.deps.server.broadcast({
       type: 'session',
       session: toSession(status, this.promptIds(status.tabId))
@@ -132,6 +142,21 @@ export class CompanionHub {
 
   sessionList(): CompanionSession[] {
     return this.deps.snapshots().map((status) => toSession(status, this.promptIds(status.tabId)))
+  }
+
+  /** Persist the rule a prompt suggested, and say what happened. */
+  private remember(deviceId: string, promptId: string): void {
+    const prompt = this.deps.parked.pending().find((p) => p.id === promptId)
+    if (!prompt?.suggestedRule) return
+    const cwd = this.deps.snapshot(prompt.tabId)?.cwd
+    if (!cwd) return
+    const added = (this.deps.addRule ?? addAllowRule)(cwd, prompt.suggestedRule)
+    this.deps.server.sendTo(deviceId, {
+      type: 'ruleAdded',
+      tabId: prompt.tabId,
+      rule: prompt.suggestedRule,
+      added
+    })
   }
 
   private promptIds(tabId: TabId): string[] {
@@ -146,6 +171,11 @@ export class CompanionHub {
         return
 
       case 'decide': {
+        // "allow and stop asking" writes the rule first: if the write fails the
+        // device still gets its approval, just without the rule.
+        if (frame.decision.kind === 'allow' && frame.decision.remember) {
+          this.remember(deviceId, frame.promptId)
+        }
         if (parked.decide(frame.promptId, frame.decision)) return
         // Either it was already answered — commonly in the terminal, a moment
         // before this arrived — or this hook cannot carry that kind of answer.
@@ -236,7 +266,7 @@ export class CompanionHub {
           })
           return
         }
-        this.deps.injectPrompt(frame.tabId, frame.text)
+        this.deps.queue.submit(frame.tabId, frame.text)
         return
       }
 

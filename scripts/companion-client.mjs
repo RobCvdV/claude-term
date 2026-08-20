@@ -8,6 +8,7 @@
 // on stdin:
 //   s                    list sessions
 //   a <promptId>         allow
+//   A <promptId>         allow, and write the suggested rule so it stops asking
 //   d <promptId> [why]   deny (the reason only reaches the model on a question)
 //   t <promptId> <text>  answer a question / give plan feedback
 //   r <promptId>         release — hand it back to the terminal
@@ -114,7 +115,8 @@ function describePrompt(p) {
       .map((l) => `    ${l}`)
       .join('\n')}`
   }
-  return `${head}\n    ${p.summary}`
+  const rule = p.suggestedRule ? `\n    ↳ "A" would allow: ${p.suggestedRule}` : ''
+  return `${head}\n    ${p.summary}${rule}`
 }
 
 if (command === 'pair') {
@@ -229,6 +231,17 @@ if (command === 'pair') {
           seenPrompts.set(frame.prompt.id, frame.prompt)
           console.log(describePrompt(frame.prompt))
           break
+        case 'ruleAdded':
+          console.log(
+            frame.added ? `✓ rule added: ${frame.rule}` : `! rule not written: ${frame.rule}`
+          )
+          break
+        case 'submitQueued':
+          console.log(`⏸ prompt held for ${frame.tabId.slice(0, 8)} (position ${frame.position})`)
+          break
+        case 'submitDelivered':
+          console.log(`▶ held prompt delivered to ${frame.tabId.slice(0, 8)}`)
+          break
         case 'promptResolved':
           seenPrompts.delete(frame.promptId)
           console.log(`✓ ${frame.promptId.slice(0, 8)} → ${frame.outcome}`)
@@ -277,6 +290,8 @@ if (command === 'pair') {
         : resolve(seenPrompts, rawId, 'prompts')
     if (verb === 's') send({ type: 'sessions' })
     else if (verb === 'a') send({ type: 'decide', promptId: id, decision: { kind: 'allow' } })
+    else if (verb === 'A')
+      send({ type: 'decide', promptId: id, decision: { kind: 'allow', remember: true } })
     else if (verb === 'd')
       send({ type: 'decide', promptId: id, decision: { kind: 'deny', reason: text || undefined } })
     else if (verb === 't')
