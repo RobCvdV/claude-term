@@ -14,17 +14,22 @@ let devices: DeviceRegistry
 let pairing: Pairing
 let server: CompanionServer
 let confirmPairing: (name: string) => Promise<boolean>
+let authGraceMs: number | undefined
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'ct-companion-'))
   devices = new DeviceRegistry(() => join(dir, 'devices.json'))
   pairing = new Pairing()
   confirmPairing = async () => true
+  authGraceMs = undefined
   server = new CompanionServer({
     devices,
     pairing,
     hostName: 'test-host',
-    confirmPairing: (name) => confirmPairing(name)
+    confirmPairing: (name) => confirmPairing(name),
+    get authGraceMs() {
+      return authGraceMs
+    }
   })
   await server.start(0)
 })
@@ -247,6 +252,17 @@ describe('CompanionServer pairing', () => {
     })
     await conn.next('error')
     expect(devices.list()).toHaveLength(0)
+  })
+
+  it('waits for a slow human on the confirmation dialog', async () => {
+    // The anonymous-socket timer must not count the time someone spends deciding.
+    authGraceMs = 40
+    confirmPairing = async () => {
+      await new Promise((r) => setTimeout(r, 200))
+      return true
+    }
+    const { device } = await paired()
+    expect(devices.get(device.deviceId)).not.toBeNull()
   })
 
   it('asks about the device by name', async () => {

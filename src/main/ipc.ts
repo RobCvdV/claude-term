@@ -323,13 +323,16 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   }
 
   // Pairing is a deliberate act: a code exists only while the user has asked for
-  // one, lives two minutes, and enrols exactly one device. Closing this dialog
-  // cancels it, so a code never outlives the screen showing it.
+  // one, lives two minutes, and enrols exactly one device. It deliberately
+  // OUTLIVES this dialog — the box is modal, so a code that died on dismissal
+  // could only ever be used by someone holding the phone in front of a frozen
+  // app. Short-lived, single-use and attempt-limited is the protection here.
   ipcMain.handle('companion:pair', async () => {
     const host = reachableAddress()
-    const { code } = services.pairing.offer()
+    const { code, expiresAt } = services.pairing.offer()
+    const seconds = Math.round((expiresAt - Date.now()) / 1000)
     const detail = host
-      ? `Enter this code on your phone, then connect to ${host} on port ${services.companion.port}.\n\nThe code is valid for two minutes and pairs one device.`
+      ? `Enter this code on your phone, then connect to ${host} on port ${services.companion.port}.\n\nIt is good for ${seconds} seconds — closing this box does not cancel it — and pairs exactly one device.`
       : `No Tailscale address was found on this Mac, so only this machine can reach the companion right now (127.0.0.1 port ${services.companion.port}).\n\nStart Tailscale and open this dialog again to pair a phone.`
     await messageBox({
       type: 'info',
@@ -337,8 +340,6 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       message: code,
       detail
     })
-    // whether they paired or gave up, this code is finished
-    services.pairing.cancel()
   })
 
   ipcMain.handle('companion:manageDevices', async () => {

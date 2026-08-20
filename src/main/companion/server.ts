@@ -38,6 +38,8 @@ export interface CompanionServerDeps {
   hostName: string
   /** The session list to hand a device the moment it authenticates. */
   sessions?: () => CompanionSession[]
+  /** Overridable for tests; how long a socket may stay anonymous. */
+  authGraceMs?: number
   /**
    * Asked before a newly paired key is trusted. The pairing code already proves
    * the person scanning can see this screen; this is the second pair of eyes.
@@ -147,7 +149,7 @@ export class CompanionServer {
     this.clients.add(client)
     client.authTimer = setTimeout(() => {
       if (!client.deviceId) this.drop(client)
-    }, AUTH_GRACE_MS)
+    }, this.deps.authGraceMs ?? AUTH_GRACE_MS)
 
     socket.on('message', (data) => void this.onMessage(client, data.toString()))
     socket.on('close', () => this.forget(client))
@@ -225,6 +227,11 @@ export class CompanionServer {
       this.fail(client, 'bad-pairing-code', 'that code is not valid')
       return
     }
+    // The code is spent and the key is proven, so the only thing left is a human
+    // clicking a dialog. Stop the anonymous-socket timer before waiting on that:
+    // a person takes longer than a handshake, and dropping them mid-decision is
+    // how this looked like "pairing silently fails".
+    this.holdOpen(client)
     const confirm = this.deps.confirmPairing ?? (async (): Promise<boolean> => true)
     if (!(await confirm(frame.name))) {
       this.fail(client, 'bad-pairing-code', 'pairing was declined on the host')
@@ -239,6 +246,12 @@ export class CompanionServer {
     this.establish(client, device.deviceId, device.name)
   }
 
+  /** Stop counting this socket as anonymous, without authenticating it yet. */
+  private holdOpen(client: Client): void {
+    if (client.authTimer) clearTimeout(client.authTimer)
+    client.authTimer = null
+  }
+
   private establish(client: Client, deviceId: string, name: string): void {
     // One connection per device: a reconnect supersedes whatever came before,
     // which is what a phone waking from sleep looks like.
@@ -247,8 +260,7 @@ export class CompanionServer {
     }
     client.deviceId = deviceId
     client.name = name
-    if (client.authTimer) clearTimeout(client.authTimer)
-    client.authTimer = null
+    this.holdOpen(client)
     this.write(client, {
       type: 'ready',
       deviceId,

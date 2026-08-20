@@ -190,9 +190,11 @@ if (command === 'pair') {
           console.log(`~ ${describeSession(frame.session).trim()}`)
           break
         case 'prompt':
+          seenPrompts.set(frame.prompt.id, frame.prompt)
           console.log(describePrompt(frame.prompt))
           break
         case 'promptResolved':
+          seenPrompts.delete(frame.promptId)
           console.log(`✓ ${frame.promptId.slice(0, 8)} → ${frame.outcome}`)
           break
         case 'error':
@@ -203,6 +205,18 @@ if (command === 'pair') {
       }
     }
   )
+
+  // Prompt ids are UUIDs but only their first 8 chars are printed, so resolve
+  // whatever prefix was typed against the prompts actually seen.
+  const seenPrompts = new Map()
+  const resolveId = (prefix) => {
+    if (!prefix) return prefix
+    if (seenPrompts.has(prefix)) return prefix
+    const hits = [...seenPrompts.keys()].filter((id) => id.startsWith(prefix))
+    if (hits.length === 1) return hits[0]
+    if (hits.length > 1) console.log(`? "${prefix}" matches ${hits.length} prompts`)
+    return prefix
+  }
 
   // Commands can be typed (or piped) before the handshake finishes, so hold them
   // until the socket is authenticated rather than throwing them at a dead socket.
@@ -219,8 +233,9 @@ if (command === 'pair') {
     }
   }
   createInterface({ input: process.stdin }).on('line', (line) => {
-    const [verb, id, ...rest] = line.trim().split(/\s+/)
+    const [verb, rawId, ...rest] = line.trim().split(/\s+/)
     const text = rest.join(' ')
+    const id = resolveId(rawId)
     if (verb === 's') send({ type: 'sessions' })
     else if (verb === 'a') send({ type: 'decide', promptId: id, decision: { kind: 'allow' } })
     else if (verb === 'd')
