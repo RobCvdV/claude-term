@@ -8,6 +8,7 @@ import type {
   QuestionSpec
 } from '../../shared/companion'
 import type { HookEvent, TabId } from '../../shared/types'
+import { suggestRule } from './allow-rule'
 
 /** Just enough of Node's ServerResponse to hold one open, so this is testable. */
 export interface ParkedResponse {
@@ -148,6 +149,7 @@ export class ParkedPrompts {
       planFilePath:
         kind === 'plan' && typeof input.planFilePath === 'string' ? input.planFilePath : null,
       toolInput: input,
+      suggestedRule: suggestRule(toolName, input),
       createdAt: Date.now()
     }
     const entry: Entry = { prompt, res, done: false }

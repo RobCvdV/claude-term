@@ -50,13 +50,16 @@ export const pendingPrompt = z.object({
   planFilePath: z.string().nullable(),
   /** the untouched `tool_input`, for anything the fields above don't cover */
   toolInput: z.record(z.string(), z.unknown()),
+  /** a rule that would stop this being asked again, when one is safe to offer */
+  suggestedRule: z.string().nullable(),
   createdAt: z.number()
 })
 export type PendingPrompt = z.infer<typeof pendingPrompt>
 
 export const promptDecision = z.discriminatedUnion('kind', [
-  /** approve — the tool runs */
-  z.object({ kind: z.literal('allow') }),
+  /** approve — the tool runs. `remember` also writes the suggested rule, so
+   *  Claude Code stops asking; ignored when the prompt offered none. */
+  z.object({ kind: z.literal('allow'), remember: z.boolean().optional() }),
   /** reject. `reason` only reaches the model on a PreToolUse-parked prompt. */
   z.object({ kind: z.literal('deny'), reason: z.string().optional() }),
   /** answer a question, or send plan feedback — `text` reaches the model */
@@ -187,6 +190,12 @@ export type ServerFrame =
   | { type: 'screen'; tabId: string; rows: string[]; at: number }
   | { type: 'prompt'; prompt: PendingPrompt }
   | { type: 'promptResolved'; promptId: string; tabId: string; outcome: PromptOutcome }
+  /** A submitted prompt is waiting for the session to stop holding a dialog. */
+  | { type: 'submitQueued'; tabId: string; position: number }
+  /** A queued prompt has now gone through. */
+  | { type: 'submitDelivered'; tabId: string }
+  /** `remember` wrote a rule (or could not). */
+  | { type: 'ruleAdded'; tabId: string; rule: string; added: boolean }
   | { type: 'pong' }
 
 export type CompanionErrorCode =

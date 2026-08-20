@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ServerFrame } from '../../shared/companion'
 import type { TabStatus } from '../../shared/types'
 import { ConversationFeed } from './conversation-feed'
+import { PromptQueue } from './prompt-queue'
 import { CompanionHub, toSession } from './hub'
 import { ParkedPrompts, type ParkedResponse } from './parked-prompts'
 import type { CompanionServer } from './server'
@@ -75,11 +76,21 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
   feed: ConversationFeed
   injectPrompt: ReturnType<typeof vi.fn>
   screen: ReturnType<typeof vi.fn>
+  addRule: ReturnType<typeof vi.fn>
+  queue: PromptQueue
 } {
   const server = fakeServer()
   const parked = new ParkedPrompts()
   const injectPrompt = vi.fn()
   const screen = vi.fn(async () => SCREEN_ROWS as string[] | null)
+  const addRule = vi.fn(() => true)
+  const queue = new PromptQueue({
+    deliver: injectPrompt,
+    ready: (tabId) => {
+      const s = statuses.find((x) => x.tabId === tabId)
+      return Boolean(s?.claudeActive) && s?.activity !== 'needs-attention'
+    }
+  })
   const feed = new ConversationFeed({
     turnsFor: () => [{ role: 'claude', time: null, text: 'hello there' }],
     sessionOf: (tabId) => statuses.find((s) => s.tabId === tabId)?.sessionId ?? null
@@ -90,11 +101,12 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     feed,
     snapshots: () => statuses,
     snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
-    injectPrompt,
-    screen
+    queue,
+    screen,
+    addRule
   })
   hub.start()
-  return { hub, server, parked, feed, injectPrompt, screen }
+  return { hub, server, parked, feed, injectPrompt, screen, addRule, queue }
 }
 
 /** Park a prompt and return its id. */
@@ -290,7 +302,7 @@ describe('CompanionHub', () => {
       feed: new ConversationFeed({ turnsFor: () => null, sessionOf: () => 's1' }),
       snapshots: () => statuses,
       snapshot: () => statuses[0],
-      injectPrompt: () => {},
+      queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -324,7 +336,7 @@ describe('CompanionHub', () => {
       feed: new ConversationFeed({ turnsFor: () => turns, sessionOf: () => 's1' }),
       snapshots: () => statuses,
       snapshot: () => statuses[0],
-      injectPrompt: () => {},
+      queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -364,6 +376,80 @@ describe('CompanionHub', () => {
     await Promise.resolve()
     expect(screen).not.toHaveBeenCalled()
     expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
+  })
+
+  it('writes the suggested rule when asked to remember, then approves', () => {
+    const { server, parked, addRule } = setup()
+    const id = park(parked) // Bash(ls) → suggests a rule
+    server.onFrame('d1', {
+      type: 'decide',
+      promptId: id,
+      decision: { kind: 'allow', remember: true }
+    } as never)
+    expect(addRule).toHaveBeenCalledWith('/Users/rob/Dev/thing', 'Bash(ls)')
+    expect(server.sent[0].frame).toMatchObject({ type: 'ruleAdded', rule: 'Bash(ls)', added: true })
+    expect(parked.pending()).toHaveLength(0)
+  })
+
+  it('approves without a rule when there is none worth offering', () => {
+    const { server, parked, addRule } = setup()
+    // a question carries no shell command, so no rule is suggested
+    const id = park(parked, 't1', 'AskUserQuestion')
+    server.onFrame('d1', {
+      type: 'decide',
+      promptId: id,
+      decision: { kind: 'allow', remember: true }
+    } as never)
+    expect(addRule).not.toHaveBeenCalled()
+    expect(server.sent).toHaveLength(0)
+  })
+
+  it('still approves when the rule could not be written', () => {
+    const { server, parked, addRule } = setup()
+    addRule.mockReturnValueOnce(false)
+    const id = park(parked)
+    server.onFrame('d1', {
+      type: 'decide',
+      promptId: id,
+      decision: { kind: 'allow', remember: true }
+    } as never)
+    expect(server.sent[0].frame).toMatchObject({ type: 'ruleAdded', added: false })
+    expect(parked.pending()).toHaveLength(0)
+  })
+
+  it('holds a submitted prompt while a dialog owns the keyboard', () => {
+    const { server, injectPrompt } = setup([tabStatus({ activity: 'needs-attention' })])
+    server.onFrame('d1', { type: 'submit', tabId: 't1', text: 'later please' } as never)
+    expect(injectPrompt).not.toHaveBeenCalled()
+    expect(server.broadcasts[0]).toEqual({ type: 'submitQueued', tabId: 't1', position: 1 })
+  })
+
+  it('delivers what was held once the dialog is gone', () => {
+    const statuses = [tabStatus({ activity: 'needs-attention' })]
+    const server = fakeServer()
+    const injectPrompt = vi.fn()
+    const queue = new PromptQueue({
+      deliver: injectPrompt,
+      ready: (tabId) => statuses.find((s) => s.tabId === tabId)?.activity !== 'needs-attention'
+    })
+    const hub = new CompanionHub({
+      server,
+      parked: new ParkedPrompts(),
+      feed: new ConversationFeed({ turnsFor: () => null, sessionOf: () => null }),
+      queue,
+      snapshots: () => statuses,
+      snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
+      screen: async () => null
+    })
+    hub.start()
+    server.onFrame('d1', { type: 'submit', tabId: 't1', text: 'later please' } as never)
+    expect(injectPrompt).not.toHaveBeenCalled()
+
+    statuses[0] = tabStatus({ activity: 'idle' })
+    hub.publishStatus(statuses[0])
+    expect(injectPrompt).toHaveBeenCalledWith('t1', 'later please')
+    expect(server.broadcasts.some((f) => f.type === 'submitDelivered')).toBe(true)
+    hub.stop()
   })
 
   it('pushes a single session on a status change', () => {

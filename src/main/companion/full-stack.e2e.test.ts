@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { spawn } from 'child_process'
 import { execFile } from 'child_process'
-import { mkdtempSync, writeFileSync } from 'fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
@@ -10,7 +10,9 @@ import { StatusServer } from '../status-server'
 import { buildHooks } from '../hook-config'
 import { reachableAddress } from './bind-address'
 import { DeviceRegistry } from './devices'
+import { addAllowRule } from './allow-rule'
 import { ConversationFeed } from './conversation-feed'
+import { PromptQueue } from './prompt-queue'
 import { CompanionHub } from './hub'
 import { Pairing } from './pairing'
 import { ParkedPrompts } from './parked-prompts'
@@ -42,6 +44,7 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
     // which needs the packaged forwarder script, so take it from the hook payload
     // the parked prompt carries instead.
     let liveSession: string | null = null
+    const addRule = (cwd: string, rule: string): boolean => addAllowRule(cwd, rule)
     const feed = new ConversationFeed({
       turnsFor: (sessionId) => conversationTurns(sessionId),
       sessionOf: () => liveSession
@@ -58,7 +61,8 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
       feed,
       snapshots: () => status.allSnapshots(),
       snapshot: (tabId) => status.snapshot(tabId),
-      injectPrompt: () => {},
+      queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
+      addRule,
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -70,7 +74,10 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
     status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
     await status.start()
     await companion.start(0)
-    status.registerTab('spike', dir)
+    // the harness runs claude here, so the tab's cwd must match for a written
+    // permission rule to land where that session will read it
+    const fixture = join(dir, 'tui-empty-0-full', 'fixture')
+    status.registerTab('spike', fixture)
 
     const host = reachableAddress() ?? '127.0.0.1'
     const store = join(dir, 'client.json')
@@ -134,8 +141,11 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
     const seen = await waitFor(/▸ PERMISSION\s+Bash\s+\[([0-9a-f]{8})\]/)
     expect(clientOut).toMatch(/mkdir spike-proof/)
 
-    // 5. answer it from the client, by the short id it printed
-    client.stdin.write(`a ${seen[1]}\n`)
+    // 5. answer it from the client — and remember the rule, so the same command
+    //    is not asked about again
+    expect(clientOut).toMatch(/would allow: Bash\(mkdir \*\)/)
+    client.stdin.write(`A ${seen[1]}\n`)
+    await waitFor(/✓ rule added: Bash\(mkdir \*\)/)
     await waitFor(new RegExp(`✓ ${seen[1]} → answered`))
 
     // 6. and the tool actually ran
@@ -144,7 +154,13 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
     })
     expect(finished).toContain('tool ran: True')
 
-    // 7. the conversation itself reaches the client, read from the transcript
+    // 7. the rule really landed in the file Claude Code reads
+    const rules = JSON.parse(
+      readFileSync(join(fixture, '.claude', 'settings.local.json'), 'utf8')
+    ) as { permissions: { allow: string[] } }
+    expect(rules.permissions.allow).toContain('Bash(mkdir *)')
+
+    // 8. the conversation itself reaches the client, read from the transcript
     expect(liveSession).toBeTruthy()
     client.stdin.write('w spike\n')
     await waitFor(/── conversation spike/, 20_000)
