@@ -122,6 +122,14 @@ export class DeviceRegistry {
     return gone
   }
 
+  /** Expo says this token is gone for good; keeping it would send to nobody. */
+  clearPushToken(deviceId: string): void {
+    const device = this.devices.get(deviceId)
+    if (!device?.pushToken) return
+    delete device.pushToken
+    this.save()
+  }
+
   touch(deviceId: string, pushToken?: string): void {
     const device = this.devices.get(deviceId)
     if (!device) return

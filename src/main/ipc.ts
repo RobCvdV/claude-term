@@ -22,7 +22,9 @@ import type {
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { ConversationFeed } from './companion/conversation-feed'
+import { Notifier } from './companion/notifier'
 import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
+import { PushSender } from './companion/push-sender'
 import { ScreenRequests } from './screen-requests'
 import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
@@ -93,6 +95,7 @@ export interface AppServices {
   checkpoints: CheckpointStore
   parked: ParkedPrompts
   queue: PromptQueue
+  notifier: Notifier
   companion: CompanionServer
   devices: DeviceRegistry
   pairing: Pairing
@@ -173,6 +176,15 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     turnsFor: (sessionId) => conversationTurns(sessionId),
     sessionOf: (tabId) => status.snapshot(tabId)?.sessionId ?? null
   })
+  const notifier = new Notifier({
+    // Someone with the app in front of them does not need their phone to buzz.
+    hostFocused: () => Boolean(getWindow()?.isFocused())
+  })
+  const push = new PushSender({
+    fetch: (input, init) => fetch(input, init),
+    onTokenRejected: (deviceId) => devices.clearPushToken(deviceId),
+    log: (message) => console.warn(message)
+  })
   const hub = new CompanionHub({
     server: companion,
     parked,
@@ -180,6 +192,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     snapshots: () => status.allSnapshots(),
     snapshot: (tabId) => status.snapshot(tabId),
     queue,
+    notifier,
+    push,
+    pushTokenFor: (deviceId) => devices.get(deviceId)?.pushToken ?? null,
     screen: (tabId) => screens.request(tabId),
     onChanged: updateSleepBlocker
   })
@@ -251,6 +266,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     checkpoints,
     parked,
     queue,
+    notifier,
     companion,
     devices,
     pairing,
@@ -261,7 +277,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
-  const { ptys, status, checkpoints, parked, queue } = services
+  const { ptys, status, checkpoints, parked, queue, notifier } = services
 
   // Started when the renderer loads the persisted session (which is where we
   // first see every id about to be revived) and awaited by each revive.
@@ -412,6 +428,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     // the session is going away; nothing held for it can be answered or delivered
     parked.releaseTab(tabId)
     queue.forget(tabId)
+    notifier.forget(tabId)
     status.removeTab(tabId)
     checkpoints.forget(tabId)
   })
