@@ -31,7 +31,8 @@ import {
   setTerminalEscapeHandler,
   setTerminalFocusToggleHandler,
   setTerminalTitleHandler,
-  terminalAtNormalInput
+  terminalAtNormalInput,
+  visibleScreen
 } from './term-registry'
 import {
   focusForTab,
@@ -614,6 +615,14 @@ export default function App(): React.JSX.Element {
   )
 
   const attentionCount = tabs.filter((t) => needsInput(statuses[t.tabId])).length
+
+  // Only this process's xterm knows what is on a tab's screen, so answer main's
+  // request for one (a companion device asking what a session is doing).
+  useEffect(() => {
+    return window.claudeTerm.onScreenRequest((requestId, tabId) => {
+      window.claudeTerm.screenReply(requestId, visibleScreen(tabId))
+    })
+  }, [])
 
   const paletteActions: PaletteAction[] = [
     { id: 'new-tab', label: 'New tab', shortcut: '⌘T', run: newTab },

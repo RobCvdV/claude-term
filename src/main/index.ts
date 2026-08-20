@@ -273,6 +273,9 @@ function shutdown(): Promise<void> {
     // hook waits on us for minutes, and a session killed mid-wait would sit
     // there with a dialog nobody answered.
     services.parked.releaseAll('shutdown')
+    services.hub.stop()
+    // a screen only exists in a window that is about to be gone
+    services.screens.abandonAll()
     services.companion.stop()
     services.releaseSleepBlocker()
     // Freeze *first*: killing the PTYs makes every tab report its Claude session

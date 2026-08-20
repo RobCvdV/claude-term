@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerFrame } from '../../shared/companion'
 import type { TabStatus } from '../../shared/types'
+import { ConversationFeed } from './conversation-feed'
 import { CompanionHub, toSession } from './hub'
 import { ParkedPrompts, type ParkedResponse } from './parked-prompts'
 import type { CompanionServer } from './server'
+
+const SCREEN_ROWS = ['> ready', '  waiting for input']
 
 function tabStatus(over: Partial<TabStatus> = {}): TabStatus {
   return {
@@ -59,6 +62,7 @@ function fakeServer(): CompanionServer & {
       api.sent.push({ deviceId, frame })
     },
     onPresence: (() => {}) as (count: number) => void,
+    onGone: (() => {}) as (deviceId: string) => void,
     onFrame: (() => {}) as (deviceId: string, frame: never) => void
   }
   return api as unknown as ReturnType<typeof fakeServer>
@@ -68,20 +72,29 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
   hub: CompanionHub
   server: ReturnType<typeof fakeServer>
   parked: ParkedPrompts
+  feed: ConversationFeed
   injectPrompt: ReturnType<typeof vi.fn>
+  screen: ReturnType<typeof vi.fn>
 } {
   const server = fakeServer()
   const parked = new ParkedPrompts()
   const injectPrompt = vi.fn()
+  const screen = vi.fn(async () => SCREEN_ROWS as string[] | null)
+  const feed = new ConversationFeed({
+    turnsFor: () => [{ role: 'claude', time: null, text: 'hello there' }],
+    sessionOf: (tabId) => statuses.find((s) => s.tabId === tabId)?.sessionId ?? null
+  })
   const hub = new CompanionHub({
     server,
     parked,
+    feed,
     snapshots: () => statuses,
     snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
-    injectPrompt
+    injectPrompt,
+    screen
   })
   hub.start()
-  return { hub, server, parked, injectPrompt }
+  return { hub, server, parked, feed, injectPrompt, screen }
 }
 
 /** Park a prompt and return its id. */
@@ -247,6 +260,109 @@ describe('CompanionHub', () => {
     const { server, injectPrompt } = setup()
     server.onFrame('d1', { type: 'submit', tabId: 'nope', text: 'hi' } as never)
     expect(injectPrompt).not.toHaveBeenCalled()
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
+  })
+
+  it('hands a subscriber the conversation so far', () => {
+    const { server } = setup()
+    server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
+    expect(server.sent[0].frame).toMatchObject({
+      type: 'conversation',
+      tabId: 't1',
+      turns: [{ role: 'claude', text: 'hello there' }],
+      before: 0
+    })
+  })
+
+  it('refuses to follow a tab that does not exist', () => {
+    const { server, feed } = setup()
+    server.onFrame('d1', { type: 'subscribe', tabId: 'nope' } as never)
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
+    expect(feed.active()).toBe(0)
+  })
+
+  it('says so when a followed session has written nothing yet', () => {
+    const server = fakeServer()
+    const statuses = [tabStatus()]
+    const hub = new CompanionHub({
+      server,
+      parked: new ParkedPrompts(),
+      feed: new ConversationFeed({ turnsFor: () => null, sessionOf: () => 's1' }),
+      snapshots: () => statuses,
+      snapshot: () => statuses[0],
+      injectPrompt: () => {},
+      screen: async () => SCREEN_ROWS
+    })
+    hub.start()
+    server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-transcript' })
+    hub.stop()
+  })
+
+  it('stops following on unsubscribe', () => {
+    const { server, feed } = setup()
+    server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
+    expect(feed.active()).toBe(1)
+    server.onFrame('d1', { type: 'unsubscribe' } as never)
+    expect(feed.active()).toBe(0)
+  })
+
+  it('stops following a device whose socket went away', () => {
+    const { server, feed } = setup()
+    server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
+    server.onGone('d1')
+    expect(feed.active()).toBe(0)
+  })
+
+  it('sends appended turns as a delta, not the whole conversation again', () => {
+    const turns = [{ role: 'claude' as const, time: null, text: 'first' }]
+    const server = fakeServer()
+    const statuses = [tabStatus()]
+    const hub = new CompanionHub({
+      server,
+      parked: new ParkedPrompts(),
+      feed: new ConversationFeed({ turnsFor: () => turns, sessionOf: () => 's1' }),
+      snapshots: () => statuses,
+      snapshot: () => statuses[0],
+      injectPrompt: () => {},
+      screen: async () => SCREEN_ROWS
+    })
+    hub.start()
+    server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
+    turns.push({ role: 'claude', time: null, text: 'second' })
+    hub.pushDeltas()
+    expect(server.sent[1].frame).toMatchObject({
+      type: 'conversationDelta',
+      turns: [{ text: 'second' }]
+    })
+    hub.stop()
+  })
+
+  it('hands over a screen snapshot on request', async () => {
+    const { server, screen } = setup()
+    server.onFrame('d1', { type: 'screen', tabId: 't1' } as never)
+    await Promise.resolve()
+    expect(screen).toHaveBeenCalledWith('t1')
+    expect(server.sent[0].frame).toMatchObject({
+      type: 'screen',
+      tabId: 't1',
+      rows: ['> ready', '  waiting for input']
+    })
+  })
+
+  it('says so when the app cannot produce a screen', async () => {
+    const { server, screen } = setup()
+    screen.mockResolvedValueOnce(null)
+    server.onFrame('d1', { type: 'screen', tabId: 't1' } as never)
+    await Promise.resolve()
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-screen' })
+  })
+
+  it('refuses a screen for a tab that does not exist', async () => {
+    const { server, screen } = setup()
+    server.onFrame('d1', { type: 'screen', tabId: 'nope' } as never)
+    await Promise.resolve()
+    expect(screen).not.toHaveBeenCalled()
     expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
   })
 

@@ -5,14 +5,18 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
+import { conversationTurns } from '../conversation-search'
 import { StatusServer } from '../status-server'
 import { buildHooks } from '../hook-config'
 import { reachableAddress } from './bind-address'
 import { DeviceRegistry } from './devices'
+import { ConversationFeed } from './conversation-feed'
 import { CompanionHub } from './hub'
 import { Pairing } from './pairing'
 import { ParkedPrompts } from './parked-prompts'
 import { CompanionServer } from './server'
+
+const SCREEN_ROWS = ['> ready', '  waiting for input']
 
 /**
  * The whole chain, with nothing faked: a real `claude` CLI asks for permission,
@@ -34,6 +38,14 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
     const parked = new ParkedPrompts()
     const devices = new DeviceRegistry(() => join(dir, 'devices.json'))
     const pairing = new Pairing()
+    // The real transcript reader. `sessionId` normally arrives on the statusline,
+    // which needs the packaged forwarder script, so take it from the hook payload
+    // the parked prompt carries instead.
+    let liveSession: string | null = null
+    const feed = new ConversationFeed({
+      turnsFor: (sessionId) => conversationTurns(sessionId),
+      sessionOf: () => liveSession
+    })
     const companion = new CompanionServer({
       devices,
       pairing,
@@ -43,11 +55,18 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
     const hub = new CompanionHub({
       server: companion,
       parked,
+      feed,
       snapshots: () => status.allSnapshots(),
       snapshot: (tabId) => status.snapshot(tabId),
-      injectPrompt: () => {}
+      injectPrompt: () => {},
+      screen: async () => SCREEN_ROWS
     })
     hub.start()
+    const hubOnParked = parked.onParked
+    parked.onParked = (prompt) => {
+      liveSession ??= prompt.sessionId
+      hubOnParked(prompt)
+    }
     status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
     await status.start()
     await companion.start(0)
@@ -124,6 +143,14 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
       tui.on('close', () => resolve(tuiOut))
     })
     expect(finished).toContain('tool ran: True')
+
+    // 7. the conversation itself reaches the client, read from the transcript
+    expect(liveSession).toBeTruthy()
+    client.stdin.write('w spike\n')
+    await waitFor(/── conversation spike/, 20_000)
+    await waitFor(/mkdir spike-proof/, 20_000)
+    // the prompt that started it all, as a user turn
+    expect(clientOut).toMatch(/› user/)
 
     client.kill()
     companion.stop()

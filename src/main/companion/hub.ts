@@ -1,8 +1,13 @@
 import { basename } from 'path'
 import type { ClientFrame, CompanionSession } from '../../shared/companion'
 import type { TabId, TabStatus } from '../../shared/types'
+import type { ConversationFeed } from './conversation-feed'
 import type { ParkedPrompts } from './parked-prompts'
 import type { CompanionServer } from './server'
+
+/** How often a followed conversation is checked for new turns. A poll is a stat
+ *  plus a tail read of whatever bytes were appended, so this is cheap. */
+export const FEED_POLL_MS = 1_000
 
 /** Project a tab's status into what a phone needs to render a list row. */
 export function toSession(status: TabStatus, pendingPromptIds: string[]): CompanionSession {
@@ -23,10 +28,13 @@ export function toSession(status: TabStatus, pendingPromptIds: string[]): Compan
 export interface CompanionHubDeps {
   server: CompanionServer
   parked: ParkedPrompts
+  feed: ConversationFeed
   snapshots: () => TabStatus[]
   snapshot: (tabId: TabId) => TabStatus | null
   /** The app's own prompt-box path — bracketed paste, then Enter. */
   injectPrompt: (tabId: TabId, text: string) => void
+  /** The tab's visible terminal rows, or null if the renderer did not answer. */
+  screen: (tabId: TabId) => Promise<string[] | null>
   /** Anything that changes whether a device is waiting on live work. */
   onChanged?: () => void
 }
@@ -41,6 +49,8 @@ export interface CompanionHubDeps {
  * nothing.
  */
 export class CompanionHub {
+  private pollTimer: NodeJS.Timeout | null = null
+
   constructor(private readonly deps: CompanionHubDeps) {}
 
   start(): void {
@@ -62,7 +72,53 @@ export class CompanionHub {
       if (count === 0) parked.releaseAll('released')
       this.deps.onChanged?.()
     }
+    server.onGone = (deviceId) => {
+      this.deps.feed.unsubscribe(deviceId)
+      this.stopPollingIfIdle()
+    }
     server.onFrame = (deviceId, frame) => this.handle(deviceId, frame)
+  }
+
+  stop(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer)
+    this.pollTimer = null
+  }
+
+  /** Only run the timer while someone is actually following a conversation. */
+  private startPolling(): void {
+    if (this.pollTimer) return
+    this.pollTimer = setInterval(() => this.pushDeltas(), FEED_POLL_MS)
+    // never hold the process open on account of a feed
+    this.pollTimer.unref?.()
+  }
+
+  private stopPollingIfIdle(): void {
+    if (this.deps.feed.active() > 0 || !this.pollTimer) return
+    clearInterval(this.pollTimer)
+    this.pollTimer = null
+  }
+
+  /** Exposed for tests; the timer calls this. */
+  pushDeltas(): void {
+    for (const delta of this.deps.feed.poll()) {
+      this.deps.server.sendTo(
+        delta.deviceId,
+        delta.reset
+          ? {
+              type: 'conversation',
+              tabId: delta.tabId,
+              turns: delta.turns,
+              cursor: delta.cursor,
+              before: delta.before
+            }
+          : {
+              type: 'conversationDelta',
+              tabId: delta.tabId,
+              turns: delta.turns,
+              cursor: delta.cursor
+            }
+      )
+    }
   }
 
   /** A tab changed — push just that session rather than the whole list. */
@@ -100,6 +156,72 @@ export class CompanionHub {
           message: known
             ? 'that prompt cannot carry this kind of answer'
             : 'that prompt is no longer waiting'
+        })
+        return
+      }
+
+      case 'subscribe': {
+        const status = this.deps.snapshot(frame.tabId)
+        if (!status) {
+          server.sendTo(deviceId, {
+            type: 'error',
+            code: 'no-such-session',
+            message: 'no such tab'
+          })
+          return
+        }
+        const win = this.deps.feed.subscribe(deviceId, frame.tabId)
+        this.startPolling()
+        if (win) {
+          server.sendTo(deviceId, {
+            type: 'conversation',
+            tabId: frame.tabId,
+            turns: win.turns,
+            cursor: win.cursor,
+            before: win.before
+          })
+        } else {
+          // Following it anyway — the transcript appears once the session speaks.
+          server.sendTo(deviceId, {
+            type: 'error',
+            code: 'no-transcript',
+            message: 'nothing written yet; following it'
+          })
+        }
+        return
+      }
+
+      case 'unsubscribe':
+        this.deps.feed.unsubscribe(deviceId)
+        this.stopPollingIfIdle()
+        return
+
+      case 'screen': {
+        const status = this.deps.snapshot(frame.tabId)
+        if (!status) {
+          server.sendTo(deviceId, {
+            type: 'error',
+            code: 'no-such-session',
+            message: 'no such tab'
+          })
+          return
+        }
+        void this.deps.screen(frame.tabId).then((rows) => {
+          if (!rows) {
+            // The window is closed or busy; a snapshot only exists in the UI.
+            server.sendTo(deviceId, {
+              type: 'error',
+              code: 'no-screen',
+              message: 'the app did not answer with a screen'
+            })
+            return
+          }
+          server.sendTo(deviceId, {
+            type: 'screen',
+            tabId: frame.tabId,
+            rows,
+            at: Date.now()
+          })
         })
         return
       }

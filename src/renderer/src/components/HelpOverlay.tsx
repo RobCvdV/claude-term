@@ -221,6 +221,17 @@ function Guide(): React.JSX.Element {
           wire.
         </p>
         <p>
+          It can also ask for a snapshot of a tab&apos;s terminal screen — the rows as they are
+          right now, not a replay. The TUI redraws in place, so there is no byte stream worth
+          sending and no scrollback behind it; the screen itself is the whole story.
+        </p>
+        <p>
+          A device can follow a session&apos;s conversation as it happens. That comes from the
+          transcript rather than the terminal — the TUI keeps no scrollback, so the terminal has no
+          history to send — and it shares the parse ⌘F already does, so following a session costs
+          almost nothing.
+        </p>
+        <p>
           When a session asks for permission, the request is <i>held open</i> while your phone
           decides — but Claude Code has already drawn its dialog in the terminal, so the prompt is
           always still answerable at the desk. Whichever side answers first wins and the other

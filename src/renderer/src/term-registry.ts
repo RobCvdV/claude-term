@@ -160,6 +160,27 @@ function bottomRows(tabId: TabId, count = SCAN_ROWS): string[] {
 }
 
 /**
+ * The whole visible screen of a tab, top row first.
+ *
+ * This — not a stream of PTY bytes — is what "what is this session doing right
+ * now" means for a full-screen TUI: Claude Code redraws in place on the
+ * alternate screen buffer, so its byte stream is mostly cursor moves and spinner
+ * frames, and there is no scrollback behind it to send either.
+ */
+export function visibleScreen(tabId: TabId): string[] {
+  const term = entries.get(tabId)?.term
+  if (!term) return []
+  const buf = term.buffer.active
+  const rows: string[] = []
+  for (let y = buf.baseY; y < buf.baseY + term.rows; y++) {
+    rows.push(buf.getLine(y)?.translateToString(true) ?? '')
+  }
+  // a TUI leaves the unused bottom of the screen blank
+  while (rows.length && !rows[rows.length - 1].trim()) rows.pop()
+  return rows
+}
+
+/**
  * A cell belongs to Claude Code's grayed-out suggestion (not typed text) when
  * it's rendered dim/faint, or in a low-brightness gray — the styles a TUI uses
  * for placeholder/ghost text. Kept as one predicate so it's the single knob to

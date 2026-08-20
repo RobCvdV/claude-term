@@ -78,6 +78,21 @@ export const promptOutcome = z.enum([
 ])
 export type PromptOutcome = z.infer<typeof promptOutcome>
 
+/** One content block of one transcript record — see transcript-search.ts. */
+export const conversationTurn = z.object({
+  role: z.enum(['user', 'claude', 'tool', 'thinking']),
+  /** set when the turn is a tool call */
+  tool: z.string().optional(),
+  time: z.string().nullable(),
+  text: z.string()
+})
+export type ConversationTurn = z.infer<typeof conversationTurn>
+
+/** A turn longer than this is cut — a phone is not the place to read 200KB. */
+export const MAX_TURN_CHARS = 4_000
+/** How much history a fresh subscription is handed. */
+export const CONVERSATION_WINDOW = 40
+
 export const activityState = z.enum([
   'starting',
   'busy',
@@ -129,6 +144,11 @@ export const clientFrame = z.discriminatedUnion('type', [
     pushToken: z.string().max(256).optional()
   }),
   z.object({ type: z.literal('sessions') }),
+  /** Follow a session's conversation. One session at a time, per device. */
+  z.object({ type: z.literal('subscribe'), tabId: z.string() }),
+  z.object({ type: z.literal('unsubscribe') }),
+  /** What is on that tab's screen right now — a snapshot, not a stream. */
+  z.object({ type: z.literal('screen'), tabId: z.string() }),
   z.object({ type: z.literal('decide'), promptId: z.string(), decision: promptDecision }),
   /** Send a new prompt to a session's prompt box. */
   z.object({ type: z.literal('submit'), tabId: z.string(), text: z.string().min(1).max(32_000) }),
@@ -152,6 +172,19 @@ export type ServerFrame =
   | { type: 'sessions'; sessions: CompanionSession[] }
   /** One session changed — sent instead of the whole list. */
   | { type: 'session'; session: CompanionSession }
+  /** The window a fresh subscription starts from, oldest turn first. */
+  | {
+      type: 'conversation'
+      tabId: string
+      turns: ConversationTurn[]
+      cursor: number
+      /** turns that exist before this window */
+      before: number
+    }
+  /** Turns appended since `cursor` was issued. */
+  | { type: 'conversationDelta'; tabId: string; turns: ConversationTurn[]; cursor: number }
+  /** The tab's visible terminal rows, top first. */
+  | { type: 'screen'; tabId: string; rows: string[]; at: number }
   | { type: 'prompt'; prompt: PendingPrompt }
   | { type: 'promptResolved'; promptId: string; tabId: string; outcome: PromptOutcome }
   | { type: 'pong' }
@@ -163,6 +196,8 @@ export type CompanionErrorCode =
   | 'bad-signature'
   | 'unknown-device'
   | 'no-such-session'
+  | 'no-transcript'
+  | 'no-screen'
   | 'no-such-prompt'
   | 'undeliverable'
   | 'malformed'
