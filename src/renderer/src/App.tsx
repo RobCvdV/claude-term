@@ -627,6 +627,16 @@ export default function App(): React.JSX.Element {
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
     { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
+    {
+      id: 'companion-pair',
+      label: 'Pair a phone…',
+      run: () => void window.claudeTerm.companionPair()
+    },
+    {
+      id: 'companion-devices',
+      label: 'Paired phones…',
+      run: () => void window.claudeTerm.companionManageDevices()
+    },
     { id: 'howto', label: 'Quick How-To', shortcut: '⌘/', run: () => setHelpSection('howto') },
     { id: 'guide', label: 'User Guide', run: () => setHelpSection('guide') },
     ...(activeId

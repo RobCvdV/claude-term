@@ -96,6 +96,8 @@ export interface ClaudeTermApi {
   ): Promise<{ ok: true; booked: BookedWorklog[] } | { ok: false; error: string }>
   /** post worklogs straight to Jira; per-entry results, failures don't abort */
   jiraBook(entries: WorklogPlanEntry[]): Promise<BookResult[]>
+  companionPair(): Promise<void>
+  companionManageDevices(): Promise<void>
   volumeGet(): Promise<VolumeState>
   volumeSet(op: VolumeOp): Promise<VolumeState>
   /** Harper's wasm bytes for the grammar checker; null when not installed */
@@ -221,6 +223,8 @@ const api: ClaudeTermApi = {
   jiraDisconnect: () => ipcRenderer.invoke('jira:disconnect'),
   jiraBooked: (rangeDays) => ipcRenderer.invoke('jira:booked', rangeDays),
   jiraBook: (entries) => ipcRenderer.invoke('jira:book', entries),
+  companionPair: () => ipcRenderer.invoke('companion:pair'),
+  companionManageDevices: () => ipcRenderer.invoke('companion:manageDevices'),
   volumeGet: () => ipcRenderer.invoke('volume:get'),
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   grammarWasm: () => ipcRenderer.invoke('grammar:wasm'),

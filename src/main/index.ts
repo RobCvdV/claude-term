@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'path'
+import { readFileSync, writeFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { createServices, registerIpc } from './ipc'
@@ -114,6 +115,9 @@ app.whenReady().then(async () => {
   void loginShellEnv()
 
   await services.status.start()
+  // Reuse the port a paired phone already knows, so reconnecting doesn't need
+  // the QR again. Same trick as status-endpoint.json.
+  await startCompanion()
   registerIpc(services, () => mainWindow)
   createWindow()
   ciPoller.start()
@@ -235,6 +239,33 @@ async function confirmQuit(): Promise<void> {
 // process (SIGABRT in pty.node's ThreadSafeFunction). Idempotent — the quit
 // path can be entered more than once (window close + ⌘Q, update install).
 let shutdownDone: Promise<void> | null = null
+const companionPortFile = (): string => join(app.getPath('userData'), 'companion-endpoint.json')
+
+/** Reuse the port a paired phone already knows, so reconnecting needs no new QR. */
+async function startCompanion(): Promise<void> {
+  let preferred = 0
+  try {
+    const raw = JSON.parse(readFileSync(companionPortFile(), 'utf8')) as { port?: unknown }
+    if (typeof raw.port === 'number') preferred = raw.port
+  } catch {
+    /* first run */
+  }
+  try {
+    await services.companion.start(preferred)
+  } catch (err) {
+    // A companion transport that won't bind must not stop the app from opening.
+    console.error('[companion] could not start:', err)
+    return
+  }
+  if (services.companion.port !== preferred) {
+    try {
+      writeFileSync(companionPortFile(), JSON.stringify({ port: services.companion.port }))
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 function shutdown(): Promise<void> {
   shutdownDone ??= (async () => {
     ciPoller.stop()
@@ -242,6 +273,8 @@ function shutdown(): Promise<void> {
     // hook waits on us for minutes, and a session killed mid-wait would sit
     // there with a dialog nobody answered.
     services.parked.releaseAll('shutdown')
+    services.companion.stop()
+    services.releaseSleepBlocker()
     // Freeze *first*: killing the PTYs makes every tab report its Claude session
     // gone, and those updates would otherwise reach the renderer before its final
     // save — persisting live conversations as "no session" (see StatusServer.freeze).
