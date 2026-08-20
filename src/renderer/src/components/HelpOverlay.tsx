@@ -97,6 +97,9 @@ function HowTo(): React.JSX.Element {
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
+        <Keys k="⌘K">
+          Pair a phone… / Paired phones… — companion access over Tailscale (palette only)
+        </Keys>
       </section>
     </div>
   )
@@ -204,6 +207,26 @@ function Guide(): React.JSX.Element {
           included, and parallel sessions count once. Booking a day <b>settles</b> it up to its last
           activity, whatever you booked it as, so 12h of tracked time booked as 8h leaves nothing to
           book — only work done after that window comes back as unbooked.
+        </p>
+      </section>
+      <section>
+        <h3>Answering prompts from your phone</h3>
+        <p>
+          A companion device can watch a session, answer its prompts and send new ones. It is
+          reachable <b>only over Tailscale</b>: the server binds to the tailnet address and loopback
+          and nothing else, so nothing on the local Wi-Fi can see it. Pairing is a deliberate act —
+          <b>Pair a phone…</b> in ⌘K shows a code good for two minutes and one device, and the phone
+          proves it holds its own key before the host trusts it. <b>Paired phones…</b> lists what is
+          enrolled and revokes any of them on the spot. No password or token is ever sent over the
+          wire.
+        </p>
+        <p>
+          When a session asks for permission, the request is <i>held open</i> while your phone
+          decides — but Claude Code has already drawn its dialog in the terminal, so the prompt is
+          always still answerable at the desk. Whichever side answers first wins and the other
+          retracts. Nothing is ever auto-approved on your behalf: if no phone answers, the prompt
+          simply waits in the terminal exactly as it would have anyway. A held prompt is handed back
+          whenever the last device disconnects, the tab closes, or the app quits.
         </p>
       </section>
       <section>

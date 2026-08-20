@@ -1,6 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  powerSaveBlocker,
+  shell,
+  type MessageBoxOptions
+} from 'electron'
 import { basename, join } from 'path'
-import { homedir } from 'os'
+import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
@@ -13,7 +21,12 @@ import type {
   TabInfo
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
+import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
+import { DeviceRegistry } from './companion/devices'
+import { Pairing } from './companion/pairing'
+import { CompanionServer } from './companion/server'
+import { reachableAddress } from './companion/bind-address'
 import { StatusServer } from './status-server'
 import { listBranches, listBranchRefs, listCommands, listDirs, searchFiles } from './completions'
 import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
@@ -76,6 +89,12 @@ export interface AppServices {
   branches: BranchHistory
   checkpoints: CheckpointStore
   parked: ParkedPrompts
+  companion: CompanionServer
+  devices: DeviceRegistry
+  pairing: Pairing
+  hub: CompanionHub
+  /** Drop the wake lock — called on the way out. */
+  releaseSleepBlocker: () => void
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
@@ -90,6 +109,58 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   // Prompts held open for a companion device. Until one is connected canPark
   // stays false, so every hook is answered instantly exactly as before.
   const parked = new ParkedPrompts()
+  const devices = new DeviceRegistry(() => join(app.getPath('userData'), 'companion-devices.json'))
+  const pairing = new Pairing()
+  const companion = new CompanionServer({
+    devices,
+    pairing,
+    hostName: hostname(),
+    sessions: () => hub.sessionList(),
+    // A valid code already proves whoever scanned it can see this screen; the
+    // dialog is the second pair of eyes, and names the device asking.
+    confirmPairing: async (name) => {
+      const options: MessageBoxOptions = {
+        type: 'question',
+        buttons: ['Pair', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Pair “${name}” with this Mac?`,
+        detail: 'It will be able to read your sessions, answer prompts, and send new ones.'
+      }
+      const win = getWindow()
+      const { response } = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options)
+      return response === 0
+    }
+  })
+  // Sleeping mid-turn would strand a phone waiting on this session, so hold the
+  // machine awake — but only while a device is connected AND work is running.
+  let sleepBlockerId: number | null = null
+  const updateSleepBlocker = (): void => {
+    const wanted = companion.authenticatedCount() > 0 && status.busyCount() > 0
+    if (wanted === (sleepBlockerId !== null)) return
+    if (wanted) sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension')
+    else {
+      powerSaveBlocker.stop(sleepBlockerId!)
+      sleepBlockerId = null
+    }
+  }
+  const releaseSleepBlocker = (): void => {
+    if (sleepBlockerId === null) return
+    powerSaveBlocker.stop(sleepBlockerId)
+    sleepBlockerId = null
+  }
+
+  const hub = new CompanionHub({
+    server: companion,
+    parked,
+    snapshots: () => status.allSnapshots(),
+    snapshot: (tabId) => status.snapshot(tabId),
+    injectPrompt: (tabId, text) => ptys.injectPrompt(tabId, text),
+    onChanged: updateSleepBlocker
+  })
+  hub.start()
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()
@@ -125,6 +196,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
       rate.record(tabStatus.payload)
     }
     send('status:update', tabStatus)
+    hub.publishStatus(tabStatus)
   }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // A branch switch renames the live session (name has no spaces → no quoting).
@@ -148,7 +220,19 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     })
   }
 
-  return { ptys, status, rate, branches, checkpoints, parked }
+  return {
+    ptys,
+    status,
+    rate,
+    branches,
+    checkpoints,
+    parked,
+    companion,
+    devices,
+    pairing,
+    hub,
+    releaseSleepBlocker
+  }
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
@@ -229,6 +313,70 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       return { tabId, cwd: dir, title: basename(dir) || dir }
     }
   )
+
+  const messageBox = async (options: MessageBoxOptions): Promise<number> => {
+    const win = getWindow()
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options)
+    return response
+  }
+
+  // Pairing is a deliberate act: a code exists only while the user has asked for
+  // one, lives two minutes, and enrols exactly one device. Closing this dialog
+  // cancels it, so a code never outlives the screen showing it.
+  ipcMain.handle('companion:pair', async () => {
+    const host = reachableAddress()
+    const { code } = services.pairing.offer()
+    const detail = host
+      ? `Enter this code on your phone, then connect to ${host} on port ${services.companion.port}.\n\nThe code is valid for two minutes and pairs one device.`
+      : `No Tailscale address was found on this Mac, so only this machine can reach the companion right now (127.0.0.1 port ${services.companion.port}).\n\nStart Tailscale and open this dialog again to pair a phone.`
+    await messageBox({
+      type: 'info',
+      buttons: ['Done'],
+      message: code,
+      detail
+    })
+    // whether they paired or gave up, this code is finished
+    services.pairing.cancel()
+  })
+
+  ipcMain.handle('companion:manageDevices', async () => {
+    const devices = services.devices.list()
+    if (devices.length === 0) {
+      await messageBox({
+        type: 'info',
+        buttons: ['OK'],
+        message: 'No phones are paired with this Mac.',
+        detail: 'Use “Pair a phone…” to add one.'
+      })
+      return
+    }
+    const labels = devices.map((d) => d.name)
+    const picked = await messageBox({
+      type: 'info',
+      buttons: [...labels, 'Close'],
+      cancelId: labels.length,
+      defaultId: labels.length,
+      message: `${devices.length} paired ${devices.length === 1 ? 'device' : 'devices'}`,
+      detail: `${services.companion.authenticatedCount()} connected right now.\n\nPick a device to revoke it.`
+    })
+    const device = devices[picked]
+    if (!device) return
+    const confirmed = await messageBox({
+      type: 'warning',
+      buttons: ['Revoke', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Revoke “${device.name}”?`,
+      detail: 'It will be disconnected and will have to pair again from scratch.'
+    })
+    if (confirmed !== 0) return
+    if (services.devices.revoke(device.deviceId)) {
+      // a revoked device must not keep the socket it already has
+      services.companion.dropDevice(device.deviceId)
+    }
+  })
 
   ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
     // Flush the detached windows first (they may prompt to save) while the tab's

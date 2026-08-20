@@ -25,7 +25,20 @@ The Claude UI (shown only while a session runs):
 
 ## How it works
 
-Each tab spawns `claude --settings '<overlay>'` in a PTY. The overlay (per session, never touching `~/.claude/settings.json`) points `statusLine` at a tiny forwarder script (installed into the app's userData dir) that POSTs the statusline JSON to a local HTTP server in the Electron main process, and adds `type: "http"` hooks (SessionStart/UserPromptSubmit/PostToolUse/Stop/Elicitation/SessionEnd) that drive the per-tab activity state, plus `PermissionRequest` and a matcher-scoped `PreToolUse` on a long timeout — those two can be *held open*, which is how a prompt is answered from somewhere other than the terminal (`src/main/hook-config.ts`, `src/main/companion/parked-prompts.ts`). Prompt injection writes bracketed-paste framed text to the PTY followed by `\r`.
+Each tab spawns `claude --settings '<overlay>'` in a PTY. The overlay (per session, never touching `~/.claude/settings.json`) points `statusLine` at a tiny forwarder script (installed into the app's userData dir) that POSTs the statusline JSON to a local HTTP server in the Electron main process, and adds `type: "http"` hooks (SessionStart/UserPromptSubmit/PostToolUse/Stop/Elicitation/SessionEnd) that drive the per-tab activity state, plus `PermissionRequest` and a matcher-scoped `PreToolUse` on a long timeout — those two can be _held open_, which is how a prompt is answered from somewhere other than the terminal (`src/main/hook-config.ts`, `src/main/companion/parked-prompts.ts`). Prompt injection writes bracketed-paste framed text to the PTY followed by `\r`.
+
+## Companion access (phone)
+
+A companion device can list the host's sessions, answer their prompts and send new ones. It is reachable **only over Tailscale** — the server binds to the tailnet address plus loopback and never `0.0.0.0`, so nothing on the local network can reach it. WireGuard supplies the encryption; the app layer answers "which of my devices is this, and is this request fresh?" with an Ed25519 challenge/response, so **no token or password is ever sent over the wire**.
+
+Pairing is deliberate: **⌘K → Pair a phone…** shows a code valid for two minutes that enrols exactly one device, the device proves possession of its own key, and the host asks before trusting it. **⌘K → Paired phones…** lists and revokes. Revoking drops the socket immediately. The registry lives in `userData/companion-devices.json` (0600) and holds public keys only.
+
+There is no phone app yet — `scripts/companion-client.mjs` stands in for one:
+
+```bash
+node scripts/companion-client.mjs pair --host 100.x.y.z --port <port> --code ABCD2345
+node scripts/companion-client.mjs watch     # prints sessions + prompts; reads commands on stdin
+```
 
 ## Develop
 
