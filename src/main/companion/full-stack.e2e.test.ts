@@ -16,6 +16,8 @@ import { Pairing } from './pairing'
 import { ParkedPrompts } from './parked-prompts'
 import { CompanionServer } from './server'
 
+const SCREEN_ROWS = ['> ready', '  waiting for input']
+
 /**
  * The whole chain, with nothing faked: a real `claude` CLI asks for permission,
  * claude-term's status server holds it open, the prompt travels over the real
@@ -56,7 +58,8 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
       feed,
       snapshots: () => status.allSnapshots(),
       snapshot: (tabId) => status.snapshot(tabId),
-      injectPrompt: () => {}
+      injectPrompt: () => {},
+      screen: async () => SCREEN_ROWS
     })
     hub.start()
     const hubOnParked = parked.onParked

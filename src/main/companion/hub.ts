@@ -33,6 +33,8 @@ export interface CompanionHubDeps {
   snapshot: (tabId: TabId) => TabStatus | null
   /** The app's own prompt-box path — bracketed paste, then Enter. */
   injectPrompt: (tabId: TabId, text: string) => void
+  /** The tab's visible terminal rows, or null if the renderer did not answer. */
+  screen: (tabId: TabId) => Promise<string[] | null>
   /** Anything that changes whether a device is waiting on live work. */
   onChanged?: () => void
 }
@@ -193,6 +195,36 @@ export class CompanionHub {
         this.deps.feed.unsubscribe(deviceId)
         this.stopPollingIfIdle()
         return
+
+      case 'screen': {
+        const status = this.deps.snapshot(frame.tabId)
+        if (!status) {
+          server.sendTo(deviceId, {
+            type: 'error',
+            code: 'no-such-session',
+            message: 'no such tab'
+          })
+          return
+        }
+        void this.deps.screen(frame.tabId).then((rows) => {
+          if (!rows) {
+            // The window is closed or busy; a snapshot only exists in the UI.
+            server.sendTo(deviceId, {
+              type: 'error',
+              code: 'no-screen',
+              message: 'the app did not answer with a screen'
+            })
+            return
+          }
+          server.sendTo(deviceId, {
+            type: 'screen',
+            tabId: frame.tabId,
+            rows,
+            at: Date.now()
+          })
+        })
+        return
+      }
 
       case 'submit': {
         const status = this.deps.snapshot(frame.tabId)

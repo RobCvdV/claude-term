@@ -22,6 +22,7 @@ import type {
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
 import { ConversationFeed } from './companion/conversation-feed'
+import { ScreenRequests } from './screen-requests'
 import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
 import { DeviceRegistry } from './companion/devices'
@@ -94,6 +95,7 @@ export interface AppServices {
   devices: DeviceRegistry
   pairing: Pairing
   hub: CompanionHub
+  screens: ScreenRequests
   /** Drop the wake lock — called on the way out. */
   releaseSleepBlocker: () => void
 }
@@ -153,6 +155,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     sleepBlockerId = null
   }
 
+  // Only the renderer's xterm knows what is on a tab's screen, so asking is a
+  // round trip over the otherwise one-way main→renderer channel.
+  const screens = new ScreenRequests((requestId, tabId) => send('screen:request', requestId, tabId))
   const feed = new ConversationFeed({
     turnsFor: (sessionId) => conversationTurns(sessionId),
     sessionOf: (tabId) => status.snapshot(tabId)?.sessionId ?? null
@@ -164,6 +169,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     snapshots: () => status.allSnapshots(),
     snapshot: (tabId) => status.snapshot(tabId),
     injectPrompt: (tabId, text) => ptys.injectPrompt(tabId, text),
+    screen: (tabId) => screens.request(tabId),
     onChanged: updateSleepBlocker
   })
   hub.start()
@@ -237,6 +243,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     devices,
     pairing,
     hub,
+    screens,
     releaseSleepBlocker
   }
 }
@@ -832,6 +839,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   ipcMain.handle('branches:workspace', (_e, tabId: TabId) =>
     workspaceBranchGroups(status.snapshot(tabId), listBranchRefs)
+  )
+
+  ipcMain.on('screen:reply', (_e, requestId: string, rows: string[]) =>
+    services.screens.resolve(requestId, rows)
   )
 
   ipcMain.on('pty:input', (_e, tabId: TabId, data: string) => ptys.write(tabId, data))

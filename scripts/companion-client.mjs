@@ -14,6 +14,7 @@
 //   p <tabId> <text>     send a new prompt
 //   w <tabId>            follow that session's conversation
 //   u                    stop following
+//   v <tabId>            snapshot that tab's terminal screen
 //   f <tabId>            claim to be looking at that tab (suppresses its push)
 //   b                    claim to be backgrounded
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto'
@@ -220,6 +221,10 @@ if (command === 'pair') {
         case 'conversationDelta':
           frame.turns.forEach((t) => console.log(describeTurn(t)))
           break
+        case 'screen':
+          console.log(`\n── screen ${frame.tabId.slice(0, 8)} · ${frame.rows.length} rows ──`)
+          frame.rows.forEach((r) => console.log(`  ${r}`))
+          break
         case 'prompt':
           seenPrompts.set(frame.prompt.id, frame.prompt)
           console.log(describePrompt(frame.prompt))
@@ -267,7 +272,7 @@ if (command === 'pair') {
     const [verb, rawId, ...rest] = line.trim().split(/\s+/)
     const text = rest.join(' ')
     const id =
-      verb === 'p' || verb === 'f' || verb === 'w'
+      verb === 'p' || verb === 'f' || verb === 'w' || verb === 'v'
         ? resolve(seenSessions, rawId, 'sessions')
         : resolve(seenPrompts, rawId, 'prompts')
     if (verb === 's') send({ type: 'sessions' })
@@ -280,6 +285,7 @@ if (command === 'pair') {
     else if (verb === 'p') send({ type: 'submit', tabId: id, text })
     else if (verb === 'w') send({ type: 'subscribe', tabId: id })
     else if (verb === 'u') send({ type: 'unsubscribe' })
+    else if (verb === 'v') send({ type: 'screen', tabId: id })
     else if (verb === 'f') send({ type: 'appState', foreground: true, tabId: id })
     else if (verb === 'b') send({ type: 'appState', foreground: false })
     else if (verb) console.log(`? unknown command "${verb}"`)

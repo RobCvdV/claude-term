@@ -96,6 +96,8 @@ export interface ClaudeTermApi {
   ): Promise<{ ok: true; booked: BookedWorklog[] } | { ok: false; error: string }>
   /** post worklogs straight to Jira; per-entry results, failures don't abort */
   jiraBook(entries: WorklogPlanEntry[]): Promise<BookResult[]>
+  onScreenRequest(cb: (requestId: string, tabId: TabId) => void): () => void
+  screenReply(requestId: string, rows: string[]): void
   companionPair(): Promise<void>
   companionManageDevices(): Promise<void>
   volumeGet(): Promise<VolumeState>
@@ -223,6 +225,9 @@ const api: ClaudeTermApi = {
   jiraDisconnect: () => ipcRenderer.invoke('jira:disconnect'),
   jiraBooked: (rangeDays) => ipcRenderer.invoke('jira:booked', rangeDays),
   jiraBook: (entries) => ipcRenderer.invoke('jira:book', entries),
+  onScreenRequest: (cb) => subscribe('screen:request', cb),
+  screenReply: (requestId: string, rows: string[]) =>
+    ipcRenderer.send('screen:reply', requestId, rows),
   companionPair: () => ipcRenderer.invoke('companion:pair'),
   companionManageDevices: () => ipcRenderer.invoke('companion:manageDevices'),
   volumeGet: () => ipcRenderer.invoke('volume:get'),

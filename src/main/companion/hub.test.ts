@@ -6,6 +6,8 @@ import { CompanionHub, toSession } from './hub'
 import { ParkedPrompts, type ParkedResponse } from './parked-prompts'
 import type { CompanionServer } from './server'
 
+const SCREEN_ROWS = ['> ready', '  waiting for input']
+
 function tabStatus(over: Partial<TabStatus> = {}): TabStatus {
   return {
     tabId: 't1',
@@ -72,10 +74,12 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
   parked: ParkedPrompts
   feed: ConversationFeed
   injectPrompt: ReturnType<typeof vi.fn>
+  screen: ReturnType<typeof vi.fn>
 } {
   const server = fakeServer()
   const parked = new ParkedPrompts()
   const injectPrompt = vi.fn()
+  const screen = vi.fn(async () => SCREEN_ROWS as string[] | null)
   const feed = new ConversationFeed({
     turnsFor: () => [{ role: 'claude', time: null, text: 'hello there' }],
     sessionOf: (tabId) => statuses.find((s) => s.tabId === tabId)?.sessionId ?? null
@@ -86,10 +90,11 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     feed,
     snapshots: () => statuses,
     snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
-    injectPrompt
+    injectPrompt,
+    screen
   })
   hub.start()
-  return { hub, server, parked, feed, injectPrompt }
+  return { hub, server, parked, feed, injectPrompt, screen }
 }
 
 /** Park a prompt and return its id. */
@@ -285,7 +290,8 @@ describe('CompanionHub', () => {
       feed: new ConversationFeed({ turnsFor: () => null, sessionOf: () => 's1' }),
       snapshots: () => statuses,
       snapshot: () => statuses[0],
-      injectPrompt: () => {}
+      injectPrompt: () => {},
+      screen: async () => SCREEN_ROWS
     })
     hub.start()
     server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
@@ -318,7 +324,8 @@ describe('CompanionHub', () => {
       feed: new ConversationFeed({ turnsFor: () => turns, sessionOf: () => 's1' }),
       snapshots: () => statuses,
       snapshot: () => statuses[0],
-      injectPrompt: () => {}
+      injectPrompt: () => {},
+      screen: async () => SCREEN_ROWS
     })
     hub.start()
     server.onFrame('d1', { type: 'subscribe', tabId: 't1' } as never)
@@ -329,6 +336,34 @@ describe('CompanionHub', () => {
       turns: [{ text: 'second' }]
     })
     hub.stop()
+  })
+
+  it('hands over a screen snapshot on request', async () => {
+    const { server, screen } = setup()
+    server.onFrame('d1', { type: 'screen', tabId: 't1' } as never)
+    await Promise.resolve()
+    expect(screen).toHaveBeenCalledWith('t1')
+    expect(server.sent[0].frame).toMatchObject({
+      type: 'screen',
+      tabId: 't1',
+      rows: ['> ready', '  waiting for input']
+    })
+  })
+
+  it('says so when the app cannot produce a screen', async () => {
+    const { server, screen } = setup()
+    screen.mockResolvedValueOnce(null)
+    server.onFrame('d1', { type: 'screen', tabId: 't1' } as never)
+    await Promise.resolve()
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-screen' })
+  })
+
+  it('refuses a screen for a tab that does not exist', async () => {
+    const { server, screen } = setup()
+    server.onFrame('d1', { type: 'screen', tabId: 'nope' } as never)
+    await Promise.resolve()
+    expect(screen).not.toHaveBeenCalled()
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
   })
 
   it('pushes a single session on a status change', () => {

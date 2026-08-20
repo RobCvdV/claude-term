@@ -147,6 +147,8 @@ export const clientFrame = z.discriminatedUnion('type', [
   /** Follow a session's conversation. One session at a time, per device. */
   z.object({ type: z.literal('subscribe'), tabId: z.string() }),
   z.object({ type: z.literal('unsubscribe') }),
+  /** What is on that tab's screen right now — a snapshot, not a stream. */
+  z.object({ type: z.literal('screen'), tabId: z.string() }),
   z.object({ type: z.literal('decide'), promptId: z.string(), decision: promptDecision }),
   /** Send a new prompt to a session's prompt box. */
   z.object({ type: z.literal('submit'), tabId: z.string(), text: z.string().min(1).max(32_000) }),
@@ -181,6 +183,8 @@ export type ServerFrame =
     }
   /** Turns appended since `cursor` was issued. */
   | { type: 'conversationDelta'; tabId: string; turns: ConversationTurn[]; cursor: number }
+  /** The tab's visible terminal rows, top first. */
+  | { type: 'screen'; tabId: string; rows: string[]; at: number }
   | { type: 'prompt'; prompt: PendingPrompt }
   | { type: 'promptResolved'; promptId: string; tabId: string; outcome: PromptOutcome }
   | { type: 'pong' }
@@ -193,6 +197,7 @@ export type CompanionErrorCode =
   | 'unknown-device'
   | 'no-such-session'
   | 'no-transcript'
+  | 'no-screen'
   | 'no-such-prompt'
   | 'undeliverable'
   | 'malformed'
