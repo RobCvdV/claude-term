@@ -238,6 +238,10 @@ let shutdownDone: Promise<void> | null = null
 function shutdown(): Promise<void> {
   shutdownDone ??= (async () => {
     ciPoller.stop()
+    // Hand every held prompt back to its session before anything else: a parked
+    // hook waits on us for minutes, and a session killed mid-wait would sit
+    // there with a dialog nobody answered.
+    services.parked.releaseAll('shutdown')
     // Freeze *first*: killing the PTYs makes every tab report its Claude session
     // gone, and those updates would otherwise reach the renderer before its final
     // save — persisting live conversations as "no session" (see StatusServer.freeze).

@@ -21,6 +21,7 @@ import { attachedActivity } from './attached-activity'
 import { transcriptPathFor } from './session-home'
 import { readJobState } from './agents'
 import { settingsAddedDirs } from './project-dirs'
+import type { ParkedResponse } from './companion/parked-prompts'
 
 const GIT_CACHE_MS = 5_000
 const GIT_TIMER_MS = 10_000
@@ -116,6 +117,12 @@ export class StatusServer {
    *  working-tree checkpoint, before any edit of that turn lands. */
   onTurnStart: (tabId: TabId, cwd: string) => void = () => {}
 
+  /** Set by ipc.ts. Offers a hook whose response could decide a prompt; if it
+   *  returns true the response has been taken over and the answer is owed by
+   *  whoever parked it. Replying here instead would tell the session "no
+   *  decision" and drop the prompt. */
+  parkHook: (tabId: TabId, evt: HookEvent, res: ParkedResponse) => boolean = () => false
+
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
@@ -128,19 +135,37 @@ export class StatusServer {
       const chunks: Buffer[] = []
       req.on('data', (c) => chunks.push(c))
       req.on('end', () => {
-        res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+        // "no decision" — the session carries on as if we weren't here
+        const reply = (): void => {
+          if (res.writableEnded) return
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+        }
         let body: unknown
         try {
           body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
         } catch {
+          reply()
           return
         }
         const target = this.resolveTab(tabId, (body as { session_id?: string }).session_id)
-        if (url.pathname === '/statusline') {
-          this.handleStatusline(target, body as StatuslinePayload)
-        } else if (url.pathname === '/hook') {
-          this.handleHook(target, body as HookEvent)
+        if (url.pathname !== '/hook') {
+          reply()
+          if (url.pathname === '/statusline') {
+            this.handleStatusline(target, body as StatuslinePayload)
+          }
+          return
         }
+        const evt = body as HookEvent
+        // Activity state first, so the tab lights up whether or not a companion
+        // device takes the prompt over.
+        try {
+          this.handleHook(target, evt)
+        } catch {
+          // Deciding hooks wait up to DECIDING_TIMEOUT_S for us, so a bug in
+          // here must never be the reason a session hangs.
+        }
+        if (!this.parkHook(target, evt, res)) reply()
       })
     })
     const listen = (port: number): Promise<number> =>
