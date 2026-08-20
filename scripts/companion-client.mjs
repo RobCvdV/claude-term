@@ -178,15 +178,22 @@ if (command === 'pair') {
         case 'ready':
           flush()
           console.log(`connected as “${frame.name}” · ${frame.sessions.length} session(s)`)
-          frame.sessions.forEach((s) => console.log(describeSession(s)))
+          frame.sessions.forEach((s) => {
+            seenSessions.set(s.tabId, s)
+            console.log(describeSession(s))
+          })
           console.log(
             '\ncommands: s | a <id> | d <id> [why] | t <id> <text> | r <id> | p <tab> <text>'
           )
           break
         case 'sessions':
-          frame.sessions.forEach((s) => console.log(describeSession(s)))
+          frame.sessions.forEach((s) => {
+            seenSessions.set(s.tabId, s)
+            console.log(describeSession(s))
+          })
           break
         case 'session':
+          seenSessions.set(frame.session.tabId, frame.session)
           console.log(`~ ${describeSession(frame.session).trim()}`)
           break
         case 'prompt':
@@ -206,15 +213,15 @@ if (command === 'pair') {
     }
   )
 
-  // Prompt ids are UUIDs but only their first 8 chars are printed, so resolve
-  // whatever prefix was typed against the prompts actually seen.
+  // Prompt and tab ids are UUIDs but only their first 8 chars are ever printed,
+  // so resolve whatever prefix was typed against what has actually been seen.
   const seenPrompts = new Map()
-  const resolveId = (prefix) => {
-    if (!prefix) return prefix
-    if (seenPrompts.has(prefix)) return prefix
-    const hits = [...seenPrompts.keys()].filter((id) => id.startsWith(prefix))
+  const seenSessions = new Map()
+  const resolve = (known, prefix, what) => {
+    if (!prefix || known.has(prefix)) return prefix
+    const hits = [...known.keys()].filter((id) => id.startsWith(prefix))
     if (hits.length === 1) return hits[0]
-    if (hits.length > 1) console.log(`? "${prefix}" matches ${hits.length} prompts`)
+    if (hits.length > 1) console.log(`? "${prefix}" matches ${hits.length} ${what}`)
     return prefix
   }
 
@@ -235,7 +242,10 @@ if (command === 'pair') {
   createInterface({ input: process.stdin }).on('line', (line) => {
     const [verb, rawId, ...rest] = line.trim().split(/\s+/)
     const text = rest.join(' ')
-    const id = resolveId(rawId)
+    const id =
+      verb === 'p' || verb === 'f'
+        ? resolve(seenSessions, rawId, 'sessions')
+        : resolve(seenPrompts, rawId, 'prompts')
     if (verb === 's') send({ type: 'sessions' })
     else if (verb === 'a') send({ type: 'decide', promptId: id, decision: { kind: 'allow' } })
     else if (verb === 'd')
