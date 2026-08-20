@@ -71,6 +71,8 @@ export class CompanionServer {
   onFrame: (deviceId: string, frame: ClientFrame) => void = () => {}
   /** Set by the hub: the number of authenticated devices changed. */
   onPresence: (count: number) => void = () => {}
+  /** Set by the hub: this device's socket is gone (so drop what it was following). */
+  onGone: (deviceId: string) => void = () => {}
 
   constructor(private readonly deps: CompanionServerDeps) {}
 
@@ -322,9 +324,13 @@ export class CompanionServer {
 
   private forget(client: Client): void {
     if (client.authTimer) clearTimeout(client.authTimer)
-    const wasAuthed = client.deviceId !== null
+    const deviceId = client.deviceId
     if (!this.clients.delete(client)) return
-    if (wasAuthed) this.onPresence(this.authenticatedCount())
+    if (deviceId === null) return
+    // A reconnect supersedes the old socket, so only report the device as gone
+    // once nothing is holding it any more.
+    if (![...this.clients].some((c) => c.deviceId === deviceId)) this.onGone(deviceId)
+    this.onPresence(this.authenticatedCount())
   }
 }
 

@@ -21,6 +21,7 @@ import type {
   TabInfo
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
+import { ConversationFeed } from './companion/conversation-feed'
 import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
 import { DeviceRegistry } from './companion/devices'
@@ -66,7 +67,7 @@ import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { sessionDoing } from './session-summary'
-import { searchConversation } from './conversation-search'
+import { searchConversation, conversationTurns } from './conversation-search'
 import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
@@ -152,9 +153,14 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     sleepBlockerId = null
   }
 
+  const feed = new ConversationFeed({
+    turnsFor: (sessionId) => conversationTurns(sessionId),
+    sessionOf: (tabId) => status.snapshot(tabId)?.sessionId ?? null
+  })
   const hub = new CompanionHub({
     server: companion,
     parked,
+    feed,
     snapshots: () => status.allSnapshots(),
     snapshot: (tabId) => status.snapshot(tabId),
     injectPrompt: (tabId, text) => ptys.injectPrompt(tabId, text),

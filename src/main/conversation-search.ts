@@ -95,6 +95,23 @@ function touch(path: string, entry: Entry): ConvoTurn[] {
 }
 
 /**
+ * Every turn of `sessionId`'s conversation, oldest first, or null when it has no
+ * transcript yet. Shares the incremental parse above, so a caller that polls for
+ * new turns costs a tail read rather than a full re-parse — and pays nothing for
+ * what ⌘F already read.
+ *
+ * The array is the cache's own, so treat it as read-only and remember that it
+ * grows in place: an index into it is a stable cursor.
+ */
+export function conversationTurns(
+  sessionId: string,
+  projectsDir = join(homedir(), '.claude', 'projects')
+): readonly ConvoTurn[] | null {
+  const path = transcriptPathFor(sessionId, projectsDir)
+  return path ? turnsFor(path) : null
+}
+
+/**
  * Turns of `sessionId`'s conversation containing `query`, newest first.
  * `found` is false when the session has no transcript to search.
  */

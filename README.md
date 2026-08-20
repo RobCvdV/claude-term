@@ -40,6 +40,8 @@ node scripts/companion-client.mjs pair --host 100.x.y.z --port <port> --code ABC
 node scripts/companion-client.mjs watch     # prints sessions + prompts; reads commands on stdin
 ```
 
+A device can also **follow a session's conversation** (`w <tab>` in the client). That is read from the session's transcript, not from the terminal — Claude Code draws on the alternate screen buffer, which keeps no scrollback, so the terminal genuinely does not have the history. Turns are append-only, so a follower holds an index into them as its cursor and each poll costs a stat plus a read of the bytes appended since; the parse cache is shared with ⌘F, so following a session the user is also searching costs nothing extra.
+
 ## Develop
 
 ```bash
