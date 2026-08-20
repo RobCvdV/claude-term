@@ -34,25 +34,36 @@ open(os.path.join(fixture, "readme.md"), "w").write("hello spike\n")
 
 log = os.path.join(run, "hooks.jsonl")
 portfile = os.path.join(run, "port")
-env = dict(os.environ, SPIKE_LOG=log, SPIKE_POLICY=policy,
-           SPIKE_DELAY_MS=delay, SPIKE_PORT_FILE=portfile)
-srv = subprocess.Popen(["node", os.path.join(HERE, "hook-server.mjs")],
-                       env=env, stdout=open(os.path.join(run, "server.out"), "w"),
-                       stderr=subprocess.STDOUT)
-for _ in range(50):
-    if os.path.exists(portfile) and open(portfile).read().strip():
-        break
-    time.sleep(0.1)
-port = open(portfile).read().strip()
+# An external driver (see status-server.e2e.test.ts) can supply the real app's
+# own endpoint instead, so the CLI talks to claude-term rather than to the stub.
+external_url = os.environ.get("SPIKE_HOOK_URL")
+srv = None
+if external_url:
+    port = "external"
+else:
+    env = dict(os.environ, SPIKE_LOG=log, SPIKE_POLICY=policy,
+               SPIKE_DELAY_MS=delay, SPIKE_PORT_FILE=portfile)
+    srv = subprocess.Popen(["node", os.path.join(HERE, "hook-server.mjs")],
+                           env=env, stdout=open(os.path.join(run, "server.out"), "w"),
+                           stderr=subprocess.STDOUT)
+    for _ in range(50):
+        if os.path.exists(portfile) and open(portfile).read().strip():
+            break
+        time.sleep(0.1)
+    port = open(portfile).read().strip()
 
-events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest",
-          "Elicitation", "Notification", "PostToolUse", "Stop", "SessionEnd"]
-url = f"http://127.0.0.1:{port}/hook?tab=spike&token=spike"
-settings = json.dumps({
-    "hooks": {e: [{"hooks": [{"type": "http", "url": url, "timeout": 600}]}] for e in events},
-    "permissions": {"defaultMode": "default", "ask": ["Bash(mkdir *)"]},
-    "effortLevel": os.environ.get("SPIKE_EFFORT", "low"),
-})
+settings_file = os.environ.get("SPIKE_SETTINGS_FILE")
+if settings_file:
+    settings = open(settings_file).read()
+else:
+    events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest",
+              "Elicitation", "Notification", "PostToolUse", "Stop", "SessionEnd"]
+    url = external_url or f"http://127.0.0.1:{port}/hook?tab=spike&token=spike"
+    settings = json.dumps({
+        "hooks": {e: [{"hooks": [{"type": "http", "url": url, "timeout": 600}]}] for e in events},
+        "permissions": {"defaultMode": "default", "ask": ["Bash(mkdir *)"]},
+        "effortLevel": os.environ.get("SPIKE_EFFORT", "low"),
+    })
 open(os.path.join(run, "settings.json"), "w").write(settings)
 
 claude = shutil.which("claude")
@@ -128,13 +139,15 @@ try:
     os.kill(pid, signal.SIGKILL)
 except OSError:
     pass
-srv.terminate()
+if srv:
+    srv.terminate()
 raw.close()
 open(os.path.join(run, "tui.txt"), "w").write(text())
 
 print("--- result ---")
 print(f"  native dialog appeared: {seen_dialog}")
 print(f"  tool ran: {os.path.isdir(os.path.join(fixture, 'spike-proof-' + policy))}")
+print(f"--- fixture: {fixture} ---")
 print("--- hook events ---")
 try:
     for l in open(log):

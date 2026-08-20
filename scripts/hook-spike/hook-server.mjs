@@ -51,8 +51,16 @@ const server = createServer((req, res) => {
     const event = body?.hook_event_name ?? body?.hookEventName ?? '?'
     log({ phase: 'req', url: req.url, event, body })
     let gone = false
-    req.on('aborted', () => { gone = true; log({ phase: 'ABORTED', event }) })
-    res.on('close', () => { if (!res.writableEnded) { gone = true; log({ phase: 'RES_CLOSED_EARLY', event }) } })
+    req.on('aborted', () => {
+      gone = true
+      log({ phase: 'ABORTED', event })
+    })
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        gone = true
+        log({ phase: 'RES_CLOSED_EARLY', event })
+      }
+    })
 
     if (DELAY_MS && POLICY !== 'park-perm') await new Promise((r) => setTimeout(r, DELAY_MS))
 
@@ -69,23 +77,37 @@ const server = createServer((req, res) => {
     } else if (POLICY === 'allow-pre') {
       payload = event === 'PreToolUse' ? decision(event, 'allow', 'spike: PreToolUse only') : ''
     } else if (POLICY === 'allow-perm') {
-      payload = event === 'PermissionRequest' ? decision(event, 'allow', 'spike: PermissionRequest only') : ''
+      payload =
+        event === 'PermissionRequest'
+          ? decision(event, 'allow', 'spike: PermissionRequest only')
+          : ''
     } else if (POLICY === 'answer') {
       // answer a question/plan by DENYING with the answer text as the reason
-      payload = event === 'PermissionRequest'
-        ? { hookSpecificOutput: { hookEventName: 'PermissionRequest',
-            decision: { behavior: 'deny' },
-            permissionDecisionReason: process.env.SPIKE_REASON || 'Spaces' } }
-        : ''
+      payload =
+        event === 'PermissionRequest'
+          ? {
+              hookSpecificOutput: {
+                hookEventName: 'PermissionRequest',
+                decision: { behavior: 'deny' },
+                permissionDecisionReason: process.env.SPIKE_REASON || 'Spaces'
+              }
+            }
+          : ''
     } else if (POLICY === 'answer-pre') {
       // answer via PreToolUse deny + reason (reason IS surfaced to the model)
-      payload = event === 'PreToolUse'
-        ? { hookSpecificOutput: { hookEventName: 'PreToolUse',
-            permissionDecision: 'deny',
-            permissionDecisionReason: process.env.SPIKE_REASON || 'Spaces' } }
-        : ''
+      payload =
+        event === 'PreToolUse'
+          ? {
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: process.env.SPIKE_REASON || 'Spaces'
+              }
+            }
+          : ''
     } else if (POLICY === 'deny-perm') {
-      payload = event === 'PermissionRequest' ? decision(event, 'deny', 'spike: denied from the phone') : ''
+      payload =
+        event === 'PermissionRequest' ? decision(event, 'deny', 'spike: denied from the phone') : ''
     } else if (POLICY === 'park-perm') {
       // park ONLY the permission decision; everything else answers instantly
       if (event === 'PermissionRequest') {

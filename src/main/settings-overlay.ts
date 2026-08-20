@@ -1,21 +1,8 @@
 import { app } from 'electron'
 import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'fs'
 import { basename, join } from 'path'
+import { buildHooks } from './hook-config'
 import { resolveClaudePath } from './shell-env'
-
-const HOOK_EVENTS = [
-  'SessionStart',
-  'UserPromptSubmit',
-  'Stop',
-  'SessionEnd',
-  'PermissionRequest',
-  'Elicitation',
-  // Fires when a tool finishes — in particular right after the user answers a
-  // permission prompt and the approved tool runs. Used to hand focus back to
-  // the prompt box the instant a dialog is answered (not only when the whole
-  // turn ends). See status-server handleHook + App.tsx refocus logic.
-  'PostToolUse'
-]
 
 let forwarderPath: string | null = null
 let sessionNamerPath: string | null = null
@@ -138,16 +125,11 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
  * and http hooks merge with — not replace — the user's own hooks.
  */
 export function buildSettingsOverlay(port: number, tabId: string, token: string): string {
-  const hookUrl = (path: string): string =>
-    `http://127.0.0.1:${port}/${path}?tab=${tabId}&token=${token}`
-  const hooks: Record<string, unknown> = {}
-  for (const event of HOOK_EVENTS) {
-    hooks[event] = [{ hooks: [{ type: 'http', url: hookUrl('hook'), timeout: 5 }] }]
-  }
+  const hookUrl = `http://127.0.0.1:${port}/hook?tab=${tabId}&token=${token}`
   return JSON.stringify({
     // quoted: userData is under "Application Support" (path contains a space)
     // and the statusLine command string is executed through a shell
     statusLine: { type: 'command', command: `'${installForwarder()}'` },
-    hooks
+    hooks: buildHooks(hookUrl)
   })
 }

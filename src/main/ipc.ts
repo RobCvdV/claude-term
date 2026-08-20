@@ -13,6 +13,7 @@ import type {
   TabInfo
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
+import { ParkedPrompts } from './companion/parked-prompts'
 import { StatusServer } from './status-server'
 import { listBranches, listBranchRefs, listCommands, listDirs, searchFiles } from './completions'
 import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
@@ -74,6 +75,7 @@ export interface AppServices {
   rate: RateStore
   branches: BranchHistory
   checkpoints: CheckpointStore
+  parked: ParkedPrompts
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
@@ -85,6 +87,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   const branches = new BranchHistory(() => join(app.getPath('userData'), 'branch-history.json'))
   // a checkpoint pins a commit with a ref, so eviction has to release it
   const checkpoints = new CheckpointStore((cp) => void dropCheckpoint(cp))
+  // Prompts held open for a companion device. Until one is connected canPark
+  // stays false, so every hook is answered instantly exactly as before.
+  const parked = new ParkedPrompts()
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()
@@ -108,6 +113,8 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
       })
     }
   })
+
+  status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
 
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
@@ -141,11 +148,11 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     })
   }
 
-  return { ptys, status, rate, branches, checkpoints }
+  return { ptys, status, rate, branches, checkpoints, parked }
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
-  const { ptys, status, checkpoints } = services
+  const { ptys, status, checkpoints, parked } = services
 
   // Started when the renderer loads the persisted session (which is where we
   // first see every id about to be revived) and awaited by each revive.
@@ -228,6 +235,8 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     // status — and thus their cwd/roots — is still resolvable.
     await closeDocsWindowForTab(tabId)
     ptys.kill(tabId)
+    // the session is going away; anything held for it can never be answered
+    parked.releaseTab(tabId)
     status.removeTab(tabId)
     checkpoints.forget(tabId)
   })
