@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerFrame } from '../../shared/companion'
+import type { PushNotice } from './notifier'
 import type { TabStatus } from '../../shared/types'
 import { ConversationFeed } from './conversation-feed'
+import { Notifier } from './notifier'
 import { PromptQueue } from './prompt-queue'
+import { PushSender } from './push-sender'
 import { CompanionHub, toSession } from './hub'
 import { ParkedPrompts, type ParkedResponse } from './parked-prompts'
 import type { CompanionServer } from './server'
@@ -48,6 +51,7 @@ function fakeServer(): CompanionServer & {
   sent: { deviceId: string; frame: ServerFrame }[]
   broadcasts: ServerFrame[]
   authed: number
+  inattentive: string[]
 } {
   const api = {
     authed: 1,
@@ -61,6 +65,10 @@ function fakeServer(): CompanionServer & {
     },
     sendTo(deviceId: string, frame: ServerFrame) {
       api.sent.push({ deviceId, frame })
+    },
+    inattentive: ['d1'] as string[],
+    inattentiveDevices() {
+      return api.inattentive
     },
     onPresence: (() => {}) as (count: number) => void,
     onGone: (() => {}) as (deviceId: string) => void,
@@ -78,12 +86,23 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
   screen: ReturnType<typeof vi.fn>
   addRule: ReturnType<typeof vi.fn>
   queue: PromptQueue
+  pushed: PushNotice[]
+  setPushToken: (token: string | null) => void
 } {
   const server = fakeServer()
   const parked = new ParkedPrompts()
   const injectPrompt = vi.fn()
   const screen = vi.fn(async () => SCREEN_ROWS as string[] | null)
   const addRule = vi.fn(() => true)
+  let pushToken: string | null = 'ExponentPushToken[test]'
+  const pushed: PushNotice[] = []
+  const notifier = new Notifier({ hostFocused: () => false })
+  const push = {
+    send: async (_targets: unknown, notice: PushNotice) => {
+      pushed.push(notice)
+      return 1
+    }
+  } as unknown as PushSender
   const queue = new PromptQueue({
     deliver: injectPrompt,
     ready: (tabId) => {
@@ -102,11 +121,25 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     snapshots: () => statuses,
     snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
     queue,
+    notifier,
+    push,
+    pushTokenFor: () => pushToken,
     screen,
     addRule
   })
   hub.start()
-  return { hub, server, parked, feed, injectPrompt, screen, addRule, queue }
+  return {
+    hub,
+    server,
+    parked,
+    feed,
+    injectPrompt,
+    screen,
+    addRule,
+    queue,
+    pushed,
+    setPushToken: (token) => (pushToken = token)
+  }
 }
 
 /** Park a prompt and return its id. */
@@ -303,6 +336,12 @@ describe('CompanionHub', () => {
       snapshots: () => statuses,
       snapshot: () => statuses[0],
       queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
+      notifier: new Notifier({ hostFocused: () => false }),
+      push: new PushSender({
+        fetch: (async () => new Response('{}')) as never,
+        onTokenRejected: () => {}
+      }),
+      pushTokenFor: () => null,
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -337,6 +376,12 @@ describe('CompanionHub', () => {
       snapshots: () => statuses,
       snapshot: () => statuses[0],
       queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
+      notifier: new Notifier({ hostFocused: () => false }),
+      push: new PushSender({
+        fetch: (async () => new Response('{}')) as never,
+        onTokenRejected: () => {}
+      }),
+      pushTokenFor: () => null,
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -437,6 +482,12 @@ describe('CompanionHub', () => {
       parked: new ParkedPrompts(),
       feed: new ConversationFeed({ turnsFor: () => null, sessionOf: () => null }),
       queue,
+      notifier: new Notifier({ hostFocused: () => false }),
+      push: new PushSender({
+        fetch: (async () => new Response('{}')) as never,
+        onTokenRejected: () => {}
+      }),
+      pushTokenFor: () => null,
       snapshots: () => statuses,
       snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
       screen: async () => null
@@ -450,6 +501,30 @@ describe('CompanionHub', () => {
     expect(injectPrompt).toHaveBeenCalledWith('t1', 'later please')
     expect(server.broadcasts.some((f) => f.type === 'submitDelivered')).toBe(true)
     hub.stop()
+  })
+
+  it('notifies a phone that is not already watching that tab', () => {
+    const { hub, pushed } = setup()
+    hub.publishStatus(tabStatus({ activity: 'busy' }))
+    hub.publishStatus(tabStatus({ activity: 'needs-attention' }))
+    expect(pushed).toHaveLength(1)
+    expect(pushed[0]).toMatchObject({ kind: 'needs-attention', body: 'thing' })
+  })
+
+  it('says nothing to a phone with the session already on screen', () => {
+    const { hub, server, pushed } = setup()
+    server.inattentive = []
+    hub.publishStatus(tabStatus({ activity: 'busy' }))
+    hub.publishStatus(tabStatus({ activity: 'needs-attention' }))
+    expect(pushed).toHaveLength(0)
+  })
+
+  it('does not push to a device that never gave a token', () => {
+    const { hub, pushed, setPushToken } = setup()
+    setPushToken(null)
+    hub.publishStatus(tabStatus({ activity: 'busy' }))
+    hub.publishStatus(tabStatus({ activity: 'needs-attention' }))
+    expect(pushed).toHaveLength(0)
   })
 
   it('pushes a single session on a status change', () => {

@@ -3,6 +3,8 @@ import type { ClientFrame, CompanionSession } from '../../shared/companion'
 import type { TabId, TabStatus } from '../../shared/types'
 import { addAllowRule } from './allow-rule'
 import type { ConversationFeed } from './conversation-feed'
+import type { Notifier } from './notifier'
+import type { PushSender, PushTarget } from './push-sender'
 import type { ParkedPrompts } from './parked-prompts'
 import { tabCanTakeInput, type PromptQueue } from './prompt-queue'
 import type { CompanionServer } from './server'
@@ -32,6 +34,10 @@ export interface CompanionHubDeps {
   parked: ParkedPrompts
   feed: ConversationFeed
   queue: PromptQueue
+  notifier: Notifier
+  push: PushSender
+  /** Push token for a device, when it has given us one. */
+  pushTokenFor: (deviceId: string) => string | null
   snapshots: () => TabStatus[]
   snapshot: (tabId: TabId) => TabStatus | null
   /** Add a permission rule to the project's Claude Code settings. */
@@ -134,6 +140,7 @@ export class CompanionHub {
     this.deps.onChanged?.()
     // A dialog that just closed is the moment anything held becomes deliverable.
     if (tabCanTakeInput(status.activity)) this.deps.queue.flush(status.tabId)
+    this.maybeNotify(status)
     this.deps.server.broadcast({
       type: 'session',
       session: toSession(status, this.promptIds(status.tabId))
@@ -142,6 +149,24 @@ export class CompanionHub {
 
   sessionList(): CompanionSession[] {
     return this.deps.snapshots().map((status) => toSession(status, this.promptIds(status.tabId)))
+  }
+
+  /**
+   * Tell phones that are not already watching this tab. A device with the
+   * session open on screen is by definition already informed, and a socket is
+   * only alive while the app is; the push is for when it is not.
+   */
+  private maybeNotify(status: TabStatus): void {
+    const notice = this.deps.notifier.consider(status)
+    if (!notice) return
+    const targets: PushTarget[] = []
+    for (const deviceId of this.deps.server.inattentiveDevices(status.tabId)) {
+      const token = this.deps.pushTokenFor(deviceId)
+      if (token) targets.push({ deviceId, token })
+    }
+    // A device with no token has no notifications turned on; nothing to do.
+    if (targets.length === 0) return
+    void this.deps.push.send(targets, notice)
   }
 
   /** Persist the rule a prompt suggested, and say what happened. */

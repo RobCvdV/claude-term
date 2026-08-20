@@ -12,7 +12,9 @@ import { reachableAddress } from './bind-address'
 import { DeviceRegistry } from './devices'
 import { addAllowRule } from './allow-rule'
 import { ConversationFeed } from './conversation-feed'
+import { Notifier } from './notifier'
 import { PromptQueue } from './prompt-queue'
+import { PushSender } from './push-sender'
 import { CompanionHub } from './hub'
 import { Pairing } from './pairing'
 import { ParkedPrompts } from './parked-prompts'
@@ -62,6 +64,12 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
       snapshots: () => status.allSnapshots(),
       snapshot: (tabId) => status.snapshot(tabId),
       queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
+      notifier: new Notifier({ hostFocused: () => false }),
+      push: new PushSender({
+        fetch: (async () => new Response('{}')) as never,
+        onTokenRejected: () => {}
+      }),
+      pushTokenFor: () => null,
       addRule,
       screen: async () => SCREEN_ROWS
     })

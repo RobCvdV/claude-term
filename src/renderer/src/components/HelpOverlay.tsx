@@ -247,6 +247,13 @@ function Guide(): React.JSX.Element {
           <code>mkdir a &amp;&amp; rm -rf b</code> would license the second half too.
         </p>
         <p>
+          Phones are notified when a tab starts waiting, when a long turn finishes and when a
+          session ends — but not while this app is focused, and not to a phone that already has that
+          session open. What the notification says is deliberately vague: a title and the folder
+          name. The command being asked about never leaves the tailnet, because a push travels
+          through Apple to get there.
+        </p>
+        <p>
           A prompt sent from a phone is held while the session is showing a dialog, since anything
           typed then would answer the dialog instead; it goes in as soon as that clears. A session
           that is merely busy needs no such care — Claude Code queues typed input itself.
