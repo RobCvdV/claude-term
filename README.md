@@ -33,7 +33,7 @@ The wire protocol lives in its own repo, [claude-term-protocol](https://github.c
 
 A companion device can list the host's sessions, answer their prompts and send new ones. It is reachable **only over Tailscale** — the server binds to the tailnet address plus loopback and never `0.0.0.0`, so nothing on the local network can reach it. WireGuard supplies the encryption; the app layer answers "which of my devices is this, and is this request fresh?" with an Ed25519 challenge/response, so **no token or password is ever sent over the wire**.
 
-Pairing is deliberate: **⌘K → Pair a phone…** shows a code valid for two minutes that enrols exactly one device, the device proves possession of its own key, and the host asks before trusting it. **⌘K → Paired phones…** lists and revokes. Revoking drops the socket immediately. The registry lives in `userData/companion-devices.json` (0600) and holds public keys only.
+Pairing is deliberate: **⌘K → Phones — pair or revoke…** opens a panel with a QR (address, port and code in one scan) and the same code in type-able form. It is valid for two minutes and enrols exactly one device, and the device proves possession of its own key. The panel also lists what is paired and revokes it. Revoking drops the socket immediately. There is no confirmation dialog: the code is the gate, and a second modal on top of the code panel is what deadlocked pairing the first time. The registry lives in `userData/companion-devices.json` (0600) and holds public keys only.
 
 There is no phone app yet — `scripts/companion-client.mjs` stands in for one:
 

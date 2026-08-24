@@ -98,7 +98,7 @@ function HowTo(): React.JSX.Element {
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
         <Keys k="⌘K">
-          Pair a phone… / Paired phones… — companion access over Tailscale (palette only)
+          Phones — pair or revoke… — companion access over Tailscale (palette only)
         </Keys>
       </section>
     </div>
@@ -215,10 +215,10 @@ function Guide(): React.JSX.Element {
           A companion device can watch a session, answer its prompts and send new ones. It is
           reachable <b>only over Tailscale</b>: the server binds to the tailnet address and loopback
           and nothing else, so nothing on the local Wi-Fi can see it. Pairing is a deliberate act —
-          <b>Pair a phone…</b> in ⌘K shows a code good for two minutes and one device, and the phone
-          proves it holds its own key before the host trusts it. <b>Paired phones…</b> lists what is
-          enrolled and revokes any of them on the spot. No password or token is ever sent over the
-          wire.
+          <b>Phones — pair or revoke…</b> in ⌘K opens a panel with a QR carrying the address, port
+          and a code good for two minutes and one device, and the phone proves it holds its own key
+          before the host trusts it. The same panel lists what is enrolled and revokes any of it on
+          the spot. No password or token is ever sent over the wire.
         </p>
         <p>
           It can also ask for a snapshot of a tab&apos;s terminal screen — the rows as they are

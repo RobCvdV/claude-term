@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  CompanionInfo,
+  PairingInfo,
   ActivityReport,
   BookedWorklog,
   BookResult,
@@ -98,8 +100,10 @@ export interface ClaudeTermApi {
   jiraBook(entries: WorklogPlanEntry[]): Promise<BookResult[]>
   onScreenRequest(cb: (requestId: string, tabId: TabId) => void): () => void
   screenReply(requestId: string, rows: string[]): void
-  companionPair(): Promise<void>
-  companionManageDevices(): Promise<void>
+  companionOffer(): Promise<PairingInfo>
+  companionCancelOffer(): Promise<void>
+  companionDevices(): Promise<CompanionInfo>
+  companionRevoke(deviceId: string): Promise<boolean>
   volumeGet(): Promise<VolumeState>
   volumeSet(op: VolumeOp): Promise<VolumeState>
   /** Harper's wasm bytes for the grammar checker; null when not installed */
@@ -228,8 +232,10 @@ const api: ClaudeTermApi = {
   onScreenRequest: (cb) => subscribe('screen:request', cb),
   screenReply: (requestId: string, rows: string[]) =>
     ipcRenderer.send('screen:reply', requestId, rows),
-  companionPair: () => ipcRenderer.invoke('companion:pair'),
-  companionManageDevices: () => ipcRenderer.invoke('companion:manageDevices'),
+  companionOffer: () => ipcRenderer.invoke('companion:offer'),
+  companionCancelOffer: () => ipcRenderer.invoke('companion:cancelOffer'),
+  companionDevices: () => ipcRenderer.invoke('companion:devices'),
+  companionRevoke: (deviceId: string) => ipcRenderer.invoke('companion:revoke', deviceId),
   volumeGet: () => ipcRenderer.invoke('volume:get'),
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   grammarWasm: () => ipcRenderer.invoke('grammar:wasm'),

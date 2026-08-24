@@ -15,6 +15,7 @@ import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
+import { CompanionPanel } from './components/CompanionPanel'
 import { HelpOverlay } from './components/HelpOverlay'
 import { MissionControl } from './components/MissionControl'
 import { composeWindowTitle } from './tab-title'
@@ -87,6 +88,7 @@ export default function App(): React.JSX.Element {
   // recent-branch history for the palette, refreshed each time it opens
   const [recentBranches, setRecentBranches] = useState<BranchHistoryEntry[]>([])
   const [showMission, setShowMission] = useState(false)
+  const [showCompanion, setShowCompanion] = useState(false)
   // help overlay: which section to show, or null when closed (Help menu / ⌘/)
   const [helpSection, setHelpSection] = useState<HelpSection | null>(null)
   // per-tab ⌘F counter: >0 shows the find bar, each bump refocuses its input
@@ -636,16 +638,7 @@ export default function App(): React.JSX.Element {
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
     { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
-    {
-      id: 'companion-pair',
-      label: 'Pair a phone…',
-      run: () => void window.claudeTerm.companionPair()
-    },
-    {
-      id: 'companion-devices',
-      label: 'Paired phones…',
-      run: () => void window.claudeTerm.companionManageDevices()
-    },
+    { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },
     { id: 'howto', label: 'Quick How-To', shortcut: '⌘/', run: () => setHelpSection('howto') },
     { id: 'guide', label: 'User Guide', run: () => setHelpSection('guide') },
     ...(activeId
@@ -734,6 +727,8 @@ export default function App(): React.JSX.Element {
           }}
         />
       )}
+      {showCompanion && <CompanionPanel onClose={() => setShowCompanion(false)} />}
+
       {showMission && (
         <MissionControl
           tabs={tabs}

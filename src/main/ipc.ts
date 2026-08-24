@@ -1,17 +1,11 @@
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  powerSaveBlocker,
-  shell,
-  type MessageBoxOptions
-} from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from 'electron'
 import { basename, join } from 'path'
 import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
+  CompanionInfo,
+  PairingInfo,
   ConvoSearchResult,
   CreateDocResult,
   DocGroup,
@@ -123,25 +117,13 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     devices,
     pairing,
     hostName: hostname(),
-    sessions: () => hub.sessionList(),
-    // A valid code already proves whoever scanned it can see this screen; the
-    // dialog is the second pair of eyes, and names the device asking.
-    confirmPairing: async (name) => {
-      const options: MessageBoxOptions = {
-        type: 'question',
-        buttons: ['Pair', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: `Pair “${name}” with this Mac?`,
-        detail: 'It will be able to read your sessions, answer prompts, and send new ones.'
-      }
-      const win = getWindow()
-      const { response } = win
-        ? await dialog.showMessageBox(win, options)
-        : await dialog.showMessageBox(options)
-      return response === 0
-    }
+    sessions: () => hub.sessionList()
+    // No confirmation dialog: the code is the gate. It is single-use, expires in
+    // two minutes, dies after five wrong guesses, and is only ever visible on
+    // this screen — and a second modal on top of the code panel is what
+    // deadlocked pairing in the first place.
   })
+
   // Sleeping mid-turn would strand a phone waiting on this session, so hold the
   // machine awake — but only while a device is connected AND work is running.
   let sleepBlockerId: number | null = null
@@ -355,69 +337,38 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     }
   )
 
-  const messageBox = async (options: MessageBoxOptions): Promise<number> => {
-    const win = getWindow()
-    const { response } = win
-      ? await dialog.showMessageBox(win, options)
-      : await dialog.showMessageBox(options)
-    return response
-  }
-
-  // Pairing is a deliberate act: a code exists only while the user has asked for
-  // one, lives two minutes, and enrols exactly one device. It deliberately
-  // OUTLIVES this dialog — the box is modal, so a code that died on dismissal
-  // could only ever be used by someone holding the phone in front of a frozen
-  // app. Short-lived, single-use and attempt-limited is the protection here.
-  ipcMain.handle('companion:pair', async () => {
-    const host = reachableAddress()
-    const { code, expiresAt } = services.pairing.offer()
-    const seconds = Math.round((expiresAt - Date.now()) / 1000)
-    const detail = host
-      ? `Enter this code on your phone, then connect to ${host} on port ${services.companion.port}.\n\nIt is good for ${seconds} seconds — closing this box does not cancel it — and pairs exactly one device.`
-      : `No Tailscale address was found on this Mac, so only this machine can reach the companion right now (127.0.0.1 port ${services.companion.port}).\n\nStart Tailscale and open this dialog again to pair a phone.`
-    await messageBox({
-      type: 'info',
-      buttons: ['Done'],
-      message: code,
-      detail
-    })
+  // Pairing lives in a panel rather than a dialog. Two modal message boxes
+  // deadlocked it: the code box blocked the window, so the confirmation behind
+  // it could never appear and pairing simply never resolved.
+  ipcMain.handle('companion:offer', (): PairingInfo => {
+    const offer = services.pairing.offer()
+    return {
+      ...offer,
+      host: reachableAddress(),
+      port: services.companion.port,
+      hostName: hostname()
+    }
   })
 
-  ipcMain.handle('companion:manageDevices', async () => {
-    const devices = services.devices.list()
-    if (devices.length === 0) {
-      await messageBox({
-        type: 'info',
-        buttons: ['OK'],
-        message: 'No phones are paired with this Mac.',
-        detail: 'Use “Pair a phone…” to add one.'
-      })
-      return
-    }
-    const labels = devices.map((d) => d.name)
-    const picked = await messageBox({
-      type: 'info',
-      buttons: [...labels, 'Close'],
-      cancelId: labels.length,
-      defaultId: labels.length,
-      message: `${devices.length} paired ${devices.length === 1 ? 'device' : 'devices'}`,
-      detail: `${services.companion.authenticatedCount()} connected right now.\n\nPick a device to revoke it.`
-    })
-    const device = devices[picked]
-    if (!device) return
-    const confirmed = await messageBox({
-      type: 'warning',
-      buttons: ['Revoke', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      message: `Revoke “${device.name}”?`,
-      detail: 'It will be disconnected and will have to pair again from scratch.'
-    })
-    if (confirmed !== 0) return
-    if (services.devices.revoke(device.deviceId)) {
-      // a revoked device must not keep the socket it already has
-      services.companion.dropDevice(device.deviceId)
-    }
+  ipcMain.handle('companion:cancelOffer', () => services.pairing.cancel())
+
+  ipcMain.handle('companion:devices', (): CompanionInfo => ({
+    port: services.companion.port,
+    host: reachableAddress(),
+    connected: services.companion.authenticatedCount(),
+    devices: services.devices.list().map((d) => ({
+      deviceId: d.deviceId,
+      name: d.name,
+      pairedAt: d.pairedAt,
+      lastSeen: d.lastSeen
+    }))
+  }))
+
+  ipcMain.handle('companion:revoke', (_e, deviceId: string) => {
+    const gone = services.devices.revoke(deviceId)
+    // a revoked device must not keep the socket it already has
+    if (gone) services.companion.dropDevice(deviceId)
+    return gone
   })
 
   ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
