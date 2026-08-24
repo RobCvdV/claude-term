@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ServerFrame } from '../../shared/companion'
+import type { ServerFrame } from 'claude-term-protocol'
 import type { PushNotice } from './notifier'
 import type { TabStatus } from '../../shared/types'
 import { ConversationFeed } from './conversation-feed'

@@ -8,7 +8,7 @@ import {
   type ParkedResponse
 } from './parked-prompts'
 import type { HookEvent } from '../../shared/types'
-import type { PendingPrompt, PromptOutcome } from '../../shared/companion'
+import type { PendingPrompt, PromptOutcome } from 'claude-term-protocol'
 
 function fakeRes(): ParkedResponse & { body: string | null; closers: (() => void)[] } {
   return {

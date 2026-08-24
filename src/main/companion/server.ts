@@ -8,7 +8,7 @@ import {
   type CompanionErrorCode,
   type CompanionSession,
   type ServerFrame
-} from '../../shared/companion'
+} from 'claude-term-protocol'
 import { bindAddresses } from './bind-address'
 import { DeviceRegistry, newNonce, verifySignature } from './devices'
 import { Pairing } from './pairing'

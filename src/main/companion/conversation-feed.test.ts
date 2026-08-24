@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONVERSATION_WINDOW, MAX_TURN_CHARS } from '../../shared/companion'
+import { CONVERSATION_WINDOW, MAX_TURN_CHARS } from 'claude-term-protocol'
 import type { ConvoTurn } from '../transcript-search'
 import { ConversationFeed, toTurn, windowOf } from './conversation-feed'
 

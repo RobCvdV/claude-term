@@ -1,5 +1,5 @@
 import { basename } from 'path'
-import type { ClientFrame, CompanionSession } from '../../shared/companion'
+import type { ClientFrame, CompanionSession } from 'claude-term-protocol'
 import type { TabId, TabStatus } from '../../shared/types'
 import { addAllowRule } from './allow-rule'
 import type { ConversationFeed } from './conversation-feed'

@@ -1,4 +1,4 @@
-import type { DecidingHook } from '../shared/companion'
+import type { DecidingHook } from 'claude-term-protocol'
 
 /**
  * Hooks that only report — the app maps them to a tab's activity state and

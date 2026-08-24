@@ -1,4 +1,4 @@
-import { CONVERSATION_WINDOW, MAX_TURN_CHARS, type ConversationTurn } from '../../shared/companion'
+import { CONVERSATION_WINDOW, MAX_TURN_CHARS, type ConversationTurn } from 'claude-term-protocol'
 import type { TabId } from '../../shared/types'
 import type { ConvoTurn } from '../transcript-search'
 

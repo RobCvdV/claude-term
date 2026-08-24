@@ -6,7 +6,7 @@ import type {
   PromptKind,
   PromptOutcome,
   QuestionSpec
-} from '../../shared/companion'
+} from 'claude-term-protocol'
 import type { HookEvent, TabId } from '../../shared/types'
 import { suggestRule } from './allow-rule'
 

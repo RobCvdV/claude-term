@@ -6,7 +6,7 @@ import { join } from 'path'
 import { ParkedPrompts } from './companion/parked-prompts'
 import { buildHooks } from './hook-config'
 import { StatusServer } from './status-server'
-import type { PendingPrompt } from '../shared/companion'
+import type { PendingPrompt } from 'claude-term-protocol'
 
 /**
  * The one test that proves the whole chain: a real `claude` CLI asks for a
