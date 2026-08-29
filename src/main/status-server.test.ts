@@ -13,7 +13,9 @@ function withLiveTab(): { server: StatusServer; updates: TabStatus[]; tabId: str
   const updates: TabStatus[] = []
   server.onUpdate = (s) => updates.push({ ...s })
   const tabId = 'tab-1'
-  server.registerTab(tabId, '/repo')
+  // homeUnclaimed off: the session's launch folder is already settled, as it is
+  // for every tab past its first statusline (see "a tab's launch folder").
+  server.registerTab(tabId, '/repo', [], false)
   server.markClaudeActive(tabId, 'sess-1')
   updates.length = 0
   return { server, updates, tabId }
@@ -98,47 +100,79 @@ describe('StatusServer', () => {
     })
   })
 
-  // ⌘T opens a tab at the home dir because there is nothing better to open it
-  // at — not because anyone picked home. `cd`ing into a project and running
-  // claude there is the ordinary way to start one, and that used to leave the
-  // tab homed at ~ with the actual project demoted to a secondary folder chip.
-  describe('a tab still at the default home dir', () => {
+  // A tab is a plain terminal first, and the folder its shell opens in is only
+  // where that shell starts: `cd`ing anywhere and running `claude` there is the
+  // ordinary way to start a session, and THAT folder is the session's root for
+  // its whole life — so it is the tab's home too. It used to keep the folder the
+  // tab opened in (⌘T's home dir, or the picked one), demoting the project the
+  // session actually ran in to a secondary folder chip.
+  describe("a tab's launch folder", () => {
     const real = (): string => mkdtempSync(join(tmpdir(), 'ct-home-'))
 
-    /** Registered at `home` as the unchosen fallback, with a live session. */
-    function withDefaultHomeTab(home: string): { server: StatusServer; tabId: string } {
+    /** A freshly opened tab sitting at `opened`, with a live session. */
+    function withTab(opened: string): {
+      server: StatusServer
+      tabId: string
+      homes: string[]
+    } {
       const server = new StatusServer()
       const tabId = 'tab-1'
-      server.registerTab(tabId, home, [], true)
+      const homes: string[] = []
+      server.onHomeChanged = (_id, cwd) => homes.push(cwd)
+      server.registerTab(tabId, opened)
       server.markClaudeActive(tabId, 'sess-1')
-      return { server, tabId }
+      return { server, tabId, homes }
     }
 
     it('adopts the project the first session actually runs in', () => {
       const home = real()
       const project = real()
-      const { server, tabId } = withDefaultHomeTab(home)
+      const { server, tabId, homes } = withTab(home)
       statusline(server, tabId, {
         session_id: 'sess-1',
         workspace: { current_dir: project, project_dir: project }
       })
       expect(server.getCwd(tabId)).toBe(project)
       expect(server.snapshot(tabId)?.cwd).toBe(project)
+      // the PTY has to respawn there too
+      expect(homes).toEqual([project])
+    })
+
+    // The point of the change: the tab was opened ON a folder, the user cd'd
+    // out of it and ran claude in another repo. The session's repo wins.
+    it('adopts it over the folder the tab was opened in', () => {
+      const opened = real()
+      const project = real()
+      const { server, tabId } = withTab(opened)
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: project } })
+      expect(server.getCwd(tabId)).toBe(project)
     })
 
     it('adopts once — a later /cd does not re-home it again', () => {
       const home = real()
       const project = real()
       const elsewhere = real()
-      const { server, tabId } = withDefaultHomeTab(home)
+      const { server, tabId, homes } = withTab(home)
       statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: project } })
       statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: elsewhere } })
       expect(server.getCwd(tabId)).toBe(project)
+      expect(homes).toEqual([project])
+    })
+
+    // Launching in the tab's own folder settles it just as much: the /cd after
+    // it must not be mistaken for a launch dir.
+    it("is settled by a launch in the tab's own folder too", () => {
+      const opened = real()
+      const elsewhere = real()
+      const { server, tabId } = withTab(opened)
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: opened } })
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: elsewhere } })
+      expect(server.getCwd(tabId)).toBe(opened)
     })
 
     it('stays put when the project_dir does not exist', () => {
       const home = real()
-      const { server, tabId } = withDefaultHomeTab(home)
+      const { server, tabId } = withTab(home)
       statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: '/nope/gone' } })
       expect(server.getCwd(tabId)).toBe(home)
     })
@@ -146,20 +180,45 @@ describe('StatusServer', () => {
     it('never adopts current_dir — only project_dir', () => {
       const home = real()
       const bashCwd = real()
-      const { server, tabId } = withDefaultHomeTab(home)
+      const { server, tabId } = withTab(home)
       statusline(server, tabId, { session_id: 'sess-1', workspace: { current_dir: bashCwd } })
       expect(server.getCwd(tabId)).toBe(home)
     })
 
-    // The PR #33 invariant, unchanged: a folder the user opened is identity.
-    it('does not apply to a tab opened ON a folder', () => {
+    // Ending the session hands the tab back to the shell, which can cd anywhere
+    // before the next `claude` — so the next launch dir wins again.
+    it('re-homes on the next session after the first one ends', () => {
+      const first = real()
+      const second = real()
+      const { server, tabId } = withTab(real())
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: first } })
+      hook(server, tabId, 'SessionEnd')
+      statusline(server, tabId, { session_id: 'sess-2', workspace: { project_dir: second } })
+      expect(server.getCwd(tabId)).toBe(second)
+    })
+
+    // A /clear starts a fresh session id in the SAME session's directory — no
+    // shell in between, so a /cd made before it must not become the tab's home.
+    it('does not re-home on a /clear mid-session', () => {
       const project = real()
+      const elsewhere = real()
+      const { server, tabId } = withTab(project)
+      statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: project } })
+      hook(server, tabId, 'SessionStart')
+      statusline(server, tabId, { session_id: 'sess-2', workspace: { project_dir: elsewhere } })
+      expect(server.getCwd(tabId)).toBe(project)
+    })
+
+    // The restore invariant (PR #33/#35): a revived conversation is registered
+    // in its own home and nothing a payload says may drag it elsewhere.
+    it('never re-homes a revived conversation', () => {
+      const home = real()
       const server = new StatusServer()
       const tabId = 'tab-1'
-      server.registerTab(tabId, project) // no homeIsDefault flag
+      server.registerTab(tabId, home, [], false) // homeUnclaimed off = revived
       server.markClaudeActive(tabId, 'sess-1')
       statusline(server, tabId, { session_id: 'sess-1', workspace: { project_dir: real() } })
-      expect(server.getCwd(tabId)).toBe(project)
+      expect(server.getCwd(tabId)).toBe(home)
     })
   })
 

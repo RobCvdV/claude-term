@@ -212,6 +212,13 @@ export class PtyManager {
     if (current && !current.exited) current.proc.write(`"${realClaude}" attach ${jobId}\r`)
   }
 
+  /** Follow the tab's home folder when it re-homes onto its session's launch
+   *  dir (see StatusServer.adoptSessionHome), so a respawn lands there. */
+  setCwd(tabId: TabId, cwd: string): void {
+    const tab = this.tabs.get(tabId)
+    if (tab) tab.cwd = cwd
+  }
+
   /** Respawn a fresh shell in the same tab/cwd (after the shell exited). */
   async restart(tabId: TabId): Promise<void> {
     const tab = this.tabs.get(tabId)
