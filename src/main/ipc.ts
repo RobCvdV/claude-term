@@ -127,6 +127,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     send('status:update', tabStatus)
   }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
+  // The tab re-homed onto its session's launch folder — a shell respawned after
+  // an exit/restart has to start there, not back in the folder the tab opened in.
+  status.onHomeChanged = (tabId, cwd) => ptys.setCwd(tabId, cwd)
   // A branch switch renames the live session (name has no spaces → no quoting).
   status.onRenameSession = (tabId, name) => ptys.injectPrompt(tabId, `/rename ${name}`)
   // First sighting of a repo this run: pull its reflog into the history, so
@@ -172,10 +175,11 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     ): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
       let dir = cwd && existsSync(cwd) ? cwd : homedir()
-      // Nobody picked that fallback, so the tab has no folder identity to
-      // defend: it re-homes onto the first claude session's project dir
-      // (see StatusServer.adoptDefaultHome). A chosen folder never does.
-      let homeIsDefault = dir !== cwd
+      // The folder is only where the tab's shell starts: whichever folder the
+      // first claude session is launched from becomes the tab's home (see
+      // StatusServer.adoptSessionHome). A revived conversation is the exception
+      // — see below.
+      let homeUnclaimed = true
       const tabId: TabId = randomUUID()
       // Resolve how to restore a persisted session (only when `resume` is set):
       //  - live daemon-managed background agent → `claude attach` (--resume
@@ -197,7 +201,8 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
           const home = sessionHomeDir(resume)
           if (home && existsSync(home)) {
             dir = home
-            homeIsDefault = false // the conversation's own home, not a fallback
+            // the conversation's own home — no payload may move the tab off it
+            homeUnclaimed = false
           }
         }
       }
@@ -205,7 +210,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       // (additionalDirectories) — the latter never show up in /add-dir prompts
       // or statusline added_dirs, so this is their only way into the UI
       const seeded = [...new Set([...(addedDirs ?? []), ...settingsAddedDirs(dir)])]
-      status.registerTab(tabId, dir, seeded.filter(existsSync), homeIsDefault, removedDirs ?? [])
+      status.registerTab(tabId, dir, seeded.filter(existsSync), homeUnclaimed, removedDirs ?? [])
       if (target) {
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)

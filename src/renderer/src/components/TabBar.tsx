@@ -152,7 +152,7 @@ export function TabBar({
               setEditingId(tab.tabId)
               setDraft(tab.title)
             }}
-            title={tab.cwd}
+            title={statuses[tab.tabId]?.cwd || tab.cwd}
           >
             <span className={dotClass(statuses[tab.tabId])} />
             {editingId === tab.tabId ? (
