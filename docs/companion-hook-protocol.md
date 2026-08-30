@@ -8,14 +8,14 @@ before trusting it on a much newer CLI.
 
 ## The short version
 
-| Need | Mechanism |
-| --- | --- |
-| Learn that a human is being asked something, with full detail | `PermissionRequest` http hook — carries `tool_name` + `tool_input` |
-| Hold the question open while a phone decides | Just don't answer the HTTP request. The turn blocks. |
-| Approve / reject | 2xx body `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"\|"deny"}}}` |
-| Let the terminal handle it instead | 2xx with an **empty body**. Also: the native dialog is *already* on screen. |
-| Know the user answered in the terminal | The CLI **closes the parked connection**. |
-| Send *content* back (a question answer, plan feedback) | `PreToolUse` deny + `permissionDecisionReason` — that reason reaches the model. `PermissionRequest`'s does **not**. |
+| Need                                                          | Mechanism                                                                                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Learn that a human is being asked something, with full detail | `PermissionRequest` http hook — carries `tool_name` + `tool_input`                                                  |
+| Hold the question open while a phone decides                  | Just don't answer the HTTP request. The turn blocks.                                                                |
+| Approve / reject                                              | 2xx body `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"\|"deny"}}}`     |
+| Let the terminal handle it instead                            | 2xx with an **empty body**. Also: the native dialog is _already_ on screen.                                         |
+| Know the user answered in the terminal                        | The CLI **closes the parked connection**.                                                                           |
+| Send _content_ back (a question answer, plan feedback)        | `PreToolUse` deny + `permissionDecisionReason` — that reason reaches the model. `PermissionRequest`'s does **not**. |
 
 ## Findings
 
@@ -29,11 +29,17 @@ when Claude Code is about to ask a human, so a companion sees exactly the
 prompts that need one. Payload:
 
 ```json
-{ "session_id": "…", "transcript_path": "…", "cwd": "…", "prompt_id": "…",
-  "permission_mode": "default", "effort": {"level": "low"},
+{
+  "session_id": "…",
+  "transcript_path": "…",
+  "cwd": "…",
+  "prompt_id": "…",
+  "permission_mode": "default",
+  "effort": { "level": "low" },
   "hook_event_name": "PermissionRequest",
   "tool_name": "Bash",
-  "tool_input": {"command": "mkdir spike-proof", "description": "…"} }
+  "tool_input": { "command": "mkdir spike-proof", "description": "…" }
+}
 ```
 
 Its output shape is `hookSpecificOutput.decision.behavior`, **not** the
@@ -50,7 +56,7 @@ parking one decision does not stall the rest of the hook pipeline. The documente
 default timeout for http hooks is 600 s.
 
 **4. The native dialog renders immediately, in parallel with the parked hook.**
-This is the one that overturns the obvious assumption. Claude Code does *not*
+This is the one that overturns the obvious assumption. Claude Code does _not_
 wait for the hook before drawing its own prompt — in every run, including ones
 where the hook allowed or parked the request, the TUI showed:
 
@@ -74,20 +80,30 @@ phone to drop the card. Writing a decision after that point is a no-op.
 no screen scraping and no parsing:
 
 ```json
-{ "tool_name": "AskUserQuestion",
-  "tool_input": {"questions": [{"question": "…", "header": "Indentation",
-    "options": [{"label": "Spaces", "description": "…"}], "multiSelect": false}]} }
+{
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "…",
+        "header": "Indentation",
+        "options": [{ "label": "Spaces", "description": "…" }],
+        "multiSelect": false
+      }
+    ]
+  }
+}
 ```
 
 **7. `ExitPlanMode` likewise, with the plan text inline** — `tool_input.plan`
 holds the full markdown and `tool_input.planFilePath` names the file. There is no
 need to guess at the newest `*.md` in `~/.claude/plans/`.
 
-**8. To send *content* back, use `PreToolUse`, not `PermissionRequest`.**
+**8. To send _content_ back, use `PreToolUse`, not `PermissionRequest`.**
 Denying an `AskUserQuestion` through `PermissionRequest` with a
 `permissionDecisionReason` loses the reason — the model only saw
-"Denied by PermissionRequest hook" and replied *"The question was blocked by a
-permission hook, so I couldn't collect your answer."* Denying the same tool
+"Denied by PermissionRequest hook" and replied _"The question was blocked by a
+permission hook, so I couldn't collect your answer."_ Denying the same tool
 through `PreToolUse` surfaces the reason verbatim as `Error: <reason>`, and the
 model used it correctly ("You chose spaces — specifically 2-space indentation").
 
