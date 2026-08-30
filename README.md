@@ -40,7 +40,7 @@ node scripts/companion-client.mjs pair --host 100.x.y.z --port <port> --code ABC
 node scripts/companion-client.mjs watch     # prints sessions + prompts; reads commands on stdin
 ```
 
-Answering a permission prompt with **"allow and stop asking"** derives a rule and writes it to the project's `.claude/settings.local.json` — the same file Claude Code's own *"Yes, and don't ask again"* uses. Rules are only offered for `Bash`, and never for a command containing shell operators: a prefix rule derived from `mkdir a && rm -rf b` would license the second half too. For tools whose rule would be a guessed path glob, the prompt is simply answered once.
+Answering a permission prompt with **"allow and stop asking"** derives a rule and writes it to the project's `.claude/settings.local.json` — the same file Claude Code's own _"Yes, and don't ask again"_ uses. Rules are only offered for `Bash`, and never for a command containing shell operators: a prefix rule derived from `mkdir a && rm -rf b` would license the second half too. For tools whose rule would be a guessed path glob, the prompt is simply answered once.
 
 A prompt sent from a device is **held while the session is showing a dialog**, because a permission prompt or picker owns the keyboard and pasted text would answer it instead of asking anything. It is delivered as soon as the dialog is gone. A busy session needs no such care — Claude Code queues typed input mid-turn itself.
 
