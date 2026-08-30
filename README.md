@@ -25,7 +25,7 @@ The Claude UI (shown only while a session runs):
 
 ## How it works
 
-Each tab spawns `claude --settings '<overlay>'` in a PTY. The overlay (per session, never touching `~/.claude/settings.json`) points `statusLine` at a tiny forwarder script (installed into the app's userData dir) that POSTs the statusline JSON to a local HTTP server in the Electron main process, and adds `type: "http"` hooks (SessionStart/UserPromptSubmit/PostToolUse/Stop/Elicitation/SessionEnd) that drive the per-tab activity state, plus `PermissionRequest` and a matcher-scoped `PreToolUse` on a long timeout — those two can be *held open*, which is how a prompt is answered from somewhere other than the terminal (`src/main/hook-config.ts`, `src/main/companion/parked-prompts.ts`). Prompt injection writes bracketed-paste framed text to the PTY followed by `\r`.
+Each tab spawns `claude --settings '<overlay>'` in a PTY. The overlay (per session, never touching `~/.claude/settings.json`) points `statusLine` at a tiny forwarder script (installed into the app's userData dir) that POSTs the statusline JSON to a local HTTP server in the Electron main process, and adds `type: "http"` hooks (SessionStart/UserPromptSubmit/PostToolUse/Stop/Elicitation/SessionEnd) that drive the per-tab activity state, plus `PermissionRequest` and a matcher-scoped `PreToolUse` on a long timeout — those two can be _held open_, which is how a prompt is answered from somewhere other than the terminal (`src/main/hook-config.ts`, `src/main/companion/parked-prompts.ts`). Prompt injection writes bracketed-paste framed text to the PTY followed by `\r`.
 
 ## Develop
 
