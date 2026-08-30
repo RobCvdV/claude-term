@@ -42,10 +42,10 @@ interface AttachedFeed {
 interface TabState {
   status: TabStatus
   cwd: string
-  /** True while the tab still sits at the home-dir fallback nobody chose. Such a
-   *  tab adopts the first claude session's project_dir as its own (see
-   *  handleStatusline); a tab opened ON a folder never does. */
-  homeIsDefault: boolean
+  /** True while no claude session has claimed the tab's folder yet. The next
+   *  session's launch dir becomes the tab's home (see adoptSessionHome); it is
+   *  re-armed every time the tab drops back to a plain terminal. */
+  homeUnclaimed: boolean
   gitFetchedAt: number
   /** Rename queued by a branch switch, waiting for the session to go idle so we
    *  don't inject `/rename` mid-turn. Null once applied. */
@@ -116,6 +116,10 @@ export class StatusServer {
   /** A turn just started in this tab (UserPromptSubmit) — the moment to take a
    *  working-tree checkpoint, before any edit of that turn lands. */
   onTurnStart: (tabId: TabId, cwd: string) => void = () => {}
+
+  /** Set by ipc.ts; the tab adopted the folder its claude session was launched
+   *  from (see adoptSessionHome), so the PTY's respawn dir has to follow. */
+  onHomeChanged: (tabId: TabId, cwd: string) => void = () => {}
 
   /** Set by ipc.ts. Offers a hook whose response could decide a prompt; if it
    *  returns true the response has been taken over and the answer is owed by
@@ -273,13 +277,13 @@ export class StatusServer {
     tabId: TabId,
     cwd: string,
     addedDirs: string[] = [],
-    homeIsDefault = false,
+    homeUnclaimed = true,
     removedDirs: string[] = []
   ): void {
     const removed = new Set(removedDirs)
     this.tabs.set(tabId, {
       cwd,
-      homeIsDefault,
+      homeUnclaimed,
       gitFetchedAt: 0,
       pendingRename: null,
       lastRenamedName: null,
@@ -446,6 +450,7 @@ export class StatusServer {
   markRestarted(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
     if (!tab || this.frozen) return
+    tab.homeUnclaimed = true
     tab.status.claudeActive = false
     tab.status.activity = 'idle'
     tab.status.exitCode = null
@@ -467,40 +472,42 @@ export class StatusServer {
     tab.status.claudeActive = true
     tab.status.payload = payload
     if (payload.session_id) tab.status.sessionId = payload.session_id
-    // A tab the user chose a folder for is NEVER re-homed from payloads.
-    // current_dir follows the Bash tool's persistent cwd, and even project_dir
-    // moves mid-session (the CLI's /cd + set_cwd relocate the session and
-    // rewrite originalCwd) — and a resumed session chdirs back to its recorded
-    // home on its own. Adopting either drifts the tab's identity into another
+    // A live session's folder is NEVER followed from payloads. current_dir
+    // tracks the Bash tool's persistent cwd, and project_dir moves mid-session
+    // too (the CLI's /cd + set_cwd relocate the session and rewrite
+    // originalCwd). Adopting either drifts the tab's identity into another
     // repo, gets persisted, and corrupts the restore (wrong spawn dir + resume
     // from the wrong project). The session's own workspace, when different, is
     // shown by the renderer as a secondary folder chip instead (StatusBar).
-    //
-    // The one exception is a tab still sitting at the home-dir fallback: nobody
-    // chose it, so there is no identity to protect. `cd`ing into a project and
-    // running claude there is the ordinary way to start, and leaving such a tab
-    // homed at ~ showed the project as a *secondary* folder while ~ held the
-    // main slot. It adopts once, off the first payload that names a real
-    // project_dir, and is an ordinary chosen tab from then on.
-    this.adoptDefaultHome(tab, payload)
+    // Only the *launch* dir is adopted, once per session:
+    this.adoptSessionHome(tabId, tab, payload)
     this.onUpdate(tab.status)
     void this.refreshGit(tabId)
   }
 
   /**
-   * Re-home a tab that never had a folder of its own onto the project its first
-   * claude session actually runs in. No-op for every other tab.
+   * Home the tab on the folder its claude session was launched from — the first
+   * project_dir a new session reports, which is the shell's cwd at launch.
    *
-   * The tab's seeded added dirs came from the home dir's settings, so they are
-   * re-read from the project instead — keeping any runtime `/add-dir` the tab
+   * A tab is a plain terminal first: `cd`ing somewhere and running `claude`
+   * there is the ordinary way to start one, and the folder chosen that way is
+   * the session's root for its whole life, so it is the tab's too. Every later
+   * payload of that session is ignored (see handleStatusline), and the flag is
+   * re-armed only when the tab becomes a plain terminal again. A revived
+   * conversation is registered with the flag already down: its home is the
+   * folder we resumed it in and nothing a payload says may move it.
+   *
+   * The tab's seeded added dirs came from the old folder's settings, so they
+   * are re-read from the new one — keeping any runtime `/add-dir` the tab
    * already observed, which belongs to the session rather than to a folder.
    */
-  private adoptDefaultHome(tab: TabState, payload: StatuslinePayload): void {
-    if (!tab.homeIsDefault) return
+  private adoptSessionHome(tabId: TabId, tab: TabState, payload: StatuslinePayload): void {
+    if (!tab.homeUnclaimed) return
     const dir = payload.workspace?.project_dir
-    if (!dir || dir === tab.cwd || !existsSync(dir)) return
+    if (!dir || !existsSync(dir)) return
+    tab.homeUnclaimed = false
+    if (dir === tab.cwd) return
     const staleSeed = settingsAddedDirs(tab.cwd)
-    tab.homeIsDefault = false
     tab.cwd = dir
     tab.status.cwd = dir
     const observed = tab.status.addedDirs.filter((d) => !staleSeed.includes(d))
@@ -509,6 +516,7 @@ export class StatusServer {
       .filter((d) => !removed.has(d))
       .filter(existsSync)
     tab.gitFetchedAt = 0 // the branch/PR data belongs to the old folder
+    this.onHomeChanged(tabId, dir)
   }
 
   // Hooks drive only the activity state (busy/idle/needs-attention) and the
@@ -540,6 +548,8 @@ export class StatusServer {
       return
     }
     if (name === 'SessionEnd') {
+      // back to a plain terminal: the next `claude` may be started elsewhere
+      tab.homeUnclaimed = true
       tab.status.claudeActive = false
       tab.status.activity = 'idle'
       tab.status.busySince = null
