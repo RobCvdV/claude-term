@@ -176,7 +176,13 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     queue,
     notifier,
     push,
-    pushTokenFor: (deviceId) => devices.get(deviceId)?.pushToken ?? null,
+    // Every paired device with a token, whether or not it holds a socket —
+    // a phone with the app shut is the whole point of a push.
+    pushTargets: () =>
+      devices
+        .list()
+        .filter((d) => d.pushToken)
+        .map((d) => ({ deviceId: d.deviceId, token: d.pushToken as string })),
     screen: (tabId) => screens.request(tabId),
     onChanged: updateSleepBlocker
   })

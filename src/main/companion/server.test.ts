@@ -411,19 +411,19 @@ describe('CompanionServer presence', () => {
     expect(counts).toEqual([1, 0])
   })
 
-  it('reports a device as inattentive unless it is watching that very tab', async () => {
+  it('reports a device as attentive only while it watches that very tab', async () => {
     const { conn, device } = await paired()
-    expect(server.inattentiveDevices('t1')).toEqual([device.deviceId])
+    expect([...server.attentiveDevices('t1')]).toEqual([])
 
     conn.send({ type: 'appState', foreground: true, tabId: 't1' })
     await settle()
-    expect(server.inattentiveDevices('t1')).toEqual([])
+    expect([...server.attentiveDevices('t1')]).toEqual([device.deviceId])
     // still worth a push about a different tab
-    expect(server.inattentiveDevices('t2')).toEqual([device.deviceId])
+    expect([...server.attentiveDevices('t2')]).toEqual([])
 
     conn.send({ type: 'appState', foreground: false, tabId: 't1' })
     await settle()
-    expect(server.inattentiveDevices('t1')).toEqual([device.deviceId])
+    expect([...server.attentiveDevices('t1')]).toEqual([])
   })
 
   it('forwards authenticated frames to the hub', async () => {
