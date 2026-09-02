@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import type { CompanionInfo, PairingInfo } from '../../../shared/types'
 import { useModalOverlay } from '../modal-overlay'
@@ -43,6 +43,11 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
   const [offer, setOffer] = useState<PairingInfo | null>(null)
   const [qr, setQr] = useState<string | null>(null)
   const [left, setLeft] = useState(0)
+  /** Anything paired after this counts as "just now" — including a device
+   *  re-pairing, which keeps its id and only gets a fresh pairedAt. */
+  const [openedAt] = useState(() => Date.now())
+  /** The code we have already replaced, so one expiry mints one new code. */
+  const replaced = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
     setInfo(await window.claudeTerm.companionDevices())
@@ -83,7 +88,7 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
     }
   }, [offer])
 
-  const startPairing = async (): Promise<void> => {
+  const startPairing = useCallback(async (): Promise<void> => {
     const next = await window.claudeTerm.companionOffer()
     setOffer(next)
     if (!next.host) {
@@ -103,7 +108,32 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
         color: { dark: '#0b0d11', light: '#e9edf5' }
       })
     )
-  }
+  }, [])
+
+  // A code is what this panel is for, so show one at once rather than behind a
+  // button — nobody opens it to admire the list of phones they already have.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the offer is fetched over IPC; the state lands after the await
+    void startPairing()
+  }, [startPairing])
+
+  // An expired code is a dead end: the phone cannot pair with it and the panel
+  // would just sit there showing it. Replace it as it lapses.
+  useEffect(() => {
+    if (!offer || left > 0 || replaced.current === offer.code) return
+    replaced.current = offer.code
+    void startPairing()
+  }, [offer, left, startPairing])
+
+  // Pairing is done the moment a device says so, and the panel then has nothing
+  // left to offer — name the phone, then get out of the way.
+  const paired = info?.devices.find((d) => d.pairedAt >= openedAt)?.name ?? null
+
+  useEffect(() => {
+    if (!paired) return
+    const timer = setTimeout(onClose, 1400)
+    return () => clearTimeout(timer)
+  }, [paired, onClose])
 
   const expired = offer !== null && left === 0
 
@@ -124,22 +154,10 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
 
         <div className="companion-body">
           <section className="companion-pair">
-            {!offer ? (
-              <>
-                <p className="companion-note">
-                  A phone can follow these sessions, answer their prompts and send new ones. It is
-                  reachable only over Tailscale — nothing on the local network can see it.
-                </p>
-                <button className="companion-cta" onClick={() => void startPairing()}>
-                  Show a pairing code
-                </button>
-                {info && !info.host ? (
-                  <p className="companion-warn">
-                    No Tailscale address on this Mac, so only this machine can reach the companion.
-                    Start Tailscale and try again.
-                  </p>
-                ) : null}
-              </>
+            {paired ? (
+              <p className="companion-paired">Paired “{paired}” ✓</p>
+            ) : !offer ? (
+              <p className="companion-note">Getting a code…</p>
             ) : (
               <>
                 {qr ? (
@@ -154,15 +172,21 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
                   {offer.host ?? '127.0.0.1'} · port {offer.port}
                 </div>
                 <div className={`companion-timer ${expired ? 'expired' : ''}`}>
-                  {expired ? 'expired' : `valid for ${left}s`}
+                  {expired ? 'getting a new code…' : `valid for ${left}s`}
                 </div>
                 <button className="companion-cta" onClick={() => void startPairing()}>
-                  {expired ? 'New code' : 'Start over'}
+                  New code
                 </button>
                 <p className="companion-note">
-                  Scan it, or type the code into the app. It pairs one device and then stops
-                  working.
+                  Scan it, or type the code into the app. It pairs one phone and then stops working;
+                  a fresh one appears here as this lapses.
                 </p>
+                {info && !info.host ? (
+                  <p className="companion-warn">
+                    No Tailscale address on this Mac, so no phone can reach it. Start Tailscale and
+                    press New code.
+                  </p>
+                ) : null}
               </>
             )}
           </section>
