@@ -49,6 +49,10 @@ export interface ClaudeTermApi {
     removedDirs?: string[]
   ): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
+  /** Drop every tab this main process still holds, and return how many there
+   *  were. A renderer calls it as it loads: anything registered belongs to a
+   *  previous load, and its PTY is still running. */
+  resetTabs(): Promise<number>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   openExternal(url: string): Promise<void>
@@ -204,6 +208,7 @@ const api: ClaudeTermApi = {
   createTab: (cwd, resume, addedDirs, removedDirs) =>
     ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
+  resetTabs: () => ipcRenderer.invoke('tab:reset'),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),

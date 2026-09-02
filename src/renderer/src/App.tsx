@@ -366,6 +366,11 @@ export default function App(): React.JSX.Element {
     autoOpened.current = true
     ;(window as unknown as Record<string, unknown>).__openTab = (cwd?: string) => openTab(cwd)
     void (async () => {
+      // This renderer owns no tabs yet, so anything the main process still holds
+      // is from a previous load (a reload, HMR in dev, a crash) with its PTY
+      // still running. Reap before restoring, or the restore resumes a
+      // conversation a second time — two claude processes on one transcript.
+      await window.claudeTerm.resetTabs()
       // dev override wins; otherwise restore the saved session; otherwise home
       const initial = await window.claudeTerm.initialCwd()
       if (initial) {
