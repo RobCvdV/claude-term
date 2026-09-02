@@ -426,6 +426,21 @@ describe('CompanionServer presence', () => {
     expect(server.inattentiveDevices('t1')).toEqual([device.deviceId])
   })
 
+  // Revoking used to just close the socket. On the phone that looked like the
+  // session freezing: it kept showing the session, and every tap went nowhere
+  // because the client drops anything sent on a connection that is not live.
+  it('tells a revoked device why before cutting it off', async () => {
+    const { conn, device } = await paired()
+    expect(devices.revoke(device.deviceId)).toBe(true)
+    server.dropDevice(device.deviceId)
+
+    const error = await conn.next('error')
+    expect(error.code).toBe('unauthenticated')
+    expect(error.message).toMatch(/revoked/)
+    await settle()
+    expect(server.authenticatedCount()).toBe(0)
+  })
+
   it('forwards authenticated frames to the hub', async () => {
     const seen: ClientFrame[] = []
     server.onFrame = (_id, frame) => seen.push(frame)

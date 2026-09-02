@@ -295,10 +295,14 @@ export class CompanionServer {
     }
   }
 
-  /** Cut a device off immediately — used the moment it is revoked. */
+  /** Cut a device off immediately — used the moment it is revoked. It is told
+   *  why first: a socket that simply vanishes leaves the phone sitting on a
+   *  session it can no longer drive, with every tap silently going nowhere.
+   *  'unauthenticated' is the truth of it — the key is no longer trusted. */
   dropDevice(deviceId: string): void {
     for (const client of [...this.clients]) {
-      if (client.deviceId === deviceId) this.drop(client)
+      if (client.deviceId !== deviceId) continue
+      this.fail(client, 'unauthenticated', 'this Mac revoked this phone — pair it again')
     }
   }
 
