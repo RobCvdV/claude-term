@@ -42,6 +42,10 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
   const [info, setInfo] = useState<CompanionInfo | null>(null)
   const [offer, setOffer] = useState<PairingInfo | null>(null)
   const [qr, setQr] = useState<string | null>(null)
+  // Revoking costs the phone its trust and a re-pair, and the button for it
+  // sits in the panel you open to *show* a code — one stray click used to do
+  // it. Ask first, inline: a modal here is what deadlocked pairing before.
+  const [confirming, setConfirming] = useState<string | null>(null)
   const [left, setLeft] = useState(0)
 
   const refresh = useCallback(async () => {
@@ -183,15 +187,34 @@ export function CompanionPanel({ onClose }: Props): React.JSX.Element {
                   <span>{device.name}</span>
                   <span className="companion-device-seen">seen {ago(device.lastSeen)}</span>
                 </div>
-                <button
-                  className="companion-revoke"
-                  onClick={() => {
-                    void window.claudeTerm.companionRevoke(device.deviceId).then(() => refresh())
-                  }}
-                  title="Disconnect it and require pairing again"
-                >
-                  Revoke
-                </button>
+                {confirming === device.deviceId ? (
+                  <div className="companion-confirm">
+                    <span className="companion-confirm-ask">Revoke?</span>
+                    <button
+                      className="companion-revoke danger"
+                      onClick={() => {
+                        setConfirming(null)
+                        void window.claudeTerm
+                          .companionRevoke(device.deviceId)
+                          .then(() => refresh())
+                      }}
+                      title="It has to pair again from scratch"
+                    >
+                      Revoke
+                    </button>
+                    <button className="companion-revoke" onClick={() => setConfirming(null)}>
+                      Keep
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="companion-revoke"
+                    onClick={() => setConfirming(device.deviceId)}
+                    title="Disconnect it and require pairing again"
+                  >
+                    Revoke
+                  </button>
+                )}
               </div>
             ))}
           </section>
