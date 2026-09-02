@@ -69,7 +69,7 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
-      pushTokenFor: () => null,
+      pushTargets: () => [],
       addRule,
       screen: async () => SCREEN_ROWS
     })

@@ -121,13 +121,15 @@ export class CompanionServer {
     }
   }
 
-  /** Devices that are backgrounded, or not looking at this tab — i.e. push targets. */
-  inattentiveDevices(tabId: string): string[] {
-    const seen: string[] = []
+  /** Connected devices with this very tab on screen — the ones a push about it
+   *  would tell nothing new. Everyone else is a push target, including devices
+   *  with no socket at all, which is why this reports the watchers rather than
+   *  the targets (see CompanionHub.maybeNotify). */
+  attentiveDevices(tabId: string): Set<string> {
+    const seen = new Set<string>()
     for (const client of this.clients) {
       if (!client.deviceId) continue
-      if (client.foreground && client.foregroundTab === tabId) continue
-      seen.push(client.deviceId)
+      if (client.foreground && client.foregroundTab === tabId) seen.add(client.deviceId)
     }
     return seen
   }

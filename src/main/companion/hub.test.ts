@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import type { ServerFrame } from 'claude-term-protocol'
 import type { PushNotice } from './notifier'
 import type { TabStatus } from '../../shared/types'
@@ -8,7 +11,9 @@ import { PromptQueue } from './prompt-queue'
 import { PushSender } from './push-sender'
 import { CompanionHub, toSession } from './hub'
 import { ParkedPrompts, type ParkedResponse } from './parked-prompts'
-import type { CompanionServer } from './server'
+import { CompanionServer } from './server'
+import { DeviceRegistry } from './devices'
+import { Pairing } from './pairing'
 
 const SCREEN_ROWS = ['> ready', '  waiting for input']
 
@@ -51,7 +56,7 @@ function fakeServer(): CompanionServer & {
   sent: { deviceId: string; frame: ServerFrame }[]
   broadcasts: ServerFrame[]
   authed: number
-  inattentive: string[]
+  attentive: string[]
 } {
   const api = {
     authed: 1,
@@ -66,9 +71,9 @@ function fakeServer(): CompanionServer & {
     sendTo(deviceId: string, frame: ServerFrame) {
       api.sent.push({ deviceId, frame })
     },
-    inattentive: ['d1'] as string[],
-    inattentiveDevices() {
-      return api.inattentive
+    attentive: [] as string[],
+    attentiveDevices() {
+      return new Set(api.attentive)
     },
     onPresence: (() => {}) as (count: number) => void,
     onGone: (() => {}) as (deviceId: string) => void,
@@ -123,7 +128,7 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     queue,
     notifier,
     push,
-    pushTokenFor: () => pushToken,
+    pushTargets: () => (pushToken ? [{ deviceId: 'd1', token: pushToken }] : []),
     screen,
     addRule
   })
@@ -341,7 +346,7 @@ describe('CompanionHub', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
-      pushTokenFor: () => null,
+      pushTargets: () => [],
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -381,7 +386,7 @@ describe('CompanionHub', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
-      pushTokenFor: () => null,
+      pushTargets: () => [],
       screen: async () => SCREEN_ROWS
     })
     hub.start()
@@ -487,7 +492,7 @@ describe('CompanionHub', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
-      pushTokenFor: () => null,
+      pushTargets: () => [],
       snapshots: () => statuses,
       snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
       screen: async () => null
@@ -513,7 +518,7 @@ describe('CompanionHub', () => {
 
   it('says nothing to a phone with the session already on screen', () => {
     const { hub, server, pushed } = setup()
-    server.inattentive = []
+    server.attentive = ['d1']
     hub.publishStatus(tabStatus({ activity: 'busy' }))
     hub.publishStatus(tabStatus({ activity: 'needs-attention' }))
     expect(pushed).toHaveLength(0)
@@ -534,5 +539,80 @@ describe('CompanionHub', () => {
       type: 'session',
       session: { tabId: 't1', activity: 'idle' }
     })
+  })
+})
+
+/**
+ * The regression, against the REAL server and device registry — a fake server
+ * cannot catch it, because the bug was the hub asking the wrong component.
+ *
+ * Push targets used to be read off the live sockets, so the only device ever
+ * notified was one with the app open but looking at another tab. A phone whose
+ * app is shut holds no socket — and that is the entire reason a push exists.
+ */
+describe('who a push is aimed at', () => {
+  const withRealServer = (): {
+    hub: CompanionHub
+    pushed: PushNotice[]
+    devices: DeviceRegistry
+  } => {
+    const dir = mkdtempSync(join(tmpdir(), 'ct-push-'))
+    const devices = new DeviceRegistry(() => join(dir, 'devices.json'))
+    const server = new CompanionServer({
+      devices,
+      pairing: new Pairing(),
+      hostName: 'test-host',
+      sessions: () => []
+    })
+    const statuses = [tabStatus()]
+    const pushed: PushNotice[] = []
+    const hub = new CompanionHub({
+      server,
+      parked: new ParkedPrompts(),
+      feed: new ConversationFeed({ turnsFor: () => [], sessionOf: () => null }),
+      snapshots: () => statuses,
+      snapshot: () => statuses[0],
+      queue: new PromptQueue({ deliver: () => {}, ready: () => true }),
+      notifier: new Notifier({ hostFocused: () => false }),
+      push: {
+        send: async (_t: unknown, notice: PushNotice) => {
+          pushed.push(notice)
+          return 1
+        }
+      } as unknown as PushSender,
+      pushTargets: () =>
+        devices
+          .list()
+          .filter((d) => d.pushToken)
+          .map((d) => ({ deviceId: d.deviceId, token: d.pushToken as string })),
+      screen: async () => SCREEN_ROWS
+    })
+    hub.start()
+    return { hub, pushed, devices }
+  }
+
+  it('reaches a paired phone that holds no socket at all', () => {
+    const { hub, pushed, devices } = withRealServer()
+    devices.add({
+      deviceId: 'sleeping-phone',
+      name: 'iPhone',
+      publicKey: 'k',
+      pushToken: 'ExponentPushToken[offline]'
+    })
+    // no connection is ever made — the app is shut, which is the whole point
+    hub.publishStatus(tabStatus({ activity: 'busy' }))
+    hub.publishStatus(tabStatus({ activity: 'needs-attention' }))
+    expect(pushed).toHaveLength(1)
+    expect(pushed[0]).toMatchObject({ kind: 'needs-attention' })
+    hub.stop()
+  })
+
+  it('still says nothing to a device that never gave a token', () => {
+    const { hub, pushed, devices } = withRealServer()
+    devices.add({ deviceId: 'no-notifications', name: 'iPad', publicKey: 'k' })
+    hub.publishStatus(tabStatus({ activity: 'busy' }))
+    hub.publishStatus(tabStatus({ activity: 'needs-attention' }))
+    expect(pushed).toHaveLength(0)
+    hub.stop()
   })
 })

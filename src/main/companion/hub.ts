@@ -36,8 +36,8 @@ export interface CompanionHubDeps {
   queue: PromptQueue
   notifier: Notifier
   push: PushSender
-  /** Push token for a device, when it has given us one. */
-  pushTokenFor: (deviceId: string) => string | null
+  /** Every paired device that has given us a push token — connected or not. */
+  pushTargets: () => PushTarget[]
   snapshots: () => TabStatus[]
   snapshot: (tabId: TabId) => TabStatus | null
   /** Add a permission rule to the project's Claude Code settings. */
@@ -152,19 +152,20 @@ export class CompanionHub {
   }
 
   /**
-   * Tell phones that are not already watching this tab. A device with the
-   * session open on screen is by definition already informed, and a socket is
-   * only alive while the app is; the push is for when it is not.
+   * Tell phones that are not already watching this tab.
+   *
+   * Targets come from the paired-device registry, NOT from the live sockets: a
+   * socket only exists while the app is running, and a phone whose app is shut
+   * is exactly who a push is for. Drawing them from the connections meant the
+   * only device ever notified was one with the app open but looking elsewhere.
+   * A device with the session itself on screen is skipped — it already knows.
    */
   private maybeNotify(status: TabStatus): void {
     const notice = this.deps.notifier.consider(status)
     if (!notice) return
-    const targets: PushTarget[] = []
-    for (const deviceId of this.deps.server.inattentiveDevices(status.tabId)) {
-      const token = this.deps.pushTokenFor(deviceId)
-      if (token) targets.push({ deviceId, token })
-    }
-    // A device with no token has no notifications turned on; nothing to do.
+    const watching = this.deps.server.attentiveDevices(status.tabId)
+    // A device with no token has notifications turned off; nothing to do.
+    const targets = this.deps.pushTargets().filter((t) => !watching.has(t.deviceId))
     if (targets.length === 0) return
     void this.deps.push.send(targets, notice)
   }
