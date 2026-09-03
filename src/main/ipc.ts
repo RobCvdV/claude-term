@@ -57,6 +57,7 @@ import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
 import { addedFolders, matchExtraDir, type FolderChip } from '../shared/status-folders'
 import { sessionHomeDir } from './session-home'
+import { disposeAll, disposeTab, type TabResources } from './tab-lifecycle'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { recordCoverage } from './worklog-coverage'
@@ -382,18 +383,26 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     return gone
   })
 
-  ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
-    // Flush the detached windows first (they may prompt to save) while the tab's
-    // status — and thus their cwd/roots — is still resolvable.
-    await closeDocsWindowForTab(tabId)
-    ptys.kill(tabId)
-    // the session is going away; nothing held for it can be answered or delivered
-    parked.releaseTab(tabId)
-    queue.forget(tabId)
-    notifier.forget(tabId)
-    status.removeTab(tabId)
-    checkpoints.forget(tabId)
-  })
+  const tabResources: TabResources = {
+    closeDocs: (tabId) => closeDocsWindowForTab(tabId),
+    killPty: (tabId) => ptys.kill(tabId),
+    releaseParked: (tabId) => parked.releaseTab(tabId),
+    forgetQueued: (tabId) => queue.forget(tabId),
+    forgetNotices: (tabId) => notifier.forget(tabId),
+    unregister: (tabId) => status.removeTab(tabId),
+    forgetCheckpoints: (tabId) => checkpoints.forget(tabId)
+  }
+
+  ipcMain.handle('tab:close', (_e, tabId: TabId) => disposeTab(tabId, tabResources))
+
+  // A renderer that has just loaded owns no tabs, so anything still registered
+  // here is from a previous load and has to go — PTY included (see disposeAll).
+  ipcMain.handle('tab:reset', () =>
+    disposeAll(
+      status.allSnapshots().map((s) => s.tabId),
+      tabResources
+    )
+  )
 
   ipcMain.on(
     'docs:openWindow',
