@@ -97,6 +97,9 @@ function HowTo(): React.JSX.Element {
         <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
+        <Keys k="⌘K">
+          Phones — pair or revoke… — companion access over Tailscale (palette only)
+        </Keys>
       </section>
     </div>
   )
@@ -204,6 +207,56 @@ function Guide(): React.JSX.Element {
           included, and parallel sessions count once. Booking a day <b>settles</b> it up to its last
           activity, whatever you booked it as, so 12h of tracked time booked as 8h leaves nothing to
           book — only work done after that window comes back as unbooked.
+        </p>
+      </section>
+      <section>
+        <h3>Answering prompts from your phone</h3>
+        <p>
+          A companion device can watch a session, answer its prompts and send new ones. It is
+          reachable <b>only over Tailscale</b>: the server binds to the tailnet address and loopback
+          and nothing else, so nothing on the local Wi-Fi can see it. Pairing is a deliberate act —
+          <b>Phones — pair or revoke…</b> in ⌘K opens a panel with a QR carrying the address, port
+          and a code good for two minutes and one device, and the phone proves it holds its own key
+          before the host trusts it. The same panel lists what is enrolled and revokes any of it on
+          the spot. No password or token is ever sent over the wire.
+        </p>
+        <p>
+          It can also ask for a snapshot of a tab&apos;s terminal screen — the rows as they are
+          right now, not a replay. The TUI redraws in place, so there is no byte stream worth
+          sending and no scrollback behind it; the screen itself is the whole story.
+        </p>
+        <p>
+          A device can follow a session&apos;s conversation as it happens. That comes from the
+          transcript rather than the terminal — the TUI keeps no scrollback, so the terminal has no
+          history to send — and it shares the parse ⌘F already does, so following a session costs
+          almost nothing.
+        </p>
+        <p>
+          When a session asks for permission, the request is <i>held open</i> while your phone
+          decides — but Claude Code has already drawn its dialog in the terminal, so the prompt is
+          always still answerable at the desk. Whichever side answers first wins and the other
+          retracts. Nothing is ever auto-approved on your behalf: if no phone answers, the prompt
+          simply waits in the terminal exactly as it would have anyway. A held prompt is handed back
+          whenever the last device disconnects, the tab closes, or the app quits.
+        </p>
+        <p>
+          Answering with <b>allow and stop asking</b> writes a rule into the project&apos;s{' '}
+          <code>.claude/settings.local.json</code>, the same file Claude Code&apos;s own “don&apos;t
+          ask again” uses. Rules are only offered for shell commands, and never for one containing{' '}
+          <code>&amp;&amp;</code>, a pipe or a subshell — a rule read off{' '}
+          <code>mkdir a &amp;&amp; rm -rf b</code> would license the second half too.
+        </p>
+        <p>
+          Phones are notified when a tab starts waiting, when a long turn finishes and when a
+          session ends — but not while this app is focused, and not to a phone that already has that
+          session open. What the notification says is deliberately vague: a title and the folder
+          name. The command being asked about never leaves the tailnet, because a push travels
+          through Apple to get there.
+        </p>
+        <p>
+          A prompt sent from a phone is held while the session is showing a dialog, since anything
+          typed then would answer the dialog instead; it goes in as soon as that clears. A session
+          that is merely busy needs no such care — Claude Code queues typed input itself.
         </p>
       </section>
       <section>

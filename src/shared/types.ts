@@ -595,3 +595,28 @@ export interface ActivityReport {
   /** per-ticket totals across the whole window, biggest first */
   totals: ActivityBucket[]
 }
+
+/** A live pairing offer: what the phone needs, and how long it has. */
+export interface PairingInfo {
+  code: string
+  expiresAt: number
+  /** tailnet address to reach this host on, or null when there is no tailnet */
+  host: string | null
+  port: number
+  hostName: string
+}
+
+export interface PairedDevice {
+  deviceId: string
+  name: string
+  pairedAt: number
+  lastSeen: number
+}
+
+export interface CompanionInfo {
+  port: number
+  host: string | null
+  /** devices with a live, authenticated socket right now */
+  connected: number
+  devices: PairedDevice[]
+}

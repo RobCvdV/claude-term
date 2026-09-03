@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  CompanionInfo,
+  PairingInfo,
   ActivityReport,
   BookedWorklog,
   BookResult,
@@ -47,6 +49,10 @@ export interface ClaudeTermApi {
     removedDirs?: string[]
   ): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
+  /** Drop every tab this main process still holds, and return how many there
+   *  were. A renderer calls it as it loads: anything registered belongs to a
+   *  previous load, and its PTY is still running. */
+  resetTabs(): Promise<number>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   openExternal(url: string): Promise<void>
@@ -96,6 +102,12 @@ export interface ClaudeTermApi {
   ): Promise<{ ok: true; booked: BookedWorklog[] } | { ok: false; error: string }>
   /** post worklogs straight to Jira; per-entry results, failures don't abort */
   jiraBook(entries: WorklogPlanEntry[]): Promise<BookResult[]>
+  onScreenRequest(cb: (requestId: string, tabId: TabId) => void): () => void
+  screenReply(requestId: string, rows: string[]): void
+  companionOffer(): Promise<PairingInfo>
+  companionCancelOffer(): Promise<void>
+  companionDevices(): Promise<CompanionInfo>
+  companionRevoke(deviceId: string): Promise<boolean>
   volumeGet(): Promise<VolumeState>
   volumeSet(op: VolumeOp): Promise<VolumeState>
   /** Harper's wasm bytes for the grammar checker; null when not installed */
@@ -196,6 +208,7 @@ const api: ClaudeTermApi = {
   createTab: (cwd, resume, addedDirs, removedDirs) =>
     ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
+  resetTabs: () => ipcRenderer.invoke('tab:reset'),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
@@ -221,6 +234,13 @@ const api: ClaudeTermApi = {
   jiraDisconnect: () => ipcRenderer.invoke('jira:disconnect'),
   jiraBooked: (rangeDays) => ipcRenderer.invoke('jira:booked', rangeDays),
   jiraBook: (entries) => ipcRenderer.invoke('jira:book', entries),
+  onScreenRequest: (cb) => subscribe('screen:request', cb),
+  screenReply: (requestId: string, rows: string[]) =>
+    ipcRenderer.send('screen:reply', requestId, rows),
+  companionOffer: () => ipcRenderer.invoke('companion:offer'),
+  companionCancelOffer: () => ipcRenderer.invoke('companion:cancelOffer'),
+  companionDevices: () => ipcRenderer.invoke('companion:devices'),
+  companionRevoke: (deviceId: string) => ipcRenderer.invoke('companion:revoke', deviceId),
   volumeGet: () => ipcRenderer.invoke('volume:get'),
   volumeSet: (op) => ipcRenderer.invoke('volume:set', op),
   grammarWasm: () => ipcRenderer.invoke('grammar:wasm'),

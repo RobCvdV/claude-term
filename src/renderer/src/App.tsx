@@ -15,6 +15,7 @@ import { StatusBar } from './components/StatusBar'
 import { PromptBox, PromptBoxHandle } from './components/PromptBox'
 import { ActivityOverview } from './components/ActivityOverview'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
+import { CompanionPanel } from './components/CompanionPanel'
 import { HelpOverlay } from './components/HelpOverlay'
 import { MissionControl } from './components/MissionControl'
 import { composeWindowTitle } from './tab-title'
@@ -31,7 +32,8 @@ import {
   setTerminalEscapeHandler,
   setTerminalFocusToggleHandler,
   setTerminalTitleHandler,
-  terminalAtNormalInput
+  terminalAtNormalInput,
+  visibleScreen
 } from './term-registry'
 import {
   focusForTab,
@@ -86,6 +88,7 @@ export default function App(): React.JSX.Element {
   // recent-branch history for the palette, refreshed each time it opens
   const [recentBranches, setRecentBranches] = useState<BranchHistoryEntry[]>([])
   const [showMission, setShowMission] = useState(false)
+  const [showCompanion, setShowCompanion] = useState(false)
   // help overlay: which section to show, or null when closed (Help menu / ⌘/)
   const [helpSection, setHelpSection] = useState<HelpSection | null>(null)
   // per-tab ⌘F counter: >0 shows the find bar, each bump refocuses its input
@@ -363,6 +366,11 @@ export default function App(): React.JSX.Element {
     autoOpened.current = true
     ;(window as unknown as Record<string, unknown>).__openTab = (cwd?: string) => openTab(cwd)
     void (async () => {
+      // This renderer owns no tabs yet, so anything the main process still holds
+      // is from a previous load (a reload, HMR in dev, a crash) with its PTY
+      // still running. Reap before restoring, or the restore resumes a
+      // conversation a second time — two claude processes on one transcript.
+      await window.claudeTerm.resetTabs()
       // dev override wins; otherwise restore the saved session; otherwise home
       const initial = await window.claudeTerm.initialCwd()
       if (initial) {
@@ -615,6 +623,14 @@ export default function App(): React.JSX.Element {
 
   const attentionCount = tabs.filter((t) => needsInput(statuses[t.tabId])).length
 
+  // Only this process's xterm knows what is on a tab's screen, so answer main's
+  // request for one (a companion device asking what a session is doing).
+  useEffect(() => {
+    return window.claudeTerm.onScreenRequest((requestId, tabId) => {
+      window.claudeTerm.screenReply(requestId, visibleScreen(tabId))
+    })
+  }, [])
+
   const paletteActions: PaletteAction[] = [
     { id: 'new-tab', label: 'New tab', shortcut: '⌘T', run: newTab },
     { id: 'open-folder', label: 'Open folder…', shortcut: '⌘O', run: () => void openFolder() },
@@ -627,6 +643,7 @@ export default function App(): React.JSX.Element {
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
     { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
+    { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },
     { id: 'howto', label: 'Quick How-To', shortcut: '⌘/', run: () => setHelpSection('howto') },
     { id: 'guide', label: 'User Guide', run: () => setHelpSection('guide') },
     ...(activeId
@@ -715,6 +732,8 @@ export default function App(): React.JSX.Element {
           }}
         />
       )}
+      {showCompanion && <CompanionPanel onClose={() => setShowCompanion(false)} />}
+
       {showMission && (
         <MissionControl
           tabs={tabs}

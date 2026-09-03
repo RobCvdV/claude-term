@@ -1,9 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from 'electron'
 import { basename, join } from 'path'
-import { homedir } from 'os'
+import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
+  CompanionInfo,
+  PairingInfo,
   ConvoSearchResult,
   CreateDocResult,
   DocGroup,
@@ -13,6 +15,17 @@ import type {
   TabInfo
 } from '../shared/types'
 import { PtyManager } from './pty-manager'
+import { ConversationFeed } from './companion/conversation-feed'
+import { Notifier } from './companion/notifier'
+import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
+import { PushSender } from './companion/push-sender'
+import { ScreenRequests } from './screen-requests'
+import { CompanionHub } from './companion/hub'
+import { ParkedPrompts } from './companion/parked-prompts'
+import { DeviceRegistry } from './companion/devices'
+import { Pairing } from './companion/pairing'
+import { CompanionServer } from './companion/server'
+import { reachableAddress } from './companion/bind-address'
 import { StatusServer } from './status-server'
 import { listBranches, listBranchRefs, listCommands, listDirs, searchFiles } from './completions'
 import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
@@ -44,6 +57,7 @@ import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
 import { addedFolders, matchExtraDir, type FolderChip } from '../shared/status-folders'
 import { sessionHomeDir } from './session-home'
+import { disposeAll, disposeTab, type TabResources } from './tab-lifecycle'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { recordCoverage } from './worklog-coverage'
@@ -52,7 +66,7 @@ import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { sessionDoing } from './session-summary'
-import { searchConversation } from './conversation-search'
+import { searchConversation, conversationTurns } from './conversation-search'
 import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
@@ -74,6 +88,16 @@ export interface AppServices {
   rate: RateStore
   branches: BranchHistory
   checkpoints: CheckpointStore
+  parked: ParkedPrompts
+  queue: PromptQueue
+  notifier: Notifier
+  companion: CompanionServer
+  devices: DeviceRegistry
+  pairing: Pairing
+  hub: CompanionHub
+  screens: ScreenRequests
+  /** Drop the wake lock — called on the way out. */
+  releaseSleepBlocker: () => void
 }
 
 export function createServices(getWindow: () => BrowserWindow | null): AppServices {
@@ -85,6 +109,85 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   const branches = new BranchHistory(() => join(app.getPath('userData'), 'branch-history.json'))
   // a checkpoint pins a commit with a ref, so eviction has to release it
   const checkpoints = new CheckpointStore((cp) => void dropCheckpoint(cp))
+  // Prompts held open for a companion device. Until one is connected canPark
+  // stays false, so every hook is answered instantly exactly as before.
+  const parked = new ParkedPrompts()
+  const devices = new DeviceRegistry(() => join(app.getPath('userData'), 'companion-devices.json'))
+  const pairing = new Pairing()
+  const companion = new CompanionServer({
+    devices,
+    pairing,
+    hostName: hostname(),
+    sessions: () => hub.sessionList()
+    // No confirmation dialog: the code is the gate. It is single-use, expires in
+    // two minutes, dies after five wrong guesses, and is only ever visible on
+    // this screen — and a second modal on top of the code panel is what
+    // deadlocked pairing in the first place.
+  })
+
+  // Sleeping mid-turn would strand a phone waiting on this session, so hold the
+  // machine awake — but only while a device is connected AND work is running.
+  let sleepBlockerId: number | null = null
+  const updateSleepBlocker = (): void => {
+    const wanted = companion.authenticatedCount() > 0 && status.busyCount() > 0
+    if (wanted === (sleepBlockerId !== null)) return
+    if (wanted) sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension')
+    else {
+      powerSaveBlocker.stop(sleepBlockerId!)
+      sleepBlockerId = null
+    }
+  }
+  const releaseSleepBlocker = (): void => {
+    if (sleepBlockerId === null) return
+    powerSaveBlocker.stop(sleepBlockerId)
+    sleepBlockerId = null
+  }
+
+  // Only the renderer's xterm knows what is on a tab's screen, so asking is a
+  // round trip over the otherwise one-way main→renderer channel.
+  const screens = new ScreenRequests((requestId, tabId) => send('screen:request', requestId, tabId))
+  // A dialog owns the keyboard, so a prompt arriving then would answer it
+  // instead of asking anything — hold it until the tab can take input again.
+  const queue = new PromptQueue({
+    deliver: (tabId, text) => ptys.injectPrompt(tabId, text),
+    ready: (tabId) => {
+      const snap = status.snapshot(tabId)
+      return Boolean(snap?.claudeActive) && tabCanTakeInput(snap?.activity)
+    }
+  })
+  const feed = new ConversationFeed({
+    turnsFor: (sessionId) => conversationTurns(sessionId),
+    sessionOf: (tabId) => status.snapshot(tabId)?.sessionId ?? null
+  })
+  const notifier = new Notifier({
+    // Someone with the app in front of them does not need their phone to buzz.
+    hostFocused: () => Boolean(getWindow()?.isFocused())
+  })
+  const push = new PushSender({
+    fetch: (input, init) => fetch(input, init),
+    onTokenRejected: (deviceId) => devices.clearPushToken(deviceId),
+    log: (message) => console.warn(message)
+  })
+  const hub = new CompanionHub({
+    server: companion,
+    parked,
+    feed,
+    snapshots: () => status.allSnapshots(),
+    snapshot: (tabId) => status.snapshot(tabId),
+    queue,
+    notifier,
+    push,
+    // Every paired device with a token, whether or not it holds a socket —
+    // a phone with the app shut is the whole point of a push.
+    pushTargets: () =>
+      devices
+        .list()
+        .filter((d) => d.pushToken)
+        .map((d) => ({ deviceId: d.deviceId, token: d.pushToken as string })),
+    screen: (tabId) => screens.request(tabId),
+    onChanged: updateSleepBlocker
+  })
+  hub.start()
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()
@@ -109,6 +212,8 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     }
   })
 
+  status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
+
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
     // background-agent refusal can no longer be ahead of us (see
@@ -118,6 +223,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
       rate.record(tabStatus.payload)
     }
     send('status:update', tabStatus)
+    hub.publishStatus(tabStatus)
   }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // The tab re-homed onto its session's launch folder — a shell respawned after
@@ -144,11 +250,26 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     })
   }
 
-  return { ptys, status, rate, branches, checkpoints }
+  return {
+    ptys,
+    status,
+    rate,
+    branches,
+    checkpoints,
+    parked,
+    queue,
+    notifier,
+    companion,
+    devices,
+    pairing,
+    hub,
+    screens,
+    releaseSleepBlocker
+  }
 }
 
 export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
-  const { ptys, status, checkpoints } = services
+  const { ptys, status, checkpoints, parked, queue, notifier } = services
 
   // Started when the renderer loads the persisted session (which is where we
   // first see every id about to be revived) and awaited by each revive.
@@ -228,14 +349,60 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     }
   )
 
-  ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
-    // Flush the detached windows first (they may prompt to save) while the tab's
-    // status — and thus their cwd/roots — is still resolvable.
-    await closeDocsWindowForTab(tabId)
-    ptys.kill(tabId)
-    status.removeTab(tabId)
-    checkpoints.forget(tabId)
+  // Pairing lives in a panel rather than a dialog. Two modal message boxes
+  // deadlocked it: the code box blocked the window, so the confirmation behind
+  // it could never appear and pairing simply never resolved.
+  ipcMain.handle('companion:offer', (): PairingInfo => {
+    const offer = services.pairing.offer()
+    return {
+      ...offer,
+      host: reachableAddress(),
+      port: services.companion.port,
+      hostName: hostname()
+    }
   })
+
+  ipcMain.handle('companion:cancelOffer', () => services.pairing.cancel())
+
+  ipcMain.handle('companion:devices', (): CompanionInfo => ({
+    port: services.companion.port,
+    host: reachableAddress(),
+    connected: services.companion.authenticatedCount(),
+    devices: services.devices.list().map((d) => ({
+      deviceId: d.deviceId,
+      name: d.name,
+      pairedAt: d.pairedAt,
+      lastSeen: d.lastSeen
+    }))
+  }))
+
+  ipcMain.handle('companion:revoke', (_e, deviceId: string) => {
+    const gone = services.devices.revoke(deviceId)
+    // a revoked device must not keep the socket it already has
+    if (gone) services.companion.dropDevice(deviceId)
+    return gone
+  })
+
+  const tabResources: TabResources = {
+    closeDocs: (tabId) => closeDocsWindowForTab(tabId),
+    killPty: (tabId) => ptys.kill(tabId),
+    releaseParked: (tabId) => parked.releaseTab(tabId),
+    forgetQueued: (tabId) => queue.forget(tabId),
+    forgetNotices: (tabId) => notifier.forget(tabId),
+    unregister: (tabId) => status.removeTab(tabId),
+    forgetCheckpoints: (tabId) => checkpoints.forget(tabId)
+  }
+
+  ipcMain.handle('tab:close', (_e, tabId: TabId) => disposeTab(tabId, tabResources))
+
+  // A renderer that has just loaded owns no tabs, so anything still registered
+  // here is from a previous load and has to go — PTY included (see disposeAll).
+  ipcMain.handle('tab:reset', () =>
+    disposeAll(
+      status.allSnapshots().map((s) => s.tabId),
+      tabResources
+    )
+  )
 
   ipcMain.on(
     'docs:openWindow',
@@ -673,6 +840,10 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   ipcMain.handle('branches:workspace', (_e, tabId: TabId) =>
     workspaceBranchGroups(status.snapshot(tabId), listBranchRefs)
+  )
+
+  ipcMain.on('screen:reply', (_e, requestId: string, rows: string[]) =>
+    services.screens.resolve(requestId, rows)
   )
 
   ipcMain.on('pty:input', (_e, tabId: TabId, data: string) => ptys.write(tabId, data))
