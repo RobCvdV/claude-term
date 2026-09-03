@@ -2468,3 +2468,20 @@ body {
   color: var(--red);
   border-color: var(--red);
 }
+
+.companion-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.companion-confirm-ask {
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.companion-revoke.danger {
+  color: var(--red);
+  border-color: var(--red);
+}
