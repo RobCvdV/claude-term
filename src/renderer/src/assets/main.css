@@ -48,7 +48,9 @@ body {
   align-items: stretch;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
-  padding-left: 78px; /* room for macOS traffic lights (hiddenInset) */
+  /* room for macOS traffic lights (hiddenInset) — they do not zoom, so the
+     reserve grows as the page shrinks */
+  padding-left: calc(78px / var(--zoom-factor, 1));
   min-height: 38px;
   -webkit-app-region: drag;
 }

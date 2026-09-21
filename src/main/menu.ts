@@ -1,11 +1,18 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  type MenuItemConstructorOptions,
+  type WebContents
+} from 'electron'
 import type { HelpSection } from '../shared/types'
 
 const ZOOM_STEP = 0.5
-/** Chromium only renders 25%–500%, and writes past that are kept, not clamped —
- *  so an unclamped step leaves a level no keypress can walk back from, and the
- *  other direction looks dead until it has been pressed its way back in. */
-const ZOOM_MIN = -7.5
+/** Writes past what Chromium will render are kept, not clamped, so an unclamped
+ *  step leaves a level no keypress can walk back from and the other direction
+ *  looks dead until it has been pressed its way back in. The floor is half size
+ *  (1.2^-3.8) rather than Chromium's 25%: below that the UI is unreadable. */
+const ZOOM_MIN = -3.8
 const ZOOM_MAX = 8.5
 
 /**
@@ -23,6 +30,20 @@ export function installZoomKeys(win: BrowserWindow): void {
     event.preventDefault()
     zoomBy(step)
   })
+  // a reload starts back at the default, and the tab bar has to hear about it
+  win.webContents.on('did-finish-load', () => publishZoom(win.webContents))
+}
+
+/** The traffic lights keep their size whatever the page zoom, so the tab bar's
+ *  inset for them has to be divided back out in CSS. Set from here rather than
+ *  pushed over IPC: on a reload the renderer has not subscribed yet. */
+function publishZoom(webContents: WebContents): void {
+  const factor = webContents.getZoomFactor()
+  void webContents
+    .executeJavaScript(`document.documentElement.style.setProperty('--zoom-factor', '${factor}')`)
+    .catch(() => {
+      /* the page went away mid-zoom */
+    })
 }
 
 function zoomBy(step: number): void {
@@ -33,6 +54,7 @@ function zoomBy(step: number): void {
   const { webContents } = win
   webContents.zoomLevel =
     step === 0 ? 0 : Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, webContents.zoomLevel + step))
+  publishZoom(webContents)
 }
 
 /**
