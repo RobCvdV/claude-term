@@ -50,6 +50,7 @@ function HowTo(): React.JSX.Element {
           ↓ walk the hits
         </Keys>
         <Keys k="⌘L">Focus the prompt box</Keys>
+        <Keys k="⌘= ⌘-">Scale the whole window up or down — ⌘0 back to actual size</Keys>
         <Keys k="⌥Tab">Toggle focus between the prompt box and the terminal, either way</Keys>
         <Keys k="Esc">
           Goes to Claude Code (clear the line, twice to rewind); from the box it also moves focus to
