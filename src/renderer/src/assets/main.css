@@ -48,10 +48,11 @@ body {
   align-items: stretch;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
-  /* room for macOS traffic lights (hiddenInset) — they do not zoom, so the
-     reserve grows as the page shrinks */
+  /* room for macOS traffic lights (hiddenInset) — they do not zoom, so both the
+     reserve beside them and the bar that has to clear them grow as the page
+     shrinks, or the tabs and the bottom rule cut straight through the buttons */
   padding-left: calc(78px / var(--zoom-factor, 1));
-  min-height: 38px;
+  min-height: calc(38px / var(--zoom-factor, 1));
   -webkit-app-region: drag;
 }
 
