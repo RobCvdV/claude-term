@@ -8,7 +8,7 @@ import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
 import { setupUpdater, installUpdate, checkForUpdatesInteractive } from './updater'
-import { installAppMenu } from './menu'
+import { installAppMenu, installZoomKeys } from './menu'
 import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
 
@@ -67,6 +67,8 @@ const ciPoller = new CiPoller(
 if (process.env['CLAUDE_TERM_DEBUG_PORT']) {
   app.commandLine.appendSwitch('remote-debugging-port', process.env['CLAUDE_TERM_DEBUG_PORT'])
 }
+
+app.on('browser-window-created', (_event, win) => installZoomKeys(win))
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
