@@ -3,6 +3,7 @@ import { aggregateActivity, mergeBlocks, workSpans } from './activity-log'
 
 interface Beat {
   ts: number
+  event?: string
   session: string
   cwd: string
   branch: string
@@ -99,6 +100,38 @@ describe('aggregateActivity — workday length', () => {
     const day = report(beats('a', WORK, 'bugfix/MTX-1-x', [9, 0], 60, 30)).days[0]
     expect(day.totalHours).toBe(0.17)
     expect(day.workHours).toBe(0.58)
+  })
+})
+
+describe('aggregateActivity — idle tabs', () => {
+  const beat = (event: string, h: number, min: number, session = 'idle'): Beat => ({
+    ts: at(h, min),
+    event,
+    session,
+    cwd: WORK,
+    branch: 'bugfix/MTX-2-stale'
+  })
+
+  it('bills nothing for a tab that was only resumed and closed again', () => {
+    // app launch resumes the tab, a restart ends and resumes it, quit ends it
+    const r = report([
+      beat('SessionStart', 9, 0),
+      beat('SessionEnd', 9, 1),
+      beat('SessionStart', 9, 3),
+      beat('SessionEnd', 15, 45)
+    ])
+    expect(r.days).toEqual([])
+  })
+
+  it('still bills the lead-up to a prompt, but not the idle tail before quitting', () => {
+    const r = report([
+      beat('SessionStart', 9, 0),
+      beat('UserPromptSubmit', 9, 2),
+      beat('Stop', 9, 6),
+      beat('SessionEnd', 12, 0)
+    ])
+    // 09:00→09:02 and 09:02→09:06; the Stop→SessionEnd stretch is not work
+    expect(r.days[0].totalHours).toBe(0.1)
   })
 })
 
