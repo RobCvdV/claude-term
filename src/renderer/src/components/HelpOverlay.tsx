@@ -71,6 +71,7 @@ function HowTo(): React.JSX.Element {
         <Keys k="⇧Tab">Cycle the permission mode</Keys>
         <Keys k="⌥Tab">Hand focus to the terminal (and back again)</Keys>
         <Keys k="←">Agents overview (on an empty box)</Keys>
+        <Keys k="⌘.">Spelling fixes for the underlined word under the cursor</Keys>
         <div className="help-note">
           Drop files anywhere: they become @-mentions; images attach as compact chips.
         </div>
@@ -122,20 +123,20 @@ function Guide(): React.JSX.Element {
       <section>
         <h3>The prompt box</h3>
         <p>
-          The box under the terminal is a full editor: multiline input, spell + grammar checking,
-          and completion popups for <code>/</code> commands (Claude&apos;s own, your plugins, and
-          app-local ones) and <code>@</code> file mentions fed by the project&apos;s git files. App
-          commands run inside the app — <code>/color orange</code> tints the tab,{' '}
-          <code>/switch</code> completes local branches and renames the session to match,{' '}
-          <code>/npm</code> lists the project&apos;s npm scripts (root + one folder deep) — Enter
-          runs one, Tab fills <code>!npm run …</code> to add params — <code>/add-file</code>{' '}
-          completes folders and creates the file you name at the end (
-          <code>/add-file docs/plan.md</code>, any extension or none; folders in the path that
-          don&apos;t exist yet are created once you confirm), opening it in the docs editor, and{' '}
-          <code>/add-dir</code> completes directories — <code>/remove-dir</code> takes one back out
-          of the tab, completing the extra folders it currently has (the folder chip&apos;s
-          right-click menu does the same). When Claude shows a grayed-out suggested next prompt in
-          the terminal, <b>Tab</b> in the empty box runs it.
+          The box under the terminal is a full editor: multiline input, spell + grammar checking (
+          <code>⌘.</code> on an underlined word lists fixes and “Add to dictionary”), and completion
+          popups for <code>/</code> commands (Claude&apos;s own, your plugins, and app-local ones)
+          and <code>@</code> file mentions fed by the project&apos;s git files. App commands run
+          inside the app — <code>/color orange</code> tints the tab, <code>/switch</code> completes
+          local branches and renames the session to match, <code>/npm</code> lists the
+          project&apos;s npm scripts (root + one folder deep) — Enter runs one, Tab fills{' '}
+          <code>!npm run …</code> to add params — <code>/add-file</code> completes folders and
+          creates the file you name at the end (<code>/add-file docs/plan.md</code>, any extension
+          or none; folders in the path that don&apos;t exist yet are created once you confirm),
+          opening it in the docs editor, and <code>/add-dir</code> completes directories —{' '}
+          <code>/remove-dir</code> takes one back out of the tab, completing the extra folders it
+          currently has (the folder chip&apos;s right-click menu does the same). When Claude shows a
+          grayed-out suggested next prompt in the terminal, <b>Tab</b> in the empty box runs it.
         </p>
       </section>
       <section>
