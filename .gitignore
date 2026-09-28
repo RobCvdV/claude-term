@@ -13,3 +13,6 @@ resources/harper-grammar.wasm
 /ROADMAP.md
 
 .idea
+
+# per-machine Claude Code settings
+.claude/
