@@ -36,10 +36,15 @@ const TICKET_RE = /^(?:[^/]*\/)?([A-Z]+-\d+)(?:-.*)?$/
 
 interface RawEvent {
   ts: number
+  /** hook event name; absent on lines written before it was logged */
+  event?: string
   session: string
   cwd: string
   branch: string
 }
+
+/** Beats that mark a session opening or closing — not someone working in it. */
+const LIFECYCLE = new Set(['SessionStart', 'SessionEnd'])
 
 interface Bucketed {
   key: string
@@ -142,6 +147,10 @@ function toSlices(events: RawEvent[]): Slice[] {
       // A context switch (branch/ticket change) breaks the timeline — don't
       // bridge time across it.
       if (prev.key !== cur.key) continue
+      // Time is credited to the stretch leading up to engagement. claude-term
+      // resumes every tab at launch and ends it at quit, so an untouched tab
+      // leaves Start/End pairs that would otherwise bill up to the cap each.
+      if (evs[i].event && LIFECYCLE.has(evs[i].event!)) continue
       const delta = evs[i].ts - evs[i - 1].ts
       if (delta <= 0) continue
       const start = evs[i - 1].ts
@@ -311,7 +320,13 @@ function readEvents(): RawEvent[] {
     try {
       const ev = JSON.parse(line) as RawEvent
       if (typeof ev.ts !== 'number') continue
-      out.push({ ts: ev.ts, session: ev.session || '', cwd: ev.cwd || '', branch: ev.branch || '' })
+      out.push({
+        ts: ev.ts,
+        event: ev.event || undefined,
+        session: ev.session || '',
+        cwd: ev.cwd || '',
+        branch: ev.branch || ''
+      })
     } catch {
       /* skip a malformed / partially-written line */
     }
