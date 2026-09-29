@@ -1,13 +1,13 @@
 import { shell } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
 import { basename, dirname, join, relative, resolve, sep } from 'path'
+import { claudeConfigDir } from './claude-dir'
 import { MAX_EDIT_BYTES } from '../shared/types'
 import type { CreateDocResult, DocEntry, DocSection, ProjectDocs } from '../shared/types'
 import { expandHome } from './completions'
 import { insideAny, SKIP_DIRS, treeRoots } from './file-tree'
 
-const PLANS_DIR = join(homedir(), '.claude', 'plans')
+const plansDir = (): string => join(claudeConfigDir(), 'plans')
 
 /** Claude turns a project's cwd into its ~/.claude/projects folder name by
  *  replacing every "/" and "." with "-" (e.g. /Users/rob/x.y → -Users-rob-x-y). */
@@ -78,7 +78,7 @@ function extractPlanPaths(text: string): string[] {
  *  the raw text, since tool output (e.g. `ls ~/.claude/plans`) can otherwise
  *  drag in every plan. Filtered to files that still exist, newest-first. */
 function plansForProject(cwd: string): DocEntry[] {
-  const projDir = join(homedir(), '.claude', 'projects', encodeProjectDir(cwd))
+  const projDir = join(claudeConfigDir(), 'projects', encodeProjectDir(cwd))
   if (!existsSync(projDir)) return []
 
   let files: string[]
@@ -121,7 +121,7 @@ function plansForProject(cwd: string): DocEntry[] {
   // forget transcripts that were removed
   for (const key of [...cache.keys()]) if (!live.has(key)) cache.delete(key)
 
-  const plansRoot = resolve(PLANS_DIR)
+  const plansRoot = resolve(plansDir())
   const plans: DocEntry[] = []
   for (const p of paths) {
     // stay inside the plans dir and confirm the file still exists
@@ -209,7 +209,7 @@ export function listProjectDocs(
 /** The window may only reach files inside the plans dir or one of its roots
  *  (the tab's cwd and its added directories). */
 function allowed(roots: string[], path: string): boolean {
-  return insideAny([PLANS_DIR, ...roots], path)
+  return insideAny([plansDir(), ...roots], path)
 }
 
 /** A file's text, or null when it is out of reach, missing or unreadable. Over

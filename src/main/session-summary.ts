@@ -1,6 +1,6 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync } from 'fs'
-import { homedir } from 'os'
 import { join } from 'path'
+import { claudeConfigDir } from './claude-dir'
 import { lastAssistantText } from './transcript-tail'
 import { bonsaiOneLiner } from './bonsai-client'
 import { sanitizeOneLiner } from './bonsai-text'
@@ -73,7 +73,7 @@ async function summarize(raw: string, wanted: () => boolean): Promise<string | n
 export function sessionDoing(
   sessionId: string,
   wanted: () => boolean = () => true,
-  projectsDir = join(homedir(), '.claude', 'projects')
+  projectsDir = join(claudeConfigDir(), 'projects')
 ): Promise<string | null> {
   const path = transcriptPath(sessionId, projectsDir)
   if (!path) return Promise.resolve(null)

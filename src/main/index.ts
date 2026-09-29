@@ -112,9 +112,8 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Warm the login-shell env before the first tab spawns (also surfaces a
-  // missing `claude` binary early instead of on first tab creation).
-  void loginShellEnv()
+  // Awaited: it carries CLAUDE_CONFIG_DIR, which session restore reads.
+  await loginShellEnv()
 
   await services.status.start()
   // Reuse the port a paired phone already knows, so reconnecting doesn't need

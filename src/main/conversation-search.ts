@@ -6,8 +6,8 @@
  */
 
 import { closeSync, openSync, readSync, statSync } from 'fs'
-import { homedir } from 'os'
 import { join } from 'path'
+import { claudeConfigDir } from './claude-dir'
 import type { ConvoSearchResult } from '../shared/types'
 import { transcriptPathFor } from './session-home'
 import { parseTurns, searchTurns, type ConvoTurn } from './transcript-search'
@@ -105,7 +105,7 @@ function touch(path: string, entry: Entry): ConvoTurn[] {
  */
 export function conversationTurns(
   sessionId: string,
-  projectsDir = join(homedir(), '.claude', 'projects')
+  projectsDir = join(claudeConfigDir(), 'projects')
 ): readonly ConvoTurn[] | null {
   const path = transcriptPathFor(sessionId, projectsDir)
   return path ? turnsFor(path) : null
@@ -119,7 +119,7 @@ export function searchConversation(
   sessionId: string,
   query: string,
   includeTools = false,
-  projectsDir = join(homedir(), '.claude', 'projects')
+  projectsDir = join(claudeConfigDir(), 'projects')
 ): ConvoSearchResult {
   const empty = { hits: [], total: 0, searched: 0, found: false }
   const path = transcriptPathFor(sessionId, projectsDir)

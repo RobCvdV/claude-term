@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { homedir } from 'os'
 import { basename, join, resolve } from 'path'
+import { claudeConfigDir } from './claude-dir'
 
 import type { BranchRef, SlashCommand } from '../shared/types'
 
@@ -60,7 +61,6 @@ export function listCommands(cwd: string): SlashCommand[] {
   const cached = cmdCache.get(cwd)
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.items
 
-  const home = homedir()
   const byName = new Map<string, SlashCommand>()
   const add = (cmd: SlashCommand): void => {
     if (!byName.has(cmd.name)) byName.set(cmd.name, cmd)
@@ -71,9 +71,10 @@ export function listCommands(cwd: string): SlashCommand[] {
   }
   scanCommandsDir(join(cwd, '.claude', 'commands'), 'project', '', add)
   scanSkillsDir(join(cwd, '.claude', 'skills'), 'project', '', add)
-  scanCommandsDir(join(home, '.claude', 'commands'), 'user', '', add)
-  scanSkillsDir(join(home, '.claude', 'skills'), 'user', '', add)
-  scanPlugins(home, add)
+  const config = claudeConfigDir()
+  scanCommandsDir(join(config, 'commands'), 'user', '', add)
+  scanSkillsDir(join(config, 'skills'), 'user', '', add)
+  scanPlugins(config, add)
 
   const items = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
   cmdCache.set(cwd, { at: Date.now(), items })
@@ -138,12 +139,12 @@ function scanSkillsDir(
   }
 }
 
-function scanPlugins(home: string, add: (c: SlashCommand) => void): void {
+function scanPlugins(config: string, add: (c: SlashCommand) => void): void {
   try {
     const manifest = JSON.parse(
-      readFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), 'utf8')
+      readFileSync(join(config, 'plugins', 'installed_plugins.json'), 'utf8')
     ) as { plugins?: Record<string, Array<{ installPath?: string }>> }
-    const settings = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8')) as {
+    const settings = JSON.parse(readFileSync(join(config, 'settings.json'), 'utf8')) as {
       enabledPlugins?: Record<string, boolean>
     }
     const enabled = settings.enabledPlugins ?? {}

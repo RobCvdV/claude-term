@@ -2,12 +2,13 @@ import { app, dialog, type BrowserWindow } from 'electron'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { claudeConfigDir } from './claude-dir'
 
 /**
  * Self-installs the global activity-logging hook into the user's Claude Code
  * config, so every session (this app AND plain terminals) feeds the 🕐 Activity
  * hours view. Mirrors settings-overlay's installForwarder: copy the script out
- * of resources, then wire it into ~/.claude/settings.json.
+ * of resources, then wire it into the config dir's settings.json.
  *
  * Safe by construction: merge-only (never touches other hooks), idempotent,
  * asks once on first run, remembers the choice, and bails rather than clobber a
@@ -32,7 +33,7 @@ interface Settings {
 }
 
 const claudeDir = join(homedir(), '.claude')
-const settingsPath = join(claudeDir, 'settings.json')
+const settingsPath = (): string => join(claudeConfigDir(), 'settings.json')
 const hookDest = join(claudeDir, 'hooks', 'log-activity.sh')
 
 function statePath(): string {
@@ -88,15 +89,16 @@ function mergeHooks(settings: Settings): void {
 function install(): void {
   installScript()
   let settings: Settings = {}
+  const path = settingsPath()
   try {
-    settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings
+    settings = JSON.parse(readFileSync(path, 'utf8')) as Settings
   } catch {
     // exists but unparseable → refuse to overwrite; a fresh file is fine.
-    if (existsSync(settingsPath)) return
+    if (existsSync(path)) return
   }
   mergeHooks(settings)
   try {
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n')
+    writeFileSync(path, JSON.stringify(settings, null, 2) + '\n')
     writeDecision('installed')
   } catch {
     /* best effort */
@@ -106,10 +108,11 @@ function install(): void {
 export async function ensureActivityHook(getWindow: () => BrowserWindow | null): Promise<void> {
   let settings: Settings = {}
   let unparseable = false
+  const path = settingsPath()
   try {
-    settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings
+    settings = JSON.parse(readFileSync(path, 'utf8')) as Settings
   } catch {
-    unparseable = existsSync(settingsPath)
+    unparseable = existsSync(path)
   }
 
   // Already wired up (incl. by a previous run) → just refresh the script.
@@ -122,8 +125,11 @@ export async function ensureActivityHook(getWindow: () => BrowserWindow | null):
     return
   }
 
-  // Asked before, or a settings.json we mustn't touch → do nothing.
-  if (readDecision() !== null || unparseable) return
+  if (unparseable) return
+  const decision = readDecision()
+  // Already agreed once; a switched CLAUDE_CONFIG_DIR just needs it wired up again.
+  if (decision === 'installed') return install()
+  if (decision === 'declined') return
 
   const opts: Electron.MessageBoxOptions = {
     type: 'question',
@@ -132,8 +138,7 @@ export async function ensureActivityHook(getWindow: () => BrowserWindow | null):
     cancelId: 1,
     title: 'Track activity hours?',
     message: 'Add claude-term’s time-tracking hook?',
-    detail:
-      'It adds a hook to your global ~/.claude/settings.json so every Claude Code session logs how long you spend per ticket — the data behind the Activity hours (🕐) view.'
+    detail: `It adds a hook to your global ${path} so every Claude Code session logs how long you spend per ticket — the data behind the Activity hours (🕐) view.`
   }
   const win = getWindow()
   const res = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
