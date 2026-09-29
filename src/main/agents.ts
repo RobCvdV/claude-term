@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { existsSync, readdirSync, readFileSync } from 'fs'
-import { homedir } from 'os'
 import { join } from 'path'
+import { claudeConfigDir } from './claude-dir'
 import { loginShellEnv, resolveClaudePath } from './shell-env'
 
 /** `claude agents --json` has to cold-start the daemon on the first call after a
@@ -99,7 +99,7 @@ export async function findOwnBackgroundAgents(
  */
 export function findBgJobForSession(
   sessionId: string,
-  jobsDir = join(homedir(), '.claude', 'jobs')
+  jobsDir = join(claudeConfigDir(), 'jobs')
 ): BgJobRecord | null {
   let dirs: string[]
   try {
@@ -185,7 +185,7 @@ export async function resolveRevive(sessionId: string): Promise<ReviveMode> {
 /** Current daemon state of a job (~/.claude/jobs/<jobId>/state.json). */
 export function readJobState(
   jobId: string,
-  jobsDir = join(homedir(), '.claude', 'jobs')
+  jobsDir = join(claudeConfigDir(), 'jobs')
 ): string | null {
   try {
     const state = JSON.parse(readFileSync(join(jobsDir, jobId, 'state.json'), 'utf8')) as {
@@ -227,7 +227,7 @@ export async function stopBackgroundAgent(jobId: string): Promise<boolean> {
  * conversation found" — callers use this to fall back to a fresh shell instead.
  */
 export function transcriptExists(sessionId: string): boolean {
-  const projects = join(homedir(), '.claude', 'projects')
+  const projects = join(claudeConfigDir(), 'projects')
   let dirs: string[]
   try {
     dirs = readdirSync(projects)

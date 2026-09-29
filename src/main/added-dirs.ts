@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { isAbsolute, join, resolve } from 'path'
+import { claudeConfigDir } from './claude-dir'
 
 /**
  * The extra working directories of a Claude session — what `/add-dir` and
@@ -28,8 +29,8 @@ import { isAbsolute, join, resolve } from 'path'
 /** Settings files Claude Code merges, lowest precedence first. All optional. */
 function settingsChain(cwd: string): string[] {
   return [
-    join(homedir(), '.claude', 'settings.json'),
-    join(homedir(), '.claude', 'settings.local.json'),
+    join(claudeConfigDir(), 'settings.json'),
+    join(claudeConfigDir(), 'settings.local.json'),
     join(cwd, '.claude', 'settings.json'),
     join(cwd, '.claude', 'settings.local.json')
   ]

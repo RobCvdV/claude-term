@@ -28,6 +28,11 @@ export async function loginShellEnv(): Promise<NodeJS.ProcessEnv> {
   return cachedEnv
 }
 
+/** The login-shell env once loginShellEnv() has resolved, else process.env. */
+export function shellEnvSync(): NodeJS.ProcessEnv {
+  return cachedEnv ?? process.env
+}
+
 export async function resolveShell(): Promise<string> {
   const env = await loginShellEnv()
   return env.SHELL || '/bin/zsh'

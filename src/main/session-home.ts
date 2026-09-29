@@ -1,11 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from 'fs'
-import { homedir } from 'os'
 import { basename, dirname, join } from 'path'
+import { claudeConfigDir } from './claude-dir'
 
 /** Where the session's transcript lives, or null when none exists. */
 export function transcriptPathFor(
   sessionId: string,
-  projectsDir = join(homedir(), '.claude', 'projects')
+  projectsDir = join(claudeConfigDir(), 'projects')
 ): string | null {
   let dirs: string[]
   try {
@@ -37,7 +37,7 @@ export function transcriptPathFor(
  */
 export function sessionHomeDir(
   sessionId: string,
-  projectsDir = join(homedir(), '.claude', 'projects')
+  projectsDir = join(claudeConfigDir(), 'projects')
 ): string | null {
   const path = transcriptPathFor(sessionId, projectsDir)
   return path ? homeCwd(path, basename(dirname(path))) : null
