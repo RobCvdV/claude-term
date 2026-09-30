@@ -517,6 +517,10 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       () => window.claudeTerm.ptyInput(tabId, '\x1b[Z'),
       '!suggestWidgetVisible'
     )
+    // ⌃B backgrounds Claude Code's running command; Monaco would take it as cursor-left
+    editor.addCommand(monaco.KeyMod.WinCtrl | monaco.KeyCode.KeyB, () =>
+      window.claudeTerm.ptyInput(tabId, '\x02')
+    )
     // ⌘[ / ⌘] step tabs even from the box (Monaco owns these for out/indent,
     // so the window-level handler never sees them — override here). ⌘←/⌘→ are
     // left to Monaco for line-start/end.
