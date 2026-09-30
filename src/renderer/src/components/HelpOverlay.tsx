@@ -69,6 +69,7 @@ function HowTo(): React.JSX.Element {
         <Keys k="↑ ↓">Prompt history</Keys>
         <Keys k="Tab">Run Claude&apos;s grayed-out suggestion</Keys>
         <Keys k="⇧Tab">Cycle the permission mode</Keys>
+        <Keys k="⌃B">Send the running command to the background</Keys>
         <Keys k="⌥Tab">Hand focus to the terminal (and back again)</Keys>
         <Keys k="←">Agents overview (on an empty box)</Keys>
         <Keys k="⌘.">Spelling fixes for the underlined word under the cursor</Keys>
