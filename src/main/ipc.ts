@@ -32,6 +32,7 @@ import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
 import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
+import { claudeConfigDirIn, prefetchConfigDirs } from './claude-dir'
 import { buildActivityReport, workSpansForDates } from './activity-log'
 import {
   createDoc,
@@ -306,13 +307,14 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       let target: Awaited<ReturnType<typeof resolveRevive>> | null = null
       if (resume) {
         await awaitAgentWarmup()
-        target = await resolveRevive(resume)
+        const projects = join(await claudeConfigDirIn(dir), 'projects')
+        target = await resolveRevive(resume, projects)
         // Revive from the conversation's own home: `--resume` from any other
         // directory re-homes the conversation (the CLI moves its transcript to
         // the launch dir), silently dragging it into whatever folder the tab
         // spawned in. The tab follows its conversation, spawn dir included.
         if (target.mode !== 'shell') {
-          const home = sessionHomeDir(resume)
+          const home = sessionHomeDir(resume, projects)
           if (home && existsSync(home)) {
             dir = home
             // the conversation's own home — no payload may move the tab off it
@@ -617,6 +619,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       .filter((t) => t.claudeActive && t.sessionId)
       .map((t) => t.sessionId as string)
     if (ids.length > 0) agentWarmup = warmLiveAgents(ids)
+    prefetchConfigDirs((state?.tabs ?? []).flatMap((t) => (t.cwd ? [t.cwd] : [])))
     return state
   })
   ipcMain.handle('session:save', (_e, state: PersistedSession) => writeSession(state))
