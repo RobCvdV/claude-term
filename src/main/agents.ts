@@ -170,10 +170,10 @@ export type ReviveMode = { mode: 'attach'; jobId: string } | { mode: 'resume' } 
  * a transcript is resumed; anything else gets a plain shell rather than a tab
  * full of "No conversation found".
  */
-export async function resolveRevive(sessionId: string): Promise<ReviveMode> {
+export async function resolveRevive(sessionId: string, projectsDir?: string): Promise<ReviveMode> {
   const bg = await findLiveBackgroundAgent(sessionId)
   if (bg) return { mode: 'attach', jobId: bg.id ?? bg.sessionId }
-  if (transcriptExists(sessionId)) return { mode: 'resume' }
+  if (transcriptExists(sessionId, projectsDir)) return { mode: 'resume' }
   return { mode: 'shell' }
 }
 
@@ -226,8 +226,10 @@ export async function stopBackgroundAgent(jobId: string): Promise<boolean> {
  * or Claude's retention cleanup), and `--resume` on a missing one errors "No
  * conversation found" — callers use this to fall back to a fresh shell instead.
  */
-export function transcriptExists(sessionId: string): boolean {
-  const projects = join(claudeConfigDir(), 'projects')
+export function transcriptExists(
+  sessionId: string,
+  projects = join(claudeConfigDir(), 'projects')
+): boolean {
   let dirs: string[]
   try {
     dirs = readdirSync(projects)
