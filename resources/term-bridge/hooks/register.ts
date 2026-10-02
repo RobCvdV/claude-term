@@ -30,11 +30,14 @@ async function probeLoop($: Engine, gen: number): Promise<void> {
   while (gen === loopGen) {
     await $.clock.sleep(PROBE_MS)
     let state: string
+    let text = ''
     try {
       const box = await within($, 1000, $.prompt.read())
       if (box === 'timeout') state = 'timeout'
-      else if (box.text !== '') state = 'typing'
-      else {
+      else if (box.text !== '') {
+        state = 'typing'
+        text = box.text
+      } else {
         const f = await within($, 1000, $.prompt.fill({ text: '', mode: 'append' }))
         state = f === 'timeout' ? 'timeout' : (f.refusal ?? (f.isFilled ? 'prompt' : 'refused'))
       }
@@ -43,7 +46,8 @@ async function probeLoop($: Engine, gen: number): Promise<void> {
     }
     if (state !== prev) {
       prev = state
-      await report($, 'keys', { state })
+      // the TUI's own draft: what a history-search pick landed there
+      await report($, 'keys', text ? { state, text } : { state })
     }
   }
 }

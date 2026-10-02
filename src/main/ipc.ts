@@ -217,7 +217,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
   status.onModEvent = (tabId, event) => {
     logUiBridge(tabId, 'mod', event)
-    if (event.kind === 'keys') send('tab:uiKeys', tabId, event.state)
+    if (event.kind === 'keys') send('tab:uiKeys', tabId, event.state, event.text ?? null)
     else if (event.kind === 'session.end') send('tab:uiKeys', tabId, null)
   }
   ipcMain.on('ui:focusLog', (_e, tabId: TabId, target: string) =>
