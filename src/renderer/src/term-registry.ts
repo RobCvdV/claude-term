@@ -12,6 +12,7 @@ import {
 } from './terminal-scan'
 import { fileLinkProvider, fileLinksInLine } from './terminal-links'
 import { isFocusToggle } from './focus-policy'
+import { uiKeysOwner } from './ui-keys'
 
 export interface TermEntry {
   term: Terminal
@@ -291,7 +292,8 @@ export function agentsOverviewOpen(tabId: TabId): boolean {
  * prompt box takes focus back. A tab with no terminal yet counts as no dialog.
  */
 export function terminalDialogOpen(tabId: TabId): boolean {
-  return dialogOpenInRows(bottomRows(tabId))
+  const owner = uiKeysOwner(tabId)
+  return owner ? owner === 'tui' : dialogOpenInRows(bottomRows(tabId))
 }
 
 /**
@@ -300,6 +302,8 @@ export function terminalDialogOpen(tabId: TabId): boolean {
  * input, double-Esc rewind), not for dismissing anything.
  */
 export function terminalAtNormalInput(tabId: TabId): boolean {
+  const owner = uiKeysOwner(tabId)
+  if (owner) return owner === 'prompt'
   const rows = bottomRows(tabId)
   return hasPromptInputRow(rows) && !dialogOpenInRows(rows)
 }

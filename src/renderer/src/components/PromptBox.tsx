@@ -11,6 +11,7 @@ import { runFocusLoan, type LoanMode } from '../focus-loan'
 import { promptHistoryFor, pushPrompt } from '../prompt-history'
 import { draftFor, lastImageNumber, saveDraft } from '../prompt-drafts'
 import { suggestWidgetAccepting } from '../suggest-widget'
+import { onUiKeys } from '../ui-keys'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -577,6 +578,14 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     })
     const spell = attachSpellcheck(editor, 'prompt')
     grow()
+    // The session itself says the TUI took the keys (a menu, a dialog, the
+    // agents view), however it got there: follow it, on a loan that hands focus
+    // back once the session reports its input line again.
+    const offUiKeys = onUiKeys((id, owner) => {
+      if (id !== tabId || owner !== 'tui' || !editor.hasTextFocus()) return
+      focusTerm(tabId)
+      lendFocus('handover')
+    })
 
     return () => {
       // park the unsubmitted draft (if any) so it's restored on remount, with the
@@ -590,6 +599,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       contentSub.dispose()
       changeSub.dispose()
       retriggerSub.dispose()
+      offUiKeys()
       spell.dispose()
       editor.dispose()
       model.dispose()

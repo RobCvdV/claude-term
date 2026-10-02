@@ -26,6 +26,7 @@ import { closeTabConfirmMessage } from './close-guard'
 import { persistedSessionOf, type RestoredSession } from './session-persist'
 import { forgetPromptHistory, persistedHistoryFor, restorePromptHistory } from './prompt-history'
 import { forgetDraft, persistedDraftFor, restoreDraft } from './prompt-drafts'
+import { setUiKeys } from './ui-keys'
 import {
   disposeTerm,
   focusTerm,
@@ -126,6 +127,25 @@ export default function App(): React.JSX.Element {
     // exposed for scripted E2E testing (CDP) — harmless at runtime
     ;(window as unknown as Record<string, unknown>).__activeTabId = activeId
   })
+  useEffect(() => window.claudeTerm.onUiKeys((tabId, state) => setUiKeys(tabId, state)), [])
+  // where focus actually lands, logged next to the term-bridge mod's events
+  useEffect(() => {
+    let last = ''
+    const onFocusIn = (e: FocusEvent): void => {
+      const el = e.target instanceof Element ? e.target : null
+      const target = el?.closest('.term-container')
+        ? 'terminal'
+        : el?.closest('.editor-host')
+          ? 'box'
+          : 'other'
+      const tabId = activeIdRef.current
+      if (!tabId || target === last) return
+      last = target
+      window.claudeTerm.logFocus(tabId, target)
+    }
+    document.addEventListener('focusin', onFocusIn)
+    return () => document.removeEventListener('focusin', onFocusIn)
+  }, [])
   // gate persistence until the initial restore finishes, so an early save can't
   // clobber the saved session with an empty/partial tab list
   const restoredRef = useRef(false)
