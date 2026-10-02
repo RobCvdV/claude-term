@@ -16,3 +16,7 @@ resources/harper-grammar.wasm
 
 # per-machine Claude Code settings
 .claude/
+
+# written by Claude Code when it loads the term-bridge mod
+resources/term-bridge/.claude-plugin/types/
+resources/term-bridge/tsconfig.json

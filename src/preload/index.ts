@@ -104,6 +104,8 @@ export interface ClaudeTermApi {
   jiraBook(entries: WorklogPlanEntry[]): Promise<BookResult[]>
   onScreenRequest(cb: (requestId: string, tabId: TabId) => void): () => void
   screenReply(requestId: string, rows: string[]): void
+  /** record where keyboard focus landed, next to the term-bridge mod's events */
+  logFocus(tabId: TabId, target: string): void
   companionOffer(): Promise<PairingInfo>
   companionCancelOffer(): Promise<void>
   companionDevices(): Promise<CompanionInfo>
@@ -185,6 +187,8 @@ export interface ClaudeTermApi {
   onPtyExit(cb: (tabId: TabId, exitCode: number) => void): () => void
   onStatusUpdate(cb: (status: TabStatus) => void): () => void
   onAttention(cb: (tabId: TabId, hookEvent: string) => void): () => void
+  /** who holds Claude Code's keyboard, per the term-bridge mod (see ui-keys.ts) */
+  onUiKeys(cb: (tabId: TabId, state: string | null) => void): () => void
   /** the update that is downloaded and ready to install, or null when a newer
    *  release superseded it (re-fires with the newer one once that downloads) */
   onUpdateDownloaded(cb: (version: string | null) => void): () => void
@@ -237,6 +241,7 @@ const api: ClaudeTermApi = {
   onScreenRequest: (cb) => subscribe('screen:request', cb),
   screenReply: (requestId: string, rows: string[]) =>
     ipcRenderer.send('screen:reply', requestId, rows),
+  logFocus: (tabId, target) => ipcRenderer.send('ui:focusLog', tabId, target),
   companionOffer: () => ipcRenderer.invoke('companion:offer'),
   companionCancelOffer: () => ipcRenderer.invoke('companion:cancelOffer'),
   companionDevices: () => ipcRenderer.invoke('companion:devices'),
@@ -287,6 +292,7 @@ const api: ClaudeTermApi = {
   onPtyExit: (cb) => subscribe('pty:exit', cb),
   onStatusUpdate: (cb) => subscribe('status:update', cb),
   onAttention: (cb) => subscribe('tab:attention', cb),
+  onUiKeys: (cb) => subscribe('tab:uiKeys', cb),
   onUpdateDownloaded: (cb) => subscribe('update:downloaded', cb),
   installUpdate: () => ipcRenderer.invoke('update:install')
 }

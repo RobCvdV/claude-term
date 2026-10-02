@@ -1,0 +1,8 @@
+{
+  "name": "term-bridge",
+  "version": "0.1.0",
+  "description": "Reports Claude Code's UI state (commands, dialogs, prompt box) to claude-term",
+  "author": {
+    "name": "Rob Coenen"
+  }
+}

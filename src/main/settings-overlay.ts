@@ -1,11 +1,12 @@
 import { app } from 'electron'
 import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'fs'
-import { basename, join } from 'path'
+import { basename, dirname, join } from 'path'
 import { buildHooks } from './hook-config'
 import { resolveClaudePath } from './shell-env'
 
 let forwarderPath: string | null = null
 let sessionNamerPath: string | null = null
+let bridgeModPath: string | null = null
 
 /**
  * Packaged apps can't exec scripts from inside app.asar, so install the
@@ -42,6 +43,23 @@ export function installSessionNamer(): string {
 }
 
 /**
+ * Install the term-bridge mod (resources/term-bridge) into userData, where
+ * `claude --plugin-dir` can load it: a plugin dir inside app.asar can't be read
+ * by the CLI.
+ */
+export function installBridgeMod(): string {
+  if (bridgeModPath) return bridgeModPath
+  const source = join(__dirname, '../../resources/term-bridge')
+  const dest = join(app.getPath('userData'), 'term-bridge')
+  for (const file of ['.claude-plugin/plugin.json', 'hooks/hooks.json', 'hooks/register.ts']) {
+    mkdirSync(dirname(join(dest, file)), { recursive: true })
+    copyFileSync(join(source, file), join(dest, file))
+  }
+  bridgeModPath = dest
+  return dest
+}
+
+/**
  * Set up a private startup environment so that running `claude` in the tab's
  * shell transparently gets our `--settings` overlay (so its hooks + statusline
  * feed this app, which is how we detect a session starting/ending and show the
@@ -55,6 +73,7 @@ export function installSessionNamer(): string {
 export async function setupClaudeLauncher(shell: string): Promise<Record<string, string>> {
   const realClaude = await resolveClaudePath()
   const namer = installSessionNamer()
+  const mod = installBridgeMod()
   const dir = app.getPath('userData')
 
   if (basename(shell).includes('zsh')) {
@@ -79,9 +98,9 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
         `claude() {\n` +
         `  local __ctn; __ctn="$('${namer}' "$@")"\n` +
         `  if [[ -n "$__ctn" ]]; then\n` +
-        `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --name "$__ctn" "$@"\n` +
+        `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --plugin-dir '${mod}' --name "$__ctn" "$@"\n` +
         `  else\n` +
-        `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"\n` +
+        `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --plugin-dir '${mod}' "$@"\n` +
         `  fi\n` +
         `}\n` +
         `# claude-term: auto-restore a persisted session on launch. Only one of\n` +
@@ -109,9 +128,9 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
     `#!/bin/bash\n` +
       `__ctn="$('${namer}' "$@")"\n` +
       `if [ -n "$__ctn" ]; then\n` +
-      `  exec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --name "$__ctn" "$@"\n` +
+      `  exec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --plugin-dir '${mod}' --name "$__ctn" "$@"\n` +
       `else\n` +
-      `  exec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" "$@"\n` +
+      `  exec "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --plugin-dir '${mod}' "$@"\n` +
       `fi\n`
   )
   chmodSync(shim, 0o755)

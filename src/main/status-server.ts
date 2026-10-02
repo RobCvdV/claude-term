@@ -127,6 +127,9 @@ export class StatusServer {
    *  decision" and drop the prompt. */
   parkHook: (tabId: TabId, evt: HookEvent, res: ParkedResponse) => boolean = () => false
 
+  /** Set by ipc.ts; a UI event from the term-bridge mod running inside the session. */
+  onModEvent: (tabId: TabId, event: Record<string, unknown>) => void = () => {}
+
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
@@ -157,6 +160,8 @@ export class StatusServer {
           reply()
           if (url.pathname === '/statusline') {
             this.handleStatusline(target, body as StatuslinePayload)
+          } else if (url.pathname === '/mod') {
+            this.onModEvent(target, body as Record<string, unknown>)
           }
           return
         }

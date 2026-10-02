@@ -20,6 +20,7 @@ import { Notifier } from './companion/notifier'
 import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
 import { PushSender } from './companion/push-sender'
 import { ScreenRequests } from './screen-requests'
+import { logUiBridge } from './ui-bridge-log'
 import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
 import { DeviceRegistry } from './companion/devices'
@@ -214,6 +215,14 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   })
 
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
+  status.onModEvent = (tabId, event) => {
+    logUiBridge(tabId, 'mod', event)
+    if (event.kind === 'keys') send('tab:uiKeys', tabId, event.state)
+    else if (event.kind === 'session.end') send('tab:uiKeys', tabId, null)
+  }
+  ipcMain.on('ui:focusLog', (_e, tabId: TabId, target: string) =>
+    logUiBridge(tabId, 'focus', { target })
+  )
 
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
