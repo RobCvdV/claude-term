@@ -127,7 +127,10 @@ export default function App(): React.JSX.Element {
     // exposed for scripted E2E testing (CDP) — harmless at runtime
     ;(window as unknown as Record<string, unknown>).__activeTabId = activeId
   })
-  useEffect(() => window.claudeTerm.onUiKeys((tabId, state) => setUiKeys(tabId, state)), [])
+  useEffect(
+    () => window.claudeTerm.onUiKeys((tabId, state, draft) => setUiKeys(tabId, state, draft)),
+    []
+  )
   // where focus actually lands, logged next to the term-bridge mod's events
   useEffect(() => {
     let last = ''

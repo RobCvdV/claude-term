@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { ActivityState, TabStatus } from '../../shared/types'
 import {
+  ctrlKeyForPty,
   focusAfterSubmit,
   focusForTab,
   isFocusToggle,
   focusOnStatusChange,
   focusOnTerminalEscape,
   focusStateOf,
-  type FocusState
+  type FocusState,
+  type ToggleKey
 } from './focus-policy'
 
 const state = (claudeActive: boolean, activity: ActivityState): FocusState => ({
@@ -193,5 +195,40 @@ describe('isFocusToggle (⌥Tab, the manual override)', () => {
   it('ignores Option with any other key', () => {
     expect(isFocusToggle(key({ altKey: true, key: 'a', code: 'KeyA' }))).toBe(false)
     expect(isFocusToggle(key({ altKey: true, key: 'Escape', code: 'Escape' }))).toBe(false)
+  })
+})
+
+describe('ctrlKeyForPty', () => {
+  const ctrl = (code: string, extra: Partial<ToggleKey> = {}): ToggleKey => ({
+    altKey: false,
+    shiftKey: false,
+    ctrlKey: true,
+    metaKey: false,
+    key: code.slice(3).toLowerCase(),
+    code,
+    ...extra
+  })
+
+  it("hands Claude Code's Ctrl keys to the PTY as control characters", () => {
+    expect(ctrlKeyForPty(ctrl('KeyB'), true)).toEqual({ input: '\x02', view: null })
+    expect(ctrlKeyForPty(ctrl('KeyC'), true)).toEqual({ input: '\x03', view: null })
+  })
+
+  it('takes focus along for the views driven in the terminal', () => {
+    expect(ctrlKeyForPty(ctrl('KeyR'), true)).toEqual({ input: '\x12', view: 'history' })
+    expect(ctrlKeyForPty(ctrl('KeyO'), true)).toEqual({ input: '\x0f', view: 'transcript' })
+  })
+
+  it("keeps the box's own editing keys and Ctrl+Z", () => {
+    for (const code of ['KeyA', 'KeyE', 'KeyK', 'KeyH', 'KeyD', 'KeyF', 'KeyN', 'KeyP', 'KeyZ'])
+      expect(ctrlKeyForPty(ctrl(code), true)).toBe(null)
+  })
+
+  it('leaves other modifiers, non-letters and non-mac platforms alone', () => {
+    expect(ctrlKeyForPty(ctrl('KeyR', { metaKey: true }), true)).toBe(null)
+    expect(ctrlKeyForPty(ctrl('KeyR', { shiftKey: true }), true)).toBe(null)
+    expect(ctrlKeyForPty(ctrl('KeyR', { ctrlKey: false }), true)).toBe(null)
+    expect(ctrlKeyForPty(ctrl('Digit1'), true)).toBe(null)
+    expect(ctrlKeyForPty(ctrl('KeyR'), false)).toBe(null)
   })
 })

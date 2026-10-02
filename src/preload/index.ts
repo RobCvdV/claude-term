@@ -188,7 +188,7 @@ export interface ClaudeTermApi {
   onStatusUpdate(cb: (status: TabStatus) => void): () => void
   onAttention(cb: (tabId: TabId, hookEvent: string) => void): () => void
   /** who holds Claude Code's keyboard, per the term-bridge mod (see ui-keys.ts) */
-  onUiKeys(cb: (tabId: TabId, state: string | null) => void): () => void
+  onUiKeys(cb: (tabId: TabId, state: string | null, draft: string | null) => void): () => void
   /** the update that is downloaded and ready to install, or null when a newer
    *  release superseded it (re-fires with the newer one once that downloads) */
   onUpdateDownloaded(cb: (version: string | null) => void): () => void

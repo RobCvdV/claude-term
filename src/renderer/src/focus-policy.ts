@@ -109,3 +109,41 @@ export function focusAfterSubmit(text: string, state: FocusState | null): Submit
 export function focusOnTerminalEscape(state: FocusState | null): FocusTarget {
   return state?.claudeActive && state.activity !== 'needs-attention' ? 'box' : 'none'
 }
+
+/**
+ * Ctrl+letters the prompt box keeps: macOS's own text-editing keys (line
+ * start/end, kill to end, delete, cursor moves) for editing the box itself,
+ * and Ctrl+Z, which would suspend Claude Code.
+ */
+const BOX_CTRL_KEYS = new Set(['A', 'E', 'K', 'H', 'D', 'F', 'N', 'P', 'Z'])
+
+/**
+ * Ctrl keys that open a view driven in the terminal (history search,
+ * transcript) without the session reporting a dialog, so focus goes along;
+ * Esc there hands it back.
+ */
+const VIEW_CTRL_KEYS: Record<string, 'history' | 'transcript'> = { R: 'history', O: 'transcript' }
+
+export interface CtrlForPty {
+  /** the control character to write to the PTY */
+  input: string
+  /** the terminal view it opens, which focus follows into */
+  view: 'history' | 'transcript' | null
+}
+
+/**
+ * The control character a Ctrl+letter in the prompt box hands to the PTY, or
+ * null when the box keeps the key. Every other Ctrl+letter belongs to Claude
+ * Code (⌃R history search, ⌃O transcript, ⌃T todos, ⌃B background, …).
+ * `code` is checked, not `key`, so the physical key decides on any layout.
+ * macOS only: elsewhere Ctrl is the box's own copy/paste/undo modifier.
+ */
+export function ctrlKeyForPty(e: ToggleKey, mac: boolean): CtrlForPty | null {
+  if (!mac || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return null
+  const m = /^Key([A-Z])$/.exec(e.code)
+  if (!m || BOX_CTRL_KEYS.has(m[1])) return null
+  return {
+    input: String.fromCharCode(m[1].charCodeAt(0) - 64),
+    view: VIEW_CTRL_KEYS[m[1]] ?? null
+  }
+}

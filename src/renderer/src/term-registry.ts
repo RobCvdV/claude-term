@@ -12,7 +12,7 @@ import {
 } from './terminal-scan'
 import { fileLinkProvider, fileLinksInLine } from './terminal-links'
 import { isFocusToggle } from './focus-policy'
-import { uiKeysOwner } from './ui-keys'
+import { setTermView, termView, uiKeysOwner } from './ui-keys'
 
 export interface TermEntry {
   term: Terminal
@@ -121,7 +121,18 @@ export function createTerm(tabId: TabId): TermEntry {
       return false
     }
     if (e.type === 'keydown' && e.key === 'Escape') {
+      setTermView(tabId, null)
       window.setTimeout(() => escapeHandler(tabId), 0)
+    }
+    // ⌃O toggles the transcript shut too: back to the box, as Esc would
+    if (
+      e.type === 'keydown' &&
+      e.ctrlKey &&
+      e.code === 'KeyO' &&
+      termView(tabId) === 'transcript'
+    ) {
+      setTermView(tabId, null)
+      window.setTimeout(() => focusToggleHandler(tabId), 0)
     }
     return true
   })

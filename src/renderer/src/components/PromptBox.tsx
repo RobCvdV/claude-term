@@ -6,15 +6,17 @@ import { setupMonaco, modelUriForTab, PROMPT_LANG } from '../monaco-setup'
 import { attachSpellcheck } from '../spell'
 import { SpellToggle } from './SpellToggle'
 import { getArgCompleter, matchAppCommand, picksAndRuns } from '../app-commands'
-import { focusAfterSubmit, isFocusToggle, type FocusState } from '../focus-policy'
+import { ctrlKeyForPty, focusAfterSubmit, isFocusToggle, type FocusState } from '../focus-policy'
 import { runFocusLoan, type LoanMode } from '../focus-loan'
 import { promptHistoryFor, pushPrompt } from '../prompt-history'
 import { draftFor, lastImageNumber, saveDraft } from '../prompt-drafts'
 import { suggestWidgetAccepting } from '../suggest-widget'
-import { onUiKeys } from '../ui-keys'
+import { onTuiDraft, onUiKeys, setTermView, termView } from '../ui-keys'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
+
+const IS_MAC = navigator.platform.startsWith('Mac')
 
 interface Props {
   tabId: TabId
@@ -341,6 +343,19 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     // The widget renders in a fixed overlay (fixedOverflowWidgets), so query it
     // at the document level; only the focused editor ever shows one.
     editor.onKeyDown((e) => {
+      // Ctrl+letters are Claude Code's (history search, transcript, …) unless
+      // the box needs them for editing
+      const ctrl = ctrlKeyForPty(e.browserEvent, IS_MAC)
+      if (ctrl) {
+        e.preventDefault()
+        e.stopPropagation()
+        window.claudeTerm.ptyInput(tabId, ctrl.input)
+        if (ctrl.view) {
+          setTermView(tabId, ctrl.view)
+          focusTerm(tabId)
+        }
+        return
+      }
       if (
         e.keyCode === monaco.KeyCode.Enter &&
         !e.shiftKey &&
@@ -518,10 +533,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       () => window.claudeTerm.ptyInput(tabId, '\x1b[Z'),
       '!suggestWidgetVisible'
     )
-    // ⌃B backgrounds Claude Code's running command; Monaco would take it as cursor-left
-    editor.addCommand(monaco.KeyMod.WinCtrl | monaco.KeyCode.KeyB, () =>
-      window.claudeTerm.ptyInput(tabId, '\x02')
-    )
     // ⌘[ / ⌘] step tabs even from the box (Monaco owns these for out/indent,
     // so the window-level handler never sees them — override here). ⌘←/⌘→ are
     // left to Monaco for line-start/end.
@@ -586,6 +597,15 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       focusTerm(tabId)
       lendFocus('handover')
     })
+    // A history-search pick lands in the TUI's own input line: move it into
+    // the box (⌃L clears the TUI's copy) and bring focus back to edit or send.
+    const offTuiDraft = onTuiDraft((id, draft) => {
+      if (id !== tabId || termView(tabId) !== 'history') return
+      setTermView(tabId, null)
+      window.claudeTerm.ptyInput(tabId, '\x0c')
+      setValueCursorEnd(draft)
+      editor.focus()
+    })
 
     return () => {
       // park the unsubmitted draft (if any) so it's restored on remount, with the
@@ -600,6 +620,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       changeSub.dispose()
       retriggerSub.dispose()
       offUiKeys()
+      offTuiDraft()
       spell.dispose()
       editor.dispose()
       model.dispose()
