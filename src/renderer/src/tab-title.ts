@@ -41,3 +41,22 @@ export function composeWindowTitle(title: string, status: TabStatus | null | und
   const subtitle = tabSubtitle(title, status)
   return subtitle ? `${title} — ${subtitle}` : title
 }
+
+/** A tab's title when the user hasn't renamed it: a session's home folder while
+ *  claude runs, otherwise the folder its shell is in. */
+export function autoTabTitle(status: TabStatus | null | undefined, shellCwd?: string): string {
+  const dir = status?.claudeActive ? status.cwd : (shellCwd ?? status?.cwd ?? '')
+  const trimmed = dir.replace(/\/+$/, '')
+  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || dir
+}
+
+/** The folder in an OSC 7 report (`file://host/path`), or null if it isn't one. */
+export function cwdFromOsc7(data: string): string | null {
+  const m = /^file:\/\/[^/]*(\/.*)$/.exec(data)
+  if (!m) return null
+  try {
+    return decodeURIComponent(m[1])
+  } catch {
+    return m[1]
+  }
+}

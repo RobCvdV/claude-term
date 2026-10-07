@@ -446,7 +446,7 @@ export interface PromptDraft {
 export interface PersistedTab {
   cwd: string
   title: string
-  /** the user renamed this tab, so don't let the shell's OSC title override it */
+  /** the user renamed this tab, so don't name it after its folder */
   manualTitle: boolean
   color?: string
   /** the claude session id to --resume, if one was running when we last saved */

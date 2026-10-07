@@ -18,7 +18,7 @@ import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { CompanionPanel } from './components/CompanionPanel'
 import { HelpOverlay } from './components/HelpOverlay'
 import { MissionControl } from './components/MissionControl'
-import { composeWindowTitle } from './tab-title'
+import { autoTabTitle, composeWindowTitle } from './tab-title'
 import { WINDOW_KIND, windowTitle } from '../../shared/window-titles'
 import { moveItem } from './tab-reorder'
 import { needsInput, nextAttentionTab } from './attention'
@@ -32,7 +32,7 @@ import {
   focusTerm,
   setTerminalEscapeHandler,
   setTerminalFocusToggleHandler,
-  setTerminalTitleHandler,
+  setTerminalCwdHandler,
   terminalAtNormalInput,
   visibleScreen
 } from './term-registry'
@@ -216,16 +216,28 @@ export default function App(): React.JSX.Element {
     )
   }, [restoreFocus])
 
-  // plain terminals: adopt the shell's OSC title unless the user renamed the tab.
-  // Strip any leading status emoji (e.g. "🟢 claude-term · main") — our own tab
-  // dot already conveys activity, so the emoji would just be a redundant dot.
+  // Untouched tabs are named after their folder: a session's home while claude
+  // runs, else wherever the shell has cd'd to. Terminal titles are ignored.
+  const [shellCwds, setShellCwds] = useState<Record<TabId, string>>({})
   useEffect(() => {
-    setTerminalTitleHandler((tabId, title) => {
-      if (manualTitles.current.has(tabId)) return
-      const clean = title.replace(/^[\p{Extended_Pictographic}️‍\s]+/u, '').trim()
-      setTabs((prev) => prev.map((t) => (t.tabId === tabId ? { ...t, title: clean || title } : t)))
-    })
+    setTerminalCwdHandler((tabId, cwd) =>
+      setShellCwds((prev) => (prev[tabId] === cwd ? prev : { ...prev, [tabId]: cwd }))
+    )
   }, [])
+  useEffect(() => {
+    setTabs((prev) => {
+      let changed = false
+      const next = prev.map((t) => {
+        const status = statuses[t.tabId]
+        if (manualTitles.current.has(t.tabId) || !status) return t
+        const title = autoTabTitle(status, shellCwds[t.tabId])
+        if (!title || title === t.title) return t
+        changed = true
+        return { ...t, title }
+      })
+      return changed ? next : prev
+    })
+  }, [statuses, shellCwds])
 
   // on tab switch, put focus where it's most useful for the tab we land on
   useEffect(() => {
@@ -470,6 +482,11 @@ export default function App(): React.JSX.Element {
         return rest
       })
       setColors((prev) => {
+        const rest = { ...prev }
+        delete rest[tabId]
+        return rest
+      })
+      setShellCwds((prev) => {
         const rest = { ...prev }
         delete rest[tabId]
         return rest

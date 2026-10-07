@@ -93,6 +93,10 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
     writeFileSync(
       join(zdotdir, '.zshrc'),
       `[[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"\n` +
+        `# claude-term: report the shell's folder (OSC 7) so the tab can be named after it.\n` +
+        `__claude_term_cwd() { printf '\\e]7;file://%s%s\\a' "$HOST" "$PWD" }\n` +
+        `autoload -Uz add-zsh-hook && add-zsh-hook chpwd __claude_term_cwd\n` +
+        `__claude_term_cwd\n` +
         `# claude-term: wrap claude so sessions started here light up the UI and\n` +
         `# carry the tab's branch name (via the session-namer) into the Claude app.\n` +
         `claude() {\n` +
