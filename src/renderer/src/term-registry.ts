@@ -12,6 +12,7 @@ import {
 } from './terminal-scan'
 import { fileLinkProvider, fileLinksInLine } from './terminal-links'
 import { isFocusToggle } from './focus-policy'
+import { cwdFromOsc7 } from './tab-title'
 import { setTermView, termView, uiKeysOwner } from './ui-keys'
 
 export interface TermEntry {
@@ -46,10 +47,10 @@ export function setTerminalFocusToggleHandler(fn: (tabId: TabId) => boolean): vo
   focusToggleHandler = fn
 }
 
-/** App registers this to update a tab's title from the shell's OSC title. */
-let titleHandler: (tabId: TabId, title: string) => void = () => {}
-export function setTerminalTitleHandler(fn: (tabId: TabId, title: string) => void): void {
-  titleHandler = fn
+/** App registers this to follow the folder the tab's shell reports (OSC 7). */
+let cwdHandler: (tabId: TabId, cwd: string) => void = () => {}
+export function setTerminalCwdHandler(fn: (tabId: TabId, cwd: string) => void): void {
+  cwdHandler = fn
 }
 
 function ensureRouting(): void {
@@ -101,7 +102,11 @@ export function createTerm(tabId: TabId): TermEntry {
 
   term.onData((data) => window.claudeTerm.ptyInput(tabId, data))
   term.onResize(({ cols, rows }) => window.claudeTerm.ptyResize(tabId, cols, rows))
-  term.onTitleChange((title) => title && titleHandler(tabId, title))
+  term.parser.registerOscHandler(7, (data) => {
+    const cwd = cwdFromOsc7(data)
+    if (cwd) cwdHandler(tabId, cwd)
+    return true
+  })
 
   // Return true so xterm still sends the key to the PTY (Claude Code closes its
   // overlay); after that dispatches, App decides whether to refocus the box.
