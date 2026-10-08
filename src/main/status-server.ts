@@ -11,7 +11,8 @@ import type {
   RepoStatus,
   StatuslinePayload,
   TabId,
-  TabStatus
+  TabStatus,
+  TurnActivity
 } from '../shared/types'
 import { parseRemote } from '../shared/repo-links'
 import { statusFolders } from '../shared/status-folders'
@@ -456,7 +457,35 @@ export class StatusServer {
    *  otherwise gives no hook for (see dialogClosed). */
   markTurn(tabId: TabId, running: boolean): void {
     const tab = this.tabs.get(tabId)
-    if (tab) tab.turnRunning = running
+    if (!tab) return
+    tab.turnRunning = running
+    this.setDoing(
+      tab,
+      running ? { word: '', mode: 'requesting', tool: null, detail: null, steps: 0 } : null
+    )
+  }
+
+  /** The spinner changed its word or what the turn is doing. */
+  markSpinner(tabId: TabId, word: string, mode: string): void {
+    const tab = this.tabs.get(tabId)
+    const doing = tab?.status.doing
+    if (!tab || !doing || (doing.word === word && doing.mode === mode)) return
+    this.setDoing(tab, { ...doing, word, mode })
+  }
+
+  /** A tool call started (`tool` set) or finished (null). */
+  markTool(tabId: TabId, tool: string | null, detail: string | null = null): void {
+    const tab = this.tabs.get(tabId)
+    const doing = tab?.status.doing
+    if (!tab || !doing) return
+    const steps = tool === null && doing.tool !== null ? doing.steps + 1 : doing.steps
+    this.setDoing(tab, { ...doing, tool, detail: tool === null ? null : detail, steps })
+  }
+
+  private setDoing(tab: TabState, doing: TurnActivity | null): void {
+    if (this.frozen) return
+    tab.status.doing = doing
+    this.onUpdate(tab.status)
   }
 
   /** A dialog the mod holds for a phone is up. */
@@ -604,6 +633,8 @@ export class StatusServer {
       tab.status.activity = 'idle'
       tab.status.busySince = null
       tab.status.payload = null
+      tab.status.doing = null
+      tab.turnRunning = false
       this.onUpdate(tab.status)
       return
     }
@@ -632,6 +663,8 @@ export class StatusServer {
     } else {
       tab.status.busySince = null
     }
+    // the turn is over even if the mod's turn.complete never arrives
+    if (next === 'idle') tab.status.doing = null
     tab.status.activity = next
     this.onUpdate(tab.status)
     // Turn just ended — a safe moment to apply a branch-switch rename that

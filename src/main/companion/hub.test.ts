@@ -170,6 +170,18 @@ function park(parked: ParkedPrompts, tabId = 't1', tool = 'Bash'): string {
 }
 
 describe('toSession', () => {
+  it('says what a busy session is doing, and nothing once it stops', () => {
+    const doing = {
+      word: 'Tinkering',
+      mode: 'tool-use',
+      tool: 'Bash',
+      detail: 'npm test',
+      steps: 2
+    }
+    expect(toSession(tabStatus({ activity: 'busy', doing }), []).doing).toEqual(doing)
+    expect(toSession(tabStatus({ activity: 'idle', doing }), []).doing).toBeNull()
+  })
+
   it('names the row after the folder the session is in', () => {
     expect(toSession(tabStatus(), []).folder).toBe('thing')
   })

@@ -44,6 +44,8 @@ node scripts/companion-client.mjs watch     # prints sessions + prompts; reads c
 
 Answering a permission prompt with **"allow and stop asking"** derives a rule and writes it to the project's `.claude/settings.local.json` — the same file Claude Code's own _"Yes, and don't ask again"_ uses. Rules are only offered for `Bash`, and never for a command containing shell operators: a prefix rule derived from `mkdir a && rm -rf b` would license the second half too. For tools whose rule would be a guessed path glob, the prompt is simply answered once.
 
+While a turn runs, a phone also sees **what it is doing**: the term-bridge mod reports the spinner's word ("Tinkering"), the tool running and what it runs on, and the steps finished so far.
+
 Prompts are held for a phone whenever one is **paired**, connected or not, and a phone that reconnects is handed everything still waiting. Questions (`AskUserQuestion`) are held by the term-bridge mod, which races the terminal's dialog against the phone with no time limit. Permissions stay on the `PermissionRequest` hook, which Claude Code gives up on after 600 s: at 9.5 minutes claude-term denies it with a reason the mod recognises, and the mod asks again as an **Allow/Deny** question — Allow re-runs that exact call, which claude-term lets through once. Nothing is remembered from a re-ask.
 
 A prompt sent from a device is **held while the session is showing a dialog**, because a permission prompt or picker owns the keyboard and pasted text would answer it instead of asking anything. It is delivered as soon as the dialog is gone. A busy session needs no such care — Claude Code queues typed input mid-turn itself.
