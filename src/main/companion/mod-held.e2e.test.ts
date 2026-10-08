@@ -32,7 +32,8 @@ async function until<T>(what: string, probe: () => T | undefined | false, ms = 9
 
 async function session(
   prompt: string,
-  expireMs: number
+  expireMs: number,
+  env: Record<string, string> = {}
 ): Promise<{
   parked: ParkedPrompts
   seen: PendingPrompt[]
@@ -90,7 +91,8 @@ async function session(
         SPIKE_EXTRA_ARGS: JSON.stringify(['--plugin-dir', MOD_DIR]),
         CLAUDE_TERM_PORT: String(status.port),
         CLAUDE_TERM_TAB_ID: 't',
-        CLAUDE_TERM_TOKEN: status.token
+        CLAUDE_TERM_TOKEN: status.token,
+        ...env
       }
     }
   )
@@ -122,6 +124,60 @@ describe.runIf(RUN_E2E)('mod-held prompts end to end', () => {
       expect(reasked).toMatchObject({ hook: 'mod', kind: 'permission', toolName: 'Bash' })
       expect(s.parked.decide(reasked.id, { kind: 'allow' })).toBe(true)
       await until('the tool to run', () => existsSync(join(s.fixture, 'spike-proof-empty')), 60_000)
+    } finally {
+      s.stop()
+    }
+  }, 240_000)
+
+  it('runs an expired permission allowed at the terminal', async () => {
+    const s = await session(
+      'Use the Bash tool to run exactly: mkdir spike-proof-empty   — then stop.',
+      8_000,
+      // past the expiry, Enter picks the re-ask's first option: Allow
+      { SPIKE_ANSWER_AT: '25', SPIKE_ANSWER_PRESSES: '3' }
+    )
+    try {
+      await until('the re-ask', () => s.seen.find((p) => p.reasked), 60_000)
+      await until('the tool to run', () => existsSync(join(s.fixture, 'spike-proof-empty')), 60_000)
+    } finally {
+      s.stop()
+    }
+  }, 240_000)
+
+  it('hands on a re-run that fails as an error, not as a broken answer', async () => {
+    const s = await session(
+      'Use the Bash tool to run exactly: mkdir /nonexistent-spike/x   — then stop.',
+      8_000
+    )
+    try {
+      const reasked = await until('the re-ask', () => s.seen.find((p) => p.reasked), 60_000)
+      s.parked.decide(reasked.id, { kind: 'allow' })
+      await s.done
+      const out = readFileSync(join(s.fixture, '..', 'tui.raw'), 'utf8')
+      expect(out).not.toMatch(/output shape/)
+      expect(out.replace(/\s+/g, '')).toMatch(/Nosuchfileordirectory/)
+    } finally {
+      s.stop()
+    }
+  }, 240_000)
+
+  it('offers a question again when its card was dropped, and takes the answer', async () => {
+    const s = await session(
+      'Use the AskUserQuestion tool to ask me exactly one question, "Pick a color?", with the options Red and Blue. Then reply with only the answer I gave.',
+      570_000
+    )
+    try {
+      const first = await until('the question', () => s.seen.find((p) => p.kind === 'question'))
+      // as if claude-term had lost it while the session still waits
+      s.parked.closeForMod(first.id)
+      const again = await until('the question again', () =>
+        s.seen.find((p) => p.kind === 'question' && p.id !== first.id)
+      )
+      expect(s.parked.decide(again.id, { kind: 'respond', text: 'Blue' })).toBe(true)
+      await s.done
+      expect(readFileSync(join(s.fixture, '..', 'tui.raw'), 'utf8')).toMatch(
+        /Pick a color\? → Blue/
+      )
     } finally {
       s.stop()
     }

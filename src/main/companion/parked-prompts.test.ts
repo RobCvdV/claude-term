@@ -4,6 +4,7 @@ import {
   decisionBody,
   EXPIRED_REASON,
   ParkedPrompts,
+  STALE_MS,
   promptKind,
   promptSummary,
   type ParkedResponse
@@ -405,7 +406,31 @@ describe('ParkedPrompts for the mod', () => {
     const prompt = parked.parkForMod('t1', ask)!
     const wait = parked.waitForMod(prompt.id, 5_000)
     parked.decide(prompt.id, { kind: 'release' })
-    expect(await wait).toEqual({ gone: true })
+    // the user chose the terminal: the mod must not offer it again
+    expect(await wait).toEqual({ gone: true, released: true })
+  })
+
+  it('takes a card nobody polls for off the phone, and lets the mod offer it again', async () => {
+    const parked = listening()
+    const outcomes: PromptOutcome[] = []
+    parked.onResolved = (_p, o) => outcomes.push(o)
+    const prompt = parked.parkForMod('t1', ask)!
+    parked.sweepStale(Date.now() + 60_000)
+    expect(parked.pending()).toHaveLength(1)
+    parked.sweepStale(Date.now() + STALE_MS + 1)
+    expect(parked.pending()).toEqual([])
+    expect(outcomes).toEqual(['expired'])
+    // no `released`: the mod parks it anew when it can reach us again
+    expect(await parked.waitForMod(prompt.id)).toEqual({ gone: true })
+  })
+
+  it('never sweeps a card whose mod is polling right now', () => {
+    const parked = listening()
+    const prompt = parked.parkForMod('t1', ask)!
+    void parked.waitForMod(prompt.id, 1_000_000)
+    parked.sweepStale(Date.now() + STALE_MS * 10)
+    expect(parked.pending()).toHaveLength(1)
+    parked.closeForMod(prompt.id)
   })
 
   it('reports a terminal answer the mod saw first', () => {
