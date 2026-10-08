@@ -1,0 +1,133 @@
+import { describe, expect, it } from 'vitest'
+import { spawn } from 'child_process'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import type { PendingPrompt } from 'claude-term-protocol'
+import { StatusServer } from '../status-server'
+import { buildHooks } from '../hook-config'
+import { handleModRequest } from './mod-requests'
+import { ParkedPrompts } from './parked-prompts'
+
+/**
+ * Prompts the term-bridge mod holds, with nothing faked but the phone: a real
+ * `claude` loads the real mod, claude-term's status server holds what it asks,
+ * and the test answers as a phone would.
+ *
+ * Opt-in (`CLAUDE_TERM_E2E=1`) — it needs the claude binary and a model.
+ */
+const RUN_E2E = process.env.CLAUDE_TERM_E2E === '1'
+const MOD_DIR = join(process.cwd(), 'resources/term-bridge')
+
+async function until<T>(what: string, probe: () => T | undefined | false, ms = 90_000): Promise<T> {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    const v = probe()
+    if (v) return v
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  throw new Error(`timed out waiting for ${what}`)
+}
+
+async function session(
+  prompt: string,
+  expireMs: number
+): Promise<{
+  parked: ParkedPrompts
+  seen: PendingPrompt[]
+  fixture: string
+  done: Promise<string>
+  stop: () => void
+}> {
+  const dir = mkdtempSync(join(tmpdir(), 'ct-mod-'))
+  const status = new StatusServer()
+  const parked = new ParkedPrompts(expireMs)
+  parked.canPark = () => true
+  const seen: PendingPrompt[] = []
+  parked.onParked = (p) => seen.push(p)
+  status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
+  status.onModRequest = (tabId, action, body) =>
+    handleModRequest({ parked, dialogOpen: () => {} }, tabId, action, body)
+  await status.start()
+  const fixture = join(dir, 'tui-empty-0-mod', 'fixture')
+  status.registerTab('t', fixture)
+  const url = `http://127.0.0.1:${status.port}/hook?tab=t&token=${status.token}`
+  const settings = join(dir, 'settings.json')
+  writeFileSync(
+    settings,
+    JSON.stringify({
+      hooks: buildHooks(url),
+      permissions: { defaultMode: 'default', ask: ['Bash(mkdir *)'] },
+      effortLevel: 'low'
+    })
+  )
+  const tui = spawn(
+    'python3',
+    [join(process.cwd(), 'scripts/hook-spike/tui.py'), 'empty', '0', '100'],
+    {
+      env: {
+        ...process.env,
+        SPIKE_HOOK_URL: url,
+        SPIKE_SETTINGS_FILE: settings,
+        SPIKE_OUT: dir,
+        SPIKE_TAG: '-mod',
+        SPIKE_PROMPT: prompt,
+        SPIKE_EXTRA_ARGS: JSON.stringify(['--plugin-dir', MOD_DIR]),
+        CLAUDE_TERM_PORT: String(status.port),
+        CLAUDE_TERM_TAB_ID: 't',
+        CLAUDE_TERM_TOKEN: status.token
+      }
+    }
+  )
+  let out = ''
+  tui.stdout.on('data', (d) => (out += d))
+  const done = new Promise<string>((resolve) => tui.on('close', () => resolve(out)))
+  return {
+    parked,
+    seen,
+    fixture,
+    done,
+    stop: () => {
+      tui.kill()
+      status.stop()
+    }
+  }
+}
+
+describe.runIf(RUN_E2E)('mod-held prompts end to end', () => {
+  it('asks an expired permission again, and runs it once a phone allows', async () => {
+    const s = await session(
+      'Use the Bash tool to run exactly: mkdir spike-proof-empty   — then stop.',
+      8_000
+    )
+    try {
+      await until('the permission', () => s.seen.find((p) => p.hook === 'PermissionRequest'))
+      const reasked = await until('the re-ask', () => s.seen.find((p) => p.reasked), 60_000)
+      expect(reasked).toMatchObject({ hook: 'mod', kind: 'permission', toolName: 'Bash' })
+      expect(s.parked.decide(reasked.id, { kind: 'allow' })).toBe(true)
+      await until('the tool to run', () => existsSync(join(s.fixture, 'spike-proof-empty')), 60_000)
+    } finally {
+      s.stop()
+    }
+  }, 240_000)
+
+  it('lets a phone answer a question the terminal is showing too', async () => {
+    const s = await session(
+      'Use the AskUserQuestion tool to ask me exactly one question, "Pick a color?", with the options Red and Blue. Then reply with only the answer I gave.',
+      570_000
+    )
+    try {
+      const q = await until('the question', () => s.seen.find((p) => p.kind === 'question'))
+      expect(q.hook).toBe('mod')
+      expect(s.parked.decide(q.id, { kind: 'respond', text: 'Blue' })).toBe(true)
+      await s.done
+      // the PermissionRequest hook leaves it to the mod: one card, not two
+      expect(s.seen.filter((p) => p.kind === 'question')).toHaveLength(1)
+      expect(readFileSync(join(s.fixture, '..', 'tui.raw'), 'utf8')).toMatch(
+        /Pick a color\? → Blue/
+      )
+    } finally {
+      s.stop()
+    }
+  }, 240_000)
+})

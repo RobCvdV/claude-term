@@ -52,6 +52,8 @@ interface TabState {
   pendingRename: string | null
   /** The last name we injected via `/rename`, to avoid re-sending the same one. */
   lastRenamedName: string | null
+  /** Between the mod's turn.start and turn.complete. */
+  turnRunning?: boolean
 }
 
 /**
@@ -129,6 +131,9 @@ export class StatusServer {
 
   /** Set by ipc.ts; a UI event from the term-bridge mod running inside the session. */
   onModEvent: (tabId: TabId, event: Record<string, unknown>) => void = () => {}
+  /** Set by ipc.ts; a request from the mod that wants an answer (`/mod/<action>`). */
+  onModRequest: (tabId: TabId, action: string, body: Record<string, unknown>) => Promise<object> =
+    async () => ({})
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
@@ -156,6 +161,16 @@ export class StatusServer {
           return
         }
         const target = this.resolveTab(tabId, (body as { session_id?: string }).session_id)
+        if (url.pathname.startsWith('/mod/')) {
+          this.onModRequest(target, url.pathname.slice(5), body as Record<string, unknown>)
+            .catch(() => ({}))
+            .then((answer) => {
+              if (res.writableEnded) return
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify(answer))
+            })
+          return
+        }
         if (url.pathname !== '/hook') {
           reply()
           if (url.pathname === '/statusline') {
@@ -437,6 +452,36 @@ export class StatusServer {
    *  reason: a tab whose session never POSTs would otherwise persist with no
    *  session id, so the *next* launch had nothing to revive from and silently
    *  demoted the tab to a plain terminal. */
+  /** The mod reports turns starting and ending, which a dismissed dialog
+   *  otherwise gives no hook for (see dialogClosed). */
+  markTurn(tabId: TabId, running: boolean): void {
+    const tab = this.tabs.get(tabId)
+    if (tab) tab.turnRunning = running
+  }
+
+  /** A dialog the mod holds for a phone is up. */
+  markDialogOpen(tabId: TabId): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen || tab.status.activity === 'needs-attention') return
+    tab.status.activity = 'needs-attention'
+    tab.status.busySince = null
+    this.onAttention(tabId, 'AskUserQuestion')
+    this.onUpdate(tab.status)
+  }
+
+  /**
+   * Nothing holds Claude Code's keys any more. Answering a dialog is followed by
+   * a hook that moves the tab on, but dismissing a permission with Esc is not,
+   * and a tab left on needs-attention holds every prompt a phone sends.
+   */
+  dialogClosed(tabId: TabId): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen || tab.status.activity !== 'needs-attention') return
+    tab.status.activity = tab.turnRunning ? 'busy' : 'idle'
+    tab.status.busySince = tab.turnRunning ? Date.now() : null
+    this.onUpdate(tab.status)
+  }
+
   markClaudeActive(tabId: TabId, sessionId?: string): void {
     const tab = this.tabs.get(tabId)
     if (!tab || this.frozen) return

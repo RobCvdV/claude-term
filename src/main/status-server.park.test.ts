@@ -14,7 +14,11 @@ let server: StatusServer
 let parked: ParkedPrompts
 
 /** POST a hook body; resolves with the response once the server answers. */
-function postHook(evt: HookEvent, tab = 't1'): Promise<{ status: number; body: string }> {
+function postHook(
+  evt: HookEvent,
+  tab = 't1',
+  path = '/hook'
+): Promise<{ status: number; body: string }> {
   const payload = JSON.stringify(evt)
   return new Promise((resolve, reject) => {
     const req = request(
@@ -22,7 +26,7 @@ function postHook(evt: HookEvent, tab = 't1'): Promise<{ status: number; body: s
         host: '127.0.0.1',
         port: server.port,
         method: 'POST',
-        path: `/hook?tab=${tab}&token=${server.token}`,
+        path: `${path}?tab=${tab}&token=${server.token}`,
         headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length }
       },
       (res) => {
@@ -103,36 +107,44 @@ describe('StatusServer hook parking', () => {
     expect((await inflight).body).toBe('{}')
   })
 
-  it('carries a question through with its options', async () => {
+  it('leaves a question to the term-bridge mod', async () => {
     parked.canPark = () => true
-    void postHook({
-      hook_event_name: 'PreToolUse',
+    const res = await postHook({
+      hook_event_name: 'PermissionRequest',
       session_id: 's1',
       tool_name: 'AskUserQuestion',
       tool_input: { questions: [{ question: 'Tabs or spaces?', options: [{ label: 'Spaces' }] }] }
     })
-    await settle()
-    const [prompt] = parked.pending()
-    expect(prompt.kind).toBe('question')
-    expect(prompt.hook).toBe('PreToolUse')
-    expect(prompt.questions?.[0].options[0].label).toBe('Spaces')
+    expect(res.body).toBe('{}')
+    expect(parked.pending()).toHaveLength(0)
   })
 
-  it('answers a question with text the model will see', async () => {
+  it('answers plan feedback with text the model will see', async () => {
     parked.canPark = () => true
     const inflight = postHook({
       hook_event_name: 'PreToolUse',
       session_id: 's1',
-      tool_name: 'AskUserQuestion',
-      tool_input: { questions: [] }
+      tool_name: 'ExitPlanMode',
+      tool_input: { plan: '# Plan' }
     })
     await settle()
-    parked.decide(parked.pending()[0].id, { kind: 'respond', text: 'Spaces' })
+    parked.decide(parked.pending()[0].id, { kind: 'respond', text: 'Smaller steps' })
     expect(JSON.parse((await inflight).body).hookSpecificOutput).toEqual({
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: 'Spaces'
+      permissionDecisionReason: 'Smaller steps'
     })
+  })
+
+  it("routes the mod's requests and answers with what the handler returns", async () => {
+    const seen: [string, string, Record<string, unknown>][] = []
+    server.onModRequest = async (tabId, action, body) => {
+      seen.push([tabId, action, body])
+      return { id: 'p1' }
+    }
+    const res = await postHook({ hook_event_name: 'x', toolName: 'Bash' }, 't1', '/mod/park')
+    expect(JSON.parse(res.body)).toEqual({ id: 'p1' })
+    expect(seen).toEqual([['t1', 'park', { hook_event_name: 'x', toolName: 'Bash' }]])
   })
 
   it('never parks an ordinary tool call on PreToolUse', async () => {

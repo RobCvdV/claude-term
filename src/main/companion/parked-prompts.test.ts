@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   canDeliver,
   decisionBody,
+  EXPIRED_REASON,
   ParkedPrompts,
   promptKind,
   promptSummary,
@@ -51,6 +52,23 @@ const plan = (): HookEvent => ({
   session_id: 's1',
   tool_name: 'ExitPlanMode',
   tool_input: { plan: '# Plan\ndo the thing', planFilePath: '/tmp/p.md' }
+})
+
+const held = (over: Partial<PendingPrompt>): PendingPrompt => ({
+  id: 'p',
+  tabId: 't1',
+  sessionId: 's1',
+  hook: 'PermissionRequest',
+  kind: 'permission',
+  toolName: 'Bash',
+  summary: 'mkdir out',
+  questions: null,
+  plan: null,
+  planFilePath: null,
+  toolInput: {},
+  suggestedRule: null,
+  createdAt: 0,
+  ...over
 })
 
 function listening(): ParkedPrompts {
@@ -106,8 +124,23 @@ describe('decisionBody', () => {
   })
 
   it('refuses to route text through PermissionRequest, which would drop it', () => {
-    expect(canDeliver('PermissionRequest', { kind: 'respond', text: 'Spaces' })).toBe(false)
-    expect(canDeliver('PreToolUse', { kind: 'respond', text: 'Spaces' })).toBe(true)
+    const text = { kind: 'respond', text: 'Spaces' } as const
+    expect(canDeliver(held({ hook: 'PermissionRequest' }), text)).toBe(false)
+    expect(canDeliver(held({ hook: 'PreToolUse', kind: 'plan' }), text)).toBe(true)
+  })
+
+  it('answers a question with text and nothing else', () => {
+    const q = held({ hook: 'mod', kind: 'question' })
+    expect(canDeliver(q, { kind: 'respond', text: 'Spaces' })).toBe(true)
+    expect(canDeliver(q, { kind: 'allow' })).toBe(false)
+    expect(canDeliver(q, { kind: 'release' })).toBe(true)
+  })
+
+  it('takes allow or deny on a reasked permission, never text', () => {
+    const p = held({ hook: 'mod', reasked: true })
+    expect(canDeliver(p, { kind: 'allow' })).toBe(true)
+    expect(canDeliver(p, { kind: 'deny', reason: 'no' })).toBe(true)
+    expect(canDeliver(p, { kind: 'respond', text: 'x' })).toBe(false)
   })
 })
 
@@ -142,12 +175,19 @@ describe('ParkedPrompts', () => {
     expect(parked.pending()).toHaveLength(0)
   })
 
-  it('surfaces a question with its options intact', () => {
+  it('leaves questions to the mod, on either hook', () => {
     const parked = listening()
-    parked.tryPark('t1', question(), fakeRes())
-    const [prompt] = parked.pending()
-    expect(prompt.kind).toBe('question')
-    expect(prompt.questions?.[0].question).toBe('Tabs or spaces?')
+    expect(parked.tryPark('t1', question(), fakeRes())).toBe(false)
+    const viaPermission = { ...question(), hook_event_name: 'PermissionRequest' }
+    expect(parked.tryPark('t1', viaPermission, fakeRes())).toBe(false)
+  })
+
+  it('surfaces a question the mod holds with its options intact', () => {
+    const parked = listening()
+    const input = question().tool_input as Record<string, unknown>
+    const prompt = parked.parkForMod('t1', { sessionId: 's1', toolName: 'AskUserQuestion', input })
+    expect(prompt?.kind).toBe('question')
+    expect(prompt?.questions?.[0].question).toBe('Tabs or spaces?')
   })
 
   it('surfaces a plan with its markdown and file path', () => {
@@ -253,5 +293,141 @@ describe('ParkedPrompts', () => {
     parked.tryPark('t2', permission(), fakeRes())
     parked.releaseTab('t1')
     expect(parked.pending().map((p) => p.tabId)).toEqual(['t2'])
+  })
+})
+
+describe('ParkedPrompts expiry', () => {
+  it('denies a permission just before the CLI would give up, with the reason the mod re-asks on', () => {
+    vi.useFakeTimers()
+    const parked = new ParkedPrompts(1_000)
+    parked.canPark = () => true
+    const outcomes: PromptOutcome[] = []
+    parked.onResolved = (_p, o) => outcomes.push(o)
+    const res = fakeRes()
+    parked.tryPark('t1', permission(), res)
+    vi.advanceTimersByTime(1_000)
+    expect(JSON.parse(res.body as string).hookSpecificOutput.decision).toEqual({
+      behavior: 'deny',
+      message: EXPIRED_REASON
+    })
+    expect(outcomes).toEqual(['expired'])
+    expect(parked.pending()).toEqual([])
+    vi.useRealTimers()
+  })
+
+  it('hands an expiring plan back to the terminal rather than denying it', () => {
+    vi.useFakeTimers()
+    const parked = new ParkedPrompts(1_000)
+    parked.canPark = () => true
+    const res = fakeRes()
+    parked.tryPark('t1', plan(), res)
+    vi.advanceTimersByTime(1_000)
+    expect(res.body).toBe('{}')
+    vi.useRealTimers()
+  })
+
+  it('does not expire a prompt that was answered', () => {
+    vi.useFakeTimers()
+    const parked = new ParkedPrompts(1_000)
+    parked.canPark = () => true
+    const res = fakeRes()
+    parked.tryPark('t1', permission(), res)
+    parked.decide(parked.pending()[0].id, { kind: 'allow' })
+    const body = res.body
+    vi.advanceTimersByTime(5_000)
+    expect(res.body).toBe(body)
+    vi.useRealTimers()
+  })
+})
+
+describe('ParkedPrompts approveOnce', () => {
+  it('lets exactly that call through once, whatever order its input keys are in', () => {
+    const parked = new ParkedPrompts()
+    parked.approveOnce('t1', 'Bash', { description: 'make a dir', command: 'mkdir out' })
+    const first = fakeRes()
+    expect(parked.tryPark('t1', permission(), first)).toBe(true)
+    expect(JSON.parse(first.body as string).hookSpecificOutput.decision.behavior).toBe('allow')
+    expect(parked.tryPark('t1', permission(), fakeRes())).toBe(false)
+  })
+
+  it('does not stretch to another command or another tab', () => {
+    const parked = new ParkedPrompts()
+    parked.approveOnce('t1', 'Bash', { command: 'mkdir out', description: 'make a dir' })
+    const other = permission({ tool_input: { command: 'rm -rf out', description: 'make a dir' } })
+    expect(parked.tryPark('t1', other, fakeRes())).toBe(false)
+    expect(parked.tryPark('t2', permission(), fakeRes())).toBe(false)
+  })
+})
+
+describe('ParkedPrompts for the mod', () => {
+  const ask = {
+    sessionId: 's1',
+    toolName: 'AskUserQuestion',
+    input: question().tool_input as Record<string, unknown>
+  }
+
+  it('holds nothing when no device could answer', () => {
+    expect(new ParkedPrompts().parkForMod('t1', ask)).toBeNull()
+  })
+
+  it('hands a decision to the waiting poll', async () => {
+    const parked = listening()
+    const prompt = parked.parkForMod('t1', ask)!
+    expect(prompt.hook).toBe('mod')
+    const wait = parked.waitForMod(prompt.id, 5_000)
+    expect(parked.decide(prompt.id, { kind: 'respond', text: 'Spaces' })).toBe(true)
+    expect(await wait).toEqual({ decision: { kind: 'respond', text: 'Spaces' } })
+    expect(parked.pending()).toEqual([])
+  })
+
+  it('keeps a decision that lands between two polls', async () => {
+    const parked = listening()
+    const prompt = parked.parkForMod('t1', ask)!
+    parked.decide(prompt.id, { kind: 'respond', text: 'Spaces' })
+    expect(await parked.waitForMod(prompt.id)).toEqual({
+      decision: { kind: 'respond', text: 'Spaces' }
+    })
+    expect(await parked.waitForMod(prompt.id)).toEqual({ gone: true })
+  })
+
+  it('tells the poll to come back when nothing happened', async () => {
+    vi.useFakeTimers()
+    const parked = listening()
+    const prompt = parked.parkForMod('t1', ask)!
+    const wait = parked.waitForMod(prompt.id, 1_000)
+    vi.advanceTimersByTime(1_000)
+    expect(await wait).toEqual({ pending: true })
+    vi.useRealTimers()
+  })
+
+  it('a release stops holding it without answering', async () => {
+    const parked = listening()
+    const prompt = parked.parkForMod('t1', ask)!
+    const wait = parked.waitForMod(prompt.id, 5_000)
+    parked.decide(prompt.id, { kind: 'release' })
+    expect(await wait).toEqual({ gone: true })
+  })
+
+  it('reports a terminal answer the mod saw first', () => {
+    const parked = listening()
+    const outcomes: PromptOutcome[] = []
+    parked.onResolved = (_p, o) => outcomes.push(o)
+    const prompt = parked.parkForMod('t1', ask)!
+    parked.closeForMod(prompt.id)
+    expect(outcomes).toEqual(['terminal'])
+    expect(parked.decide(prompt.id, { kind: 'respond', text: 'late' })).toBe(false)
+  })
+
+  it('marks a reasked permission and offers no rule to remember', () => {
+    const parked = listening()
+    const prompt = parked.parkForMod('t1', {
+      sessionId: 's1',
+      toolName: 'Bash',
+      input: { command: 'mkdir out' },
+      reasked: true
+    })!
+    expect(prompt.kind).toBe('permission')
+    expect(prompt.reasked).toBe(true)
+    expect(prompt.suggestedRule).toBeNull()
   })
 })

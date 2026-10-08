@@ -242,8 +242,12 @@ function Guide(): React.JSX.Element {
           decides — but Claude Code has already drawn its dialog in the terminal, so the prompt is
           always still answerable at the desk. Whichever side answers first wins and the other
           retracts. Nothing is ever auto-approved on your behalf: if no phone answers, the prompt
-          simply waits in the terminal exactly as it would have anyway. A held prompt is handed back
-          whenever the last device disconnects, the tab closes, or the app quits.
+          simply waits in the terminal exactly as it would have anyway. Prompts are held whenever a
+          phone is paired, so one that was away is handed everything still waiting when it
+          reconnects. Questions wait as long as it takes; a permission still unanswered after nine
+          and a half minutes (Claude Code gives up on it at ten) is asked again as an Allow/Deny
+          question, and Allow runs that one call. A held prompt is handed back when the tab closes
+          or the app quits.
         </p>
         <p>
           Answering with <b>allow and stop asking</b> writes a rule into the project&apos;s{' '}

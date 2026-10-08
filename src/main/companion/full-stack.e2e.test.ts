@@ -70,6 +70,7 @@ describe.runIf(RUN_E2E)('companion end to end', () => {
         onTokenRejected: () => {}
       }),
       pushTargets: () => [],
+      pairedCount: () => devices.list().length,
       addRule,
       screen: async () => SCREEN_ROWS
     })

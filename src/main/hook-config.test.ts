@@ -30,7 +30,7 @@ describe('buildHooks', () => {
   })
 
   it('scopes PreToolUse to the tools whose answer is content, not a verdict', () => {
-    expect(hooks.PreToolUse[0].matcher).toBe('AskUserQuestion|ExitPlanMode')
+    expect(hooks.PreToolUse[0].matcher).toBe('ExitPlanMode')
     // parking every tool call would stall the session
     expect(hooks.PermissionRequest[0].matcher).toBeUndefined()
   })
