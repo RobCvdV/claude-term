@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_CONVO_HIT_CHARS, MAX_CONVO_HITS } from '../shared/types'
-import { parseTurns, searchTurns, type ConvoTurn } from './transcript-search'
+import { parseTurns, searchTurns, toolArg, type ConvoTurn } from './transcript-search'
 
 const line = (rec: unknown): string => JSON.stringify(rec)
 
@@ -41,6 +41,39 @@ describe('parseTurns', () => {
       ['claude', undefined, 'Run npm test.'],
       ['tool', 'Bash', 'command: npm test']
     ])
+    expect(turns[2].arg).toBe('npm test')
+  })
+
+  it("names a call's main argument the way the terminal does", () => {
+    expect(toolArg({ file_path: '/a/b.ts', old_string: 'x' })).toBe('/a/b.ts')
+    expect(toolArg({ description: 'Find it', prompt: 'long' })).toBe('Find it')
+    expect(toolArg({ owner: 'me', title: 'Fix' })).toBe('me')
+    expect(toolArg({ command: 'cd x\nnpm test' })).toBe('cd x…')
+    expect(toolArg({ command: 'y'.repeat(200) })).toHaveLength(161)
+    expect(toolArg({ todos: [] })).toBeUndefined()
+  })
+
+  it('marks a result, its failure, and leaves images out', () => {
+    const turns = parseTurns(
+      line({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              is_error: true,
+              content: [
+                { type: 'text', text: 'Exit code 1' },
+                { type: 'image', source: { type: 'base64', data: 'iVBORw0KGgo' } }
+              ]
+            }
+          ]
+        }
+      })
+    )
+    expect(turns).toEqual([
+      { role: 'tool', result: true, error: true, time: null, text: 'Exit code 1\n[image]' }
+    ])
   })
 
   it('flattens tool results, however they are nested', () => {
@@ -59,7 +92,7 @@ describe('parseTurns', () => {
         }
       })
     )
-    expect(turns).toEqual([{ role: 'tool', time: null, text: '439 tests passed' }])
+    expect(turns).toEqual([{ role: 'tool', result: true, time: null, text: '439 tests passed' }])
   })
 
   it('buckets machine-injected text as tool output, not as something said', () => {

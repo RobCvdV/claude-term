@@ -14,6 +14,11 @@ import {
 export interface ConvoTurn {
   role: ConvoRole
   tool?: string
+  /** a tool call's main argument, as the terminal shows it: Bash(arg) */
+  arg?: string
+  /** a tool's output, and whether the call failed */
+  result?: boolean
+  error?: boolean
   time: string | null
   text: string
 }
@@ -25,6 +30,7 @@ interface Block {
   name?: string
   input?: unknown
   content?: unknown
+  is_error?: boolean
 }
 
 interface Record {
@@ -79,10 +85,23 @@ export function parseTurns(text: string): ConvoTurn[] {
         push(turns, { role: machine ? 'tool' : said, time, text: block.text ?? '' })
       else if (block.type === 'thinking')
         push(turns, { role: 'thinking', time, text: block.thinking ?? '' })
-      else if (block.type === 'tool_use')
-        push(turns, { role: 'tool', tool: block.name, time, text: flatten(block.input) })
-      else if (block.type === 'tool_result')
-        push(turns, { role: 'tool', time, text: flatten(block.content) })
+      else if (block.type === 'tool_use') {
+        const arg = toolArg(block.input)
+        push(turns, {
+          role: 'tool',
+          tool: block.name,
+          ...(arg ? { arg } : {}),
+          time,
+          text: flatten(block.input)
+        })
+      } else if (block.type === 'tool_result')
+        push(turns, {
+          role: 'tool',
+          result: true,
+          ...(block.is_error ? { error: true } : {}),
+          time,
+          text: flatten(block.content)
+        })
     }
   }
   return turns
@@ -92,12 +111,43 @@ function push(turns: ConvoTurn[], turn: ConvoTurn): void {
   if (turn.text.trim()) turns.push(turn)
 }
 
+/** The input field the terminal puts in a call's parentheses. */
+const ARG_KEYS = [
+  'command',
+  'file_path',
+  'notebook_path',
+  'pattern',
+  'url',
+  'query',
+  'description',
+  'skill',
+  'prompt'
+]
+const MAX_ARG_CHARS = 160
+
+/** A tool call's main argument, on one line: `npm test` for Bash(npm test). */
+export function toolArg(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const fields = input as { [key: string]: unknown }
+  const key =
+    ARG_KEYS.find((k) => typeof fields[k] === 'string') ??
+    Object.keys(fields).find((k) => typeof fields[k] === 'string')
+  if (!key) return undefined
+  const value = (fields[key] as string).trim()
+  const first = value.split('\n')[0]
+  return first.length > MAX_ARG_CHARS || first !== value
+    ? `${first.slice(0, MAX_ARG_CHARS)}…`
+    : first
+}
+
 /** Tool inputs and results are free-form JSON; searching them means searching
  *  their text, with the nesting flattened away. */
 function flatten(value: unknown): string {
   if (value == null) return ''
   if (typeof value === 'string') return value
   if (typeof value !== 'object') return String(value)
+  // a screenshot's base64 is no use to a reader or a search
+  if ((value as { type?: unknown }).type === 'image') return '[image]'
   if (Array.isArray(value)) return value.map(flatten).filter(Boolean).join('\n')
   const parts: string[] = []
   for (const [key, val] of Object.entries(value as object)) {

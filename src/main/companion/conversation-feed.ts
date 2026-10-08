@@ -43,6 +43,9 @@ export function toTurn(turn: ConvoTurn): ConversationTurn {
   return {
     role: turn.role,
     ...(turn.tool ? { tool: turn.tool } : {}),
+    ...(turn.arg ? { arg: turn.arg } : {}),
+    ...(turn.result ? { result: true } : {}),
+    ...(turn.error ? { error: true } : {}),
     time: turn.time,
     text
   }
