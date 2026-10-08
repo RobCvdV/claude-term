@@ -54,11 +54,39 @@ async function call($: Engine, action: string, data: object): Promise<Record<str
 }
 
 /** Long-poll for a phone's answer; null once claude-term stops holding it for one. */
-async function phoneDecision($: Engine, id: string, signal: AbortSignal): Promise<Decision | null> {
-  while (!signal.aborted) {
+/**
+ * Long-poll for a phone's answer until one comes, the user sends it back to
+ * the terminal, or `stop` aborts. claude-term being out of reach for a while
+ * (restarting, the Mac asleep) is waited out, and a card it dropped meanwhile
+ * is parked again, so a phone never shows a card nobody is listening to.
+ */
+async function phoneDecision(
+  $: Engine,
+  first: string,
+  stop: () => boolean,
+  repark: () => Promise<string | null>,
+  onId: (id: string) => void
+): Promise<Decision | null> {
+  let id = first
+  let failures = 0
+  while (!stop()) {
     const r = await call($, 'wait', { id })
     if (r.decision) return r.decision as Decision
-    if (!r.pending) return null
+    if (r.pending) {
+      failures = 0
+      continue
+    }
+    if (r.gone) {
+      if (r.released || stop()) return null
+      const again = await repark()
+      if (!again) return null
+      id = again
+      onId(id)
+      continue
+    }
+    failures++
+    // a $.clock wait would count against this hook's time; a child process doesn't
+    await $.process.run(['sleep', String(Math.min(30, 2 ** Math.min(failures, 5)))]).catch(() => {})
   }
   return null
 }
@@ -192,18 +220,27 @@ export const register: Register = (on) => {
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const questions = (e as unknown as { questions?: Question[] }).questions ?? []
     const reask = reasks.get(questions[0]?.question ?? '')
-    const parked = reask
-      ? await call($, 'park', { toolName: reask.toolName, input: reask.input, reasked: true })
-      : await call($, 'park', { toolName: 'AskUserQuestion', input: { questions } })
-    const id = typeof parked.id === 'string' ? parked.id : null
+    const park = async (): Promise<string | null> => {
+      const r = reask
+        ? await call($, 'park', { toolName: reask.toolName, input: reask.input, reasked: true })
+        : await call($, 'park', { toolName: 'AskUserQuestion', input: { questions } })
+      return typeof r.id === 'string' ? r.id : null
+    }
+    let id = await park()
     if (!id) return next(e)
 
+    let settled = false
+    const stop = (): boolean => settled || next.signal.aborted
     const native = next(e).then((r) => ({ from: 'terminal' as const, r }))
     native.catch(() => {})
-    const phone = phoneDecision($, id, next.signal).then((d) => ({ from: 'phone' as const, d }))
+    const phone = phoneDecision($, id, stop, park, (newId) => (id = newId)).then((d) => ({
+      from: 'phone' as const,
+      d
+    }))
     let first: Awaited<typeof native> | Awaited<typeof phone> = await Promise.race([native, phone])
     // handed back to the terminal: wait for it there
     if (first.from === 'phone' && (!first.d || first.d.kind === 'release')) first = await native
+    settled = true
     if (first.from === 'terminal') {
       await call($, 'close', { id })
       return first.r
@@ -251,6 +288,13 @@ export const register: Register = (on) => {
     }
     if (answer !== 'Allow') return { deny: reask.reason ?? 'The user denied this.' }
     await call($, 'approve', { toolName, input })
-    return $.tool.call({ tool: toolName, ...input } as never)
+    const again = await $.tool.call({ tool: toolName, ...input } as never)
+    // Claude Code checks an answer a hook gives against the tool's output shape,
+    // and a failed run's error text is not that shape: hand it on as a refusal,
+    // which the model reads the same way.
+    const failed = again as { isError?: boolean; text?: unknown }
+    if (failed.isError)
+      return { deny: typeof failed.text === 'string' ? failed.text : 'It failed.' }
+    return again
   })
 }

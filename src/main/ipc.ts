@@ -22,6 +22,7 @@ import { PushSender } from './companion/push-sender'
 import { ScreenRequests } from './screen-requests'
 import { logUiBridge } from './ui-bridge-log'
 import { handleModRequest } from './companion/mod-requests'
+import { logCompanion } from './companion/companion-log'
 import { CompanionHub } from './companion/hub'
 import { ParkedPrompts } from './companion/parked-prompts'
 import { DeviceRegistry } from './companion/devices'
@@ -118,6 +119,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   // Prompts held open for a companion device. Until one is connected canPark
   // stays false, so every hook is answered instantly exactly as before.
   const parked = new ParkedPrompts()
+  parked.log = logCompanion
   const devices = new DeviceRegistry(() => join(app.getPath('userData'), 'companion-devices.json'))
   const pairing = new Pairing()
   const companion = new CompanionServer({
@@ -195,6 +197,16 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     onChanged: updateSleepBlocker
   })
   hub.start()
+  const hubReady = companion.onReady
+  companion.onReady = (deviceId, name) => {
+    logCompanion('device-ready', { device: deviceId.slice(0, 8), pending: parked.pending().length })
+    hubReady(deviceId, name)
+  }
+  const hubGone = companion.onGone
+  companion.onGone = (deviceId) => {
+    logCompanion('device-gone', { device: deviceId.slice(0, 8) })
+    hubGone(deviceId)
+  }
 
   const send = (channel: string, ...args: unknown[]): void => {
     const win = getWindow()

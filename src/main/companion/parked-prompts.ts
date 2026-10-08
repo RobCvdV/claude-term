@@ -30,6 +30,10 @@ export const APPROVE_ONCE_MS = 60_000
 /** How long one of the mod's long-polls is held before it is told to ask again. */
 export const MOD_POLL_MS = 20_000
 
+/** A mod-held card nobody has polled for this long is taken off the phone; the
+ *  mod puts it back if it is still waiting once it can reach us again. */
+export const STALE_MS = 90_000
+
 /** What an expired permission is denied with. The term-bridge mod recognises it
  *  and asks again; should the mod be missing, the model reads it as is. */
 export const EXPIRED_REASON = 'claude-term: nobody answered this permission prompt in time'
@@ -111,8 +115,9 @@ export type ModWait =
   | { decision: PromptDecision }
   /** nothing yet; poll again */
   | { pending: true }
-  /** no longer held for a phone: released, or never known */
-  | { gone: true }
+  /** no longer held for a phone. `released`: the user chose to answer at the
+   *  terminal, so don't offer it again; otherwise the mod may park it anew */
+  | { gone: true; released?: true }
 
 /** A key for one exact tool call, insensitive to the order of its input's keys. */
 export function callKey(tabId: TabId, toolName: string, input: unknown): string {
@@ -137,12 +142,13 @@ function questionsOf(input: Record<string, unknown>): QuestionSpec[] | null {
 /** Where an entry's answer goes: an open settings-hook response, or the mod. */
 type Sink =
   | { type: 'hook'; res: ParkedResponse; expiry: NodeJS.Timeout | null }
-  | { type: 'mod'; decision: PromptDecision | null; waiters: Set<() => void> }
+  | { type: 'mod'; decision: PromptDecision | null; waiters: Set<() => void>; lastPoll: number }
 
 interface Entry {
   prompt: PendingPrompt
   sink: Sink
   done: boolean
+  outcome?: PromptOutcome
 }
 
 /** What the mod asks to have held for a phone. */
@@ -176,6 +182,10 @@ export class ParkedPrompts {
 
   onParked: (prompt: PendingPrompt) => void = () => {}
   onResolved: (prompt: PendingPrompt, outcome: PromptOutcome) => void = () => {}
+  /** Diagnostics: one line per thing that happens to a held prompt. */
+  log: (event: string, data: object) => void = () => {}
+
+  private sweeper: NodeJS.Timeout | null = null
 
   constructor(private readonly expireMs = EXPIRE_MS) {}
 
@@ -223,6 +233,7 @@ export class ParkedPrompts {
     sink.expiry = setTimeout(() => this.expire(entry), this.expireMs)
     sink.expiry.unref?.()
     this.entries.set(prompt.id, entry)
+    this.log('parked', { id: prompt.id, tab: tabId, hook, kind, tool: toolName })
     // The CLI closes the connection when the user answers in the terminal.
     res.on('close', () => this.finish(entry, 'terminal'))
     this.onParked(prompt)
@@ -233,17 +244,38 @@ export class ParkedPrompts {
   parkForMod(tabId: TabId, park: ModPark): PendingPrompt | null {
     if (!this.canPark(tabId)) return null
     const prompt = this.promptFor(tabId, { hook: 'mod', ...park })
+    this.log('parked', {
+      id: prompt.id,
+      tab: tabId,
+      hook: 'mod',
+      kind: prompt.kind,
+      tool: park.toolName,
+      reasked: park.reasked === true
+    })
     if (park.reasked) {
       prompt.reasked = true
       prompt.suggestedRule = null
     }
     this.entries.set(prompt.id, {
       prompt,
-      sink: { type: 'mod', decision: null, waiters: new Set() },
+      sink: { type: 'mod', decision: null, waiters: new Set(), lastPoll: Date.now() },
       done: false
     })
+    if (!this.sweeper) {
+      this.sweeper = setInterval(() => this.sweepStale(), STALE_MS / 3)
+      this.sweeper.unref?.()
+    }
     this.onParked(prompt)
     return prompt
+  }
+
+  /** Take mod-held cards off the phone when nothing is polling for them. */
+  sweepStale(now = Date.now()): void {
+    for (const entry of [...this.entries.values()]) {
+      const sink = entry.sink
+      if (entry.done || sink.type !== 'mod' || sink.waiters.size) continue
+      if (now - sink.lastPoll > STALE_MS) this.finish(entry, 'expired')
+    }
   }
 
   /** The mod's long-poll: resolves on a decision, a release, or after `ms`. */
@@ -251,18 +283,14 @@ export class ParkedPrompts {
     const entry = this.entries.get(id)
     if (!entry || entry.sink.type !== 'mod') return Promise.resolve({ gone: true })
     const sink = entry.sink
-    if (sink.decision) return Promise.resolve(this.takeModDecision(entry))
+    sink.lastPoll = Date.now()
+    if (entry.done) return Promise.resolve(this.collect(entry))
     return new Promise((resolve) => {
       const wake = (): void => {
         clearTimeout(timer)
         sink.waiters.delete(wake)
-        resolve(
-          sink.decision
-            ? this.takeModDecision(entry)
-            : entry.done
-              ? { gone: true }
-              : { pending: true }
-        )
+        sink.lastPoll = Date.now()
+        resolve(entry.done ? this.collect(entry) : { pending: true })
       }
       const timer = setTimeout(wake, ms)
       sink.waiters.add(wake)
@@ -277,14 +305,22 @@ export class ParkedPrompts {
 
   /** Let exactly this call through its next permission check, once. */
   approveOnce(tabId: TabId, toolName: string, input: unknown): void {
+    this.log('approve-once', { tab: tabId, tool: toolName })
     this.approvedOnce.set(callKey(tabId, toolName, input), Date.now() + APPROVE_ONCE_MS)
   }
 
   /** Answer a held prompt. False if it is unknown, gone, or undeliverable. */
   decide(id: string, decision: PromptDecision): boolean {
     const entry = this.entries.get(id)
-    if (!entry || entry.done) return false
-    if (!canDeliver(entry.prompt, decision)) return false
+    const ok = Boolean(entry && !entry.done && canDeliver(entry.prompt, decision))
+    this.log('decide', {
+      id,
+      decision: decision.kind,
+      ok,
+      known: Boolean(entry),
+      done: entry?.done
+    })
+    if (!entry || !ok) return false
     const { prompt, sink } = entry
     if (sink.type === 'mod') {
       // The mod polls for it; a release just stops holding it for a phone.
@@ -351,6 +387,7 @@ export class ParkedPrompts {
    *  the reason the mod re-asks on; anything else goes back to the terminal. */
   private expire(entry: Entry): void {
     if (entry.done || entry.sink.type !== 'hook') return
+    this.log('expiring', { id: entry.prompt.id, hook: entry.prompt.hook })
     const body =
       entry.prompt.hook === 'PermissionRequest'
         ? JSON.stringify({
@@ -369,12 +406,17 @@ export class ParkedPrompts {
     this.finish(entry, outcome)
   }
 
-  private takeModDecision(entry: Entry): ModWait {
+  /** Hand a finished mod entry's result to its poll, once. */
+  private collect(entry: Entry): ModWait {
     const sink = entry.sink as Extract<Sink, { type: 'mod' }>
-    const decision = sink.decision as PromptDecision
-    sink.decision = null
     this.entries.delete(entry.prompt.id)
-    return { decision }
+    const result: ModWait = sink.decision
+      ? { decision: sink.decision }
+      : entry.outcome === 'released'
+        ? { gone: true, released: true }
+        : { gone: true }
+    this.log('mod-collected', { id: entry.prompt.id, ...result })
+    return result
   }
 
   private key(tabId: TabId, toolName: string): string {
@@ -410,11 +452,20 @@ export class ParkedPrompts {
   private finish(entry: Entry, outcome: PromptOutcome): void {
     if (entry.done) return
     entry.done = true
-    if (entry.sink.type === 'hook' && entry.sink.expiry) clearTimeout(entry.sink.expiry)
-    // A decided mod entry stays until its poll collects the answer.
-    if (!(entry.sink.type === 'mod' && entry.sink.decision)) this.entries.delete(entry.prompt.id)
-    else setTimeout(() => this.entries.delete(entry.prompt.id), MOD_POLL_MS * 3).unref?.()
-    if (entry.sink.type === 'mod') for (const wake of [...entry.sink.waiters]) wake()
+    entry.outcome = outcome
+    this.log('resolved', { id: entry.prompt.id, tab: entry.prompt.tabId, outcome })
+    if (entry.sink.type === 'hook') {
+      if (entry.sink.expiry) clearTimeout(entry.sink.expiry)
+      this.entries.delete(entry.prompt.id)
+    } else {
+      // kept until its poll collects how it ended, or the mod is plainly gone
+      const id = entry.prompt.id
+      setTimeout(
+        () => this.entries.get(id) === entry && this.entries.delete(id),
+        STALE_MS
+      ).unref?.()
+      for (const wake of [...entry.sink.waiters]) wake()
+    }
     this.onResolved(entry.prompt, outcome)
   }
 }
