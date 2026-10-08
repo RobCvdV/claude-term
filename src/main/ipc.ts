@@ -85,6 +85,9 @@ import type {
 } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
+/** Mod events that only report progress; kept out of ui-bridge.log. */
+const PROGRESS_EVENTS = new Set(['spinner', 'tool.start', 'tool.end'])
+
 export interface AppServices {
   ptys: PtyManager
   status: StatusServer
@@ -218,13 +221,23 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
 
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
   status.onModEvent = (tabId, event) => {
-    logUiBridge(tabId, 'mod', event)
+    // progress events would bury the keyboard trail this log is for
+    if (!PROGRESS_EVENTS.has(String(event.kind))) logUiBridge(tabId, 'mod', event)
     if (event.kind === 'keys') {
       send('tab:uiKeys', tabId, event.state, event.text ?? null)
       if (event.state === 'prompt' || event.state === 'typing') status.dialogClosed(tabId)
     } else if (event.kind === 'session.end') send('tab:uiKeys', tabId, null)
     else if (event.kind === 'turn.start') status.markTurn(tabId, true)
     else if (event.kind === 'turn.complete') status.markTurn(tabId, false)
+    else if (event.kind === 'spinner')
+      status.markSpinner(tabId, String(event.word ?? ''), String(event.mode ?? ''))
+    else if (event.kind === 'tool.start')
+      status.markTool(
+        tabId,
+        String(event.tool ?? ''),
+        typeof event.detail === 'string' ? event.detail : null
+      )
+    else if (event.kind === 'tool.end') status.markTool(tabId, null)
   }
   status.onModRequest = (tabId, action, body) =>
     handleModRequest({ parked, dialogOpen: (id) => status.markDialogOpen(id) }, tabId, action, body)

@@ -105,6 +105,17 @@ export interface RepoStatus {
   ci: CiInfo | null
 }
 
+/** What a running turn is doing, as the term-bridge mod sees the terminal. */
+export interface TurnActivity {
+  /** the spinner's word ("Tinkering"), or the text drawn in its place */
+  word: string
+  mode: string
+  tool: string | null
+  detail: string | null
+  /** tool calls finished so far this turn */
+  steps: number
+}
+
 /** Everything the renderer needs to draw one tab's status bar. */
 export interface TabStatus {
   tabId: TabId
@@ -112,6 +123,8 @@ export interface TabStatus {
    *  When false the tab is a plain terminal and the Claude UI is hidden. */
   claudeActive: boolean
   activity: ActivityState
+  /** while a turn runs, for sessions that load the term-bridge mod */
+  doing?: TurnActivity | null
   /** epoch ms of the moment activity last flipped to busy (for elapsed timer) */
   busySince: number | null
   sessionId: string | null

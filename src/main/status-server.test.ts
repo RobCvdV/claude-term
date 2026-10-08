@@ -411,3 +411,46 @@ describe('endpoint persistence', () => {
     third.stop()
   })
 })
+
+describe('StatusServer turn activity', () => {
+  function tab(): { server: StatusServer; doing: () => TabStatus['doing'] } {
+    const server = new StatusServer()
+    server.registerTab('t1', '/repo', [], false)
+    return { server, doing: () => server.snapshot('t1')?.doing }
+  }
+
+  it('starts a turn with nothing done yet', () => {
+    const { server, doing } = tab()
+    server.markTurn('t1', true)
+    expect(doing()).toEqual({ word: '', mode: 'requesting', tool: null, detail: null, steps: 0 })
+  })
+
+  it('follows the spinner and the running tool, counting finished calls', () => {
+    const { server, doing } = tab()
+    server.markTurn('t1', true)
+    server.markSpinner('t1', 'Tinkering', 'tool-use')
+    server.markTool('t1', 'Bash', 'npm test')
+    expect(doing()).toMatchObject({ word: 'Tinkering', tool: 'Bash', detail: 'npm test', steps: 0 })
+    server.markTool('t1', null)
+    expect(doing()).toMatchObject({ tool: null, detail: null, steps: 1 })
+  })
+
+  it('reports nothing outside a turn, and clears at its end', () => {
+    const { server, doing } = tab()
+    server.markSpinner('t1', 'Tinkering', 'thinking')
+    expect(doing()).toBeUndefined()
+    server.markTurn('t1', true)
+    server.markTurn('t1', false)
+    expect(doing()).toBeNull()
+  })
+
+  it('does not wake the renderer for a redraw of the same spinner', () => {
+    const { server } = tab()
+    server.markTurn('t1', true)
+    server.markSpinner('t1', 'Tinkering', 'thinking')
+    let updates = 0
+    server.onUpdate = () => updates++
+    server.markSpinner('t1', 'Tinkering', 'thinking')
+    expect(updates).toBe(0)
+  })
+})

@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { PendingPrompt } from 'claude-term-protocol'
 import { StatusServer } from '../status-server'
+import type { TurnActivity } from '../../shared/types'
 import { buildHooks } from '../hook-config'
 import { handleModRequest } from './mod-requests'
 import { ParkedPrompts } from './parked-prompts'
@@ -35,6 +36,7 @@ async function session(
 ): Promise<{
   parked: ParkedPrompts
   seen: PendingPrompt[]
+  doings: TurnActivity[]
   fixture: string
   done: Promise<string>
   stop: () => void
@@ -46,6 +48,19 @@ async function session(
   const seen: PendingPrompt[] = []
   parked.onParked = (p) => seen.push(p)
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
+  const doings: TurnActivity[] = []
+  status.onUpdate = (st) => {
+    if (st.doing) doings.push({ ...st.doing })
+  }
+  status.onModEvent = (tabId, event) => {
+    if (event.kind === 'turn.start') status.markTurn(tabId, true)
+    else if (event.kind === 'turn.complete') status.markTurn(tabId, false)
+    else if (event.kind === 'spinner')
+      status.markSpinner(tabId, String(event.word), String(event.mode))
+    else if (event.kind === 'tool.start')
+      status.markTool(tabId, String(event.tool), (event.detail as string) ?? null)
+    else if (event.kind === 'tool.end') status.markTool(tabId, null)
+  }
   status.onModRequest = (tabId, action, body) =>
     handleModRequest({ parked, dialogOpen: () => {} }, tabId, action, body)
   await status.start()
@@ -85,6 +100,7 @@ async function session(
   return {
     parked,
     seen,
+    doings,
     fixture,
     done,
     stop: () => {
@@ -126,6 +142,18 @@ describe.runIf(RUN_E2E)('mod-held prompts end to end', () => {
       expect(readFileSync(join(s.fixture, '..', 'tui.raw'), 'utf8')).toMatch(
         /Pick a color\? → Blue/
       )
+    } finally {
+      s.stop()
+    }
+  }, 240_000)
+
+  it('reports what a turn is doing: the spinner, the tool and the steps', async () => {
+    const s = await session('Use the Read tool to read readme.md, then say what it says.', 570_000)
+    try {
+      await s.done
+      expect(s.doings.some((d) => d.word !== '')).toBe(true)
+      expect(s.doings).toContainEqual(expect.objectContaining({ tool: 'Read' }))
+      expect(s.doings.some((d) => d.steps >= 1)).toBe(true)
     } finally {
       s.stop()
     }
