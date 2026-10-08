@@ -5,6 +5,7 @@ const RENDERS = new Set(['AbovePrompt', 'PromptHint', 'SessionMode', 'AskUserQue
 const PROBE_MS = 400
 
 let endpoint: string | null = null
+let requests: { base: string; query: string } | null = null
 let sessionId = ''
 let loopGen = 0
 const lastRender: Record<string, number> = {}
@@ -18,6 +19,74 @@ async function report($: Engine, kind: string, data: object = {}): Promise<void>
     // claude-term gone or restarting: drop the event
   }
 }
+
+/** Kept in step with EXPIRED_REASON in src/main/companion/parked-prompts.ts. */
+const EXPIRED_REASON = 'claude-term: nobody answered this permission prompt in time'
+
+interface Question {
+  question: string
+  options?: { label: string }[]
+}
+type Decision =
+  | { kind: 'allow' }
+  | { kind: 'deny'; reason?: string }
+  | { kind: 'respond'; text: string }
+  | { kind: 'release' }
+
+/** A permission being asked again, keyed by the question that asks it. */
+const reasks = new Map<
+  string,
+  { toolName: string; input: Record<string, unknown>; reason?: string }
+>()
+
+/** A request claude-term answers (`/mod/<action>`); `{}` when it can't be reached. */
+async function call($: Engine, action: string, data: object): Promise<Record<string, unknown>> {
+  if (!requests) return {}
+  try {
+    const r = await $.http.fetch(`${requests.base}/mod/${action}?${requests.query}`, {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, ...data })
+    })
+    return JSON.parse(r.text) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+/** Long-poll for a phone's answer; null once claude-term stops holding it for one. */
+async function phoneDecision($: Engine, id: string, signal: AbortSignal): Promise<Decision | null> {
+  while (!signal.aborted) {
+    const r = await call($, 'wait', { id })
+    if (r.decision) return r.decision as Decision
+    if (!r.pending) return null
+  }
+  return null
+}
+
+function answersFor(questions: Question[], text: string): Record<string, string> {
+  const q = questions.find((x) => x.options?.some((o) => o.label === text)) ?? questions[0]
+  return q ? { [q.question]: text } : {}
+}
+
+function isExpired(r: unknown): boolean {
+  const { isError, text } = (r ?? {}) as { isError?: boolean; text?: unknown }
+  return isError === true && typeof text === 'string' && text.includes(EXPIRED_REASON)
+}
+
+/** What a call works on — the command, the file, the URL — when it says. */
+function callDetail(input: Record<string, unknown>): string | null {
+  const what = ['command', 'file_path', 'path', 'url', 'pattern', 'description']
+    .map((k) => input[k])
+    .find((v): v is string => typeof v === 'string')
+  return what ? what.slice(0, 200) : null
+}
+
+function describeCall(toolName: string, input: Record<string, unknown>): string {
+  return `${toolName}: ${callDetail(input) ?? JSON.stringify(input).slice(0, 200)}`
+}
+
+/** The last spinner state reported, so a redraw of the same one sends nothing. */
+let spinner = { word: '', mode: '' }
 
 async function within<T>($: Engine, ms: number, p: Promise<T>): Promise<T | 'timeout'> {
   return Promise.race([p, $.clock.sleep(ms).then(() => 'timeout' as const)])
@@ -60,7 +129,10 @@ export const register: Register = (on) => {
       $.env.get('CLAUDE_TERM_TAB_ID'),
       $.env.get('CLAUDE_TERM_TOKEN')
     ])
-    if (port && tab && token) endpoint = `http://127.0.0.1:${port}/mod?tab=${tab}&token=${token}`
+    if (port && tab && token) {
+      endpoint = `http://127.0.0.1:${port}/mod?tab=${tab}&token=${token}`
+      requests = { base: `http://127.0.0.1:${port}`, query: `tab=${tab}&token=${token}` }
+    }
     sessionId = String(await $.session.id())
     await report($, 'session.start')
     void probeLoop($, ++loopGen)
@@ -87,6 +159,7 @@ export const register: Register = (on) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    spinner = { word: '', mode: '' }
     await report($, 'turn.start')
     return next(e)
   })
@@ -98,10 +171,86 @@ export const register: Register = (on) => {
 
   on('ui.render', async ($, e, next) => {
     const c = e.component
+    if (c === 'Spinner') {
+      const p = e.props as { word: string; message: string | null; mode: string }
+      const word = p.message ?? p.word
+      if (word !== spinner.word || p.mode !== spinner.mode) {
+        spinner = { word, mode: p.mode }
+        // never hold a frame up for it
+        void report($, 'spinner', spinner)
+      }
+    }
     const now = Date.now()
     if (RENDERS.has(c) && now - (lastRender[c] ?? 0) > 1000)
       await report($, 'render', { component: c })
     lastRender[c] = now
     return next(e)
+  })
+
+  // A question is answered at the terminal or on a phone, whichever is first;
+  // returning with next() pending closes the terminal's dialog.
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    const questions = (e as unknown as { questions?: Question[] }).questions ?? []
+    const reask = reasks.get(questions[0]?.question ?? '')
+    const parked = reask
+      ? await call($, 'park', { toolName: reask.toolName, input: reask.input, reasked: true })
+      : await call($, 'park', { toolName: 'AskUserQuestion', input: { questions } })
+    const id = typeof parked.id === 'string' ? parked.id : null
+    if (!id) return next(e)
+
+    const native = next(e).then((r) => ({ from: 'terminal' as const, r }))
+    native.catch(() => {})
+    const phone = phoneDecision($, id, next.signal).then((d) => ({ from: 'phone' as const, d }))
+    let first: Awaited<typeof native> | Awaited<typeof phone> = await Promise.race([native, phone])
+    // handed back to the terminal: wait for it there
+    if (first.from === 'phone' && (!first.d || first.d.kind === 'release')) first = await native
+    if (first.from === 'terminal') {
+      await call($, 'close', { id })
+      return first.r
+    }
+    const d = first.d as Decision
+    let answers: Record<string, string>
+    if (reask) {
+      if (d.kind === 'deny' && d.reason) reask.reason = d.reason
+      answers = { [questions[0].question]: d.kind === 'allow' ? 'Allow' : 'Deny' }
+    } else {
+      answers = answersFor(questions, d.kind === 'respond' ? d.text : '')
+    }
+    return { result: { questions, answers } } as never
+  })
+
+  // A permission nobody answered before its hook ran out comes back denied with
+  // EXPIRED_REASON. Ask again as a question, which has no time limit, and on
+  // Allow re-run the very same call: claude-term lets that one through.
+  on('tool.call', async ($, e, next) => {
+    if (e.tool === 'AskUserQuestion') return next(e)
+    const input = { ...(e as unknown as Record<string, unknown>) }
+    for (const reserved of ['tool', 'tool_use_id', 'agentId']) delete input[reserved]
+    const toolName = e.tool
+    await report($, 'tool.start', { tool: toolName, detail: callDetail(input) })
+    let r: Awaited<ReturnType<typeof next>>
+    try {
+      r = await next(e)
+    } finally {
+      await report($, 'tool.end')
+    }
+    if (!isExpired(r)) return r
+    const question = `Allow ${describeCall(toolName, input)}?`
+    const reask: { toolName: string; input: Record<string, unknown>; reason?: string } = {
+      toolName,
+      input
+    }
+    reasks.set(question, reask)
+    let answer = 'Deny'
+    try {
+      answer = await $.ui.ask(question, { options: ['Allow', 'Deny'], header: 'Permission' })
+    } catch {
+      // dismissed
+    } finally {
+      reasks.delete(question)
+    }
+    if (answer !== 'Allow') return { deny: reask.reason ?? 'The user denied this.' }
+    await call($, 'approve', { toolName, input })
+    return $.tool.call({ tool: toolName, ...input } as never)
   })
 }

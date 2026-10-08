@@ -130,6 +130,27 @@ Useful as a "still waiting" nudge for push, but keep it out of activity-state
 mapping — it also fires post-`Stop`, which is why it is deliberately unmapped
 today.
 
+**11. Questions, and permissions that outlive the hook, go through the term-bridge mod.**
+Measured against CLI 2.1.293 with `src/main/companion/mod-held.e2e.test.ts`:
+
+- A mod's `tool.call` hook on `AskUserQuestion` can call `next(e)` (the native
+  dialog draws) and race it against a phone; returning `{ result: { questions,
+answers } }` while `next` is pending closes the dialog, and the model sees the
+  answer as the user's. Mod hooks have no 600 s ceiling: only their own code is
+  timed, never a `$.http.fetch` or `next(e)` in flight. Held 11 minutes, it worked.
+- A mod **cannot** answer a permission: `classic.PermissionRequest` from a
+  user-tier mod is bypassed by the built-in `cc-plugin-sec-default`. So
+  permissions stay on the settings hook, and an expiring one is denied with a
+  reason the mod's `tool.call` wrapper sees as `{ isError: true, text }`.
+- A mod may not `$.tool.call` AskUserQuestion; `$.ui.ask` is the way, and it
+  still passes through the mod's own `AskUserQuestion` hook.
+- `$.tool.call` re-runs a call through the permission check (skipping the
+  calling hook), so a one-shot approval on the `PermissionRequest` hook lets the
+  re-run through.
+
+So `PreToolUse` now matches only `ExitPlanMode`, and a question reaching
+`PermissionRequest` (item 6) is left to the mod rather than held twice.
+
 ## Trap: headless `-p` is not a valid harness for this
 
 In `-p` mode a `PreToolUse` `allow` is **not** sufficient — the run still failed

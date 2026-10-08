@@ -12,6 +12,7 @@ Policies (see hook-server.mjs): empty | 204 | allow | deny | allow-pre |
 allow-perm | deny-perm | park-perm | answer | answer-pre
 
 Env: SPIKE_PROMPT, SPIKE_MODE (permission mode), SPIKE_EFFORT, SPIKE_REASON,
+     SPIKE_EXTRA_ARGS (JSON list appended to the claude command line),
      SPIKE_ANSWER_AT (seconds; presses Enter in the TUI to answer there),
      SPIKE_TAG (suffix for the run dir), SPIKE_OUT (where run dirs go).
 """
@@ -77,7 +78,8 @@ if pid == 0:
               "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID"):
         os.environ.pop(k, None)
     mode = os.environ.get("SPIKE_MODE", "default")
-    os.execv(claude, [claude, "--settings", settings, "--permission-mode", mode])
+    extra = json.loads(os.environ.get("SPIKE_EXTRA_ARGS", "[]"))
+    os.execv(claude, [claude, "--settings", settings, "--permission-mode", mode, *extra])
 
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 45, 130, 0, 0))
 raw = open(os.path.join(run, "tui.raw"), "wb")
@@ -101,6 +103,10 @@ def text():
     return ANSI.sub(b"", bytes(buf)).decode("utf8", "replace")
 
 pump(8)
+# the throwaway fixture is new to Claude Code, which asks whether to trust it
+if "trustthisfolder" in text().replace(" ", ""):
+    os.write(fd, b"\x1b[B"); time.sleep(0.3); os.write(fd, b"\r")
+    pump(6)
 prompt = os.environ.get("SPIKE_PROMPT") or f"Use the Bash tool to run exactly: mkdir spike-proof-{policy}   — then stop."
 os.write(fd, b"\x1b[200~" + prompt.encode() + b"\x1b[201~")
 time.sleep(0.3)

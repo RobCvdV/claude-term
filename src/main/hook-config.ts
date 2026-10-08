@@ -22,12 +22,13 @@ export const REPORTING_EVENTS = [
 /**
  * Hooks whose response decides a prompt, so the app may hold one open while a
  * companion device answers. `PreToolUse` is matcher-scoped because parking every
- * tool call would stall the session; the two named tools are the only ones whose
- * answer is *content* rather than a verdict.
+ * tool call would stall the session; a plan's answer is *content* rather than a
+ * verdict. AskUserQuestion is held by the term-bridge mod instead, which has no
+ * time limit.
  */
-export const DECIDING_HOOKS: { event: DecidingHook; matcher?: string }[] = [
+export const DECIDING_HOOKS: { event: Exclude<DecidingHook, 'mod'>; matcher?: string }[] = [
   { event: 'PermissionRequest' },
-  { event: 'PreToolUse', matcher: 'AskUserQuestion|ExitPlanMode' }
+  { event: 'PreToolUse', matcher: 'ExitPlanMode' }
 ]
 
 /** Reporting hooks answer at once, so they stay on a short leash. */

@@ -25,7 +25,8 @@ export function toSession(status: TabStatus, pendingPromptIds: string[]): Compan
     claudeActive: status.claudeActive,
     branch: status.git?.branch ?? null,
     model: status.payload?.model?.display_name ?? null,
-    pendingPromptIds
+    pendingPromptIds,
+    doing: status.activity === 'busy' ? (status.doing ?? null) : null
   }
 }
 
@@ -38,6 +39,8 @@ export interface CompanionHubDeps {
   push: PushSender
   /** Every paired device that has given us a push token — connected or not. */
   pushTargets: () => PushTarget[]
+  /** How many devices are paired, connected or not. */
+  pairedCount: () => number
   snapshots: () => TabStatus[]
   snapshot: (tabId: TabId) => TabStatus | null
   /** Add a permission rule to the project's Claude Code settings. */
@@ -52,10 +55,9 @@ export interface CompanionHubDeps {
  * Joins the transport to the app: which sessions exist, which prompts are held,
  * and what a device is allowed to do about either.
  *
- * Prompts are only parked while a device is actually connected. That is not a
- * safety requirement — the session's own dialog is always on screen — but
- * holding a decision nobody is looking at just makes the session wait for
- * nothing.
+ * A prompt is held for as long as any device is paired, connected or not: the
+ * session's own dialog is always on screen too, and a phone that reconnects
+ * later is handed everything still waiting.
  */
 export class CompanionHub {
   private pollTimer: NodeJS.Timeout | null = null
@@ -65,7 +67,7 @@ export class CompanionHub {
   start(): void {
     const { server, parked } = this.deps
 
-    parked.canPark = () => server.authenticatedCount() > 0
+    parked.canPark = () => this.deps.pairedCount() > 0
     parked.onParked = (prompt) => server.broadcast({ type: 'prompt', prompt })
     parked.onResolved = (prompt, outcome) =>
       server.broadcast({
@@ -75,11 +77,10 @@ export class CompanionHub {
         outcome
       })
 
-    server.onPresence = (count) => {
-      // The last device just left; a prompt held for it can no longer be
-      // answered there, so hand it back rather than leaving the session waiting.
-      if (count === 0) parked.releaseAll('released')
-      this.deps.onChanged?.()
+    server.onPresence = () => this.deps.onChanged?.()
+    // A phone that was away gets everything still waiting for it.
+    server.onReady = (deviceId) => {
+      for (const prompt of parked.pending()) server.sendTo(deviceId, { type: 'prompt', prompt })
     }
     server.onGone = (deviceId) => {
       this.deps.feed.unsubscribe(deviceId)

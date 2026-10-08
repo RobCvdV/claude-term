@@ -56,10 +56,12 @@ function fakeServer(): CompanionServer & {
   sent: { deviceId: string; frame: ServerFrame }[]
   broadcasts: ServerFrame[]
   authed: number
+  paired: number
   attentive: string[]
 } {
   const api = {
     authed: 1,
+    paired: 1,
     sent: [] as { deviceId: string; frame: ServerFrame }[],
     broadcasts: [] as ServerFrame[],
     authenticatedCount() {
@@ -76,6 +78,7 @@ function fakeServer(): CompanionServer & {
       return new Set(api.attentive)
     },
     onPresence: (() => {}) as (count: number) => void,
+    onReady: (() => {}) as (deviceId: string, name: string) => void,
     onGone: (() => {}) as (deviceId: string) => void,
     onFrame: (() => {}) as (deviceId: string, frame: never) => void
   }
@@ -128,6 +131,7 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     queue,
     notifier,
     push,
+    pairedCount: () => server.paired,
     pushTargets: () => (pushToken ? [{ deviceId: 'd1', token: pushToken }] : []),
     screen,
     addRule
@@ -149,6 +153,10 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
 
 /** Park a prompt and return its id. */
 function park(parked: ParkedPrompts, tabId = 't1', tool = 'Bash'): string {
+  if (tool === 'AskUserQuestion') {
+    const input = { questions: [{ question: 'Tabs or spaces?', options: [{ label: 'Spaces' }] }] }
+    return parked.parkForMod(tabId, { sessionId: null, toolName: tool, input })!.id
+  }
   parked.tryPark(
     tabId,
     {
@@ -162,6 +170,18 @@ function park(parked: ParkedPrompts, tabId = 't1', tool = 'Bash'): string {
 }
 
 describe('toSession', () => {
+  it('says what a busy session is doing, and nothing once it stops', () => {
+    const doing = {
+      word: 'Tinkering',
+      mode: 'tool-use',
+      tool: 'Bash',
+      detail: 'npm test',
+      steps: 2
+    }
+    expect(toSession(tabStatus({ activity: 'busy', doing }), []).doing).toEqual(doing)
+    expect(toSession(tabStatus({ activity: 'idle', doing }), []).doing).toBeNull()
+  })
+
   it('names the row after the folder the session is in', () => {
     expect(toSession(tabStatus(), []).folder).toBe('thing')
   })
@@ -199,10 +219,11 @@ describe('toSession', () => {
 })
 
 describe('CompanionHub', () => {
-  it('parks prompts only while a device is connected', () => {
+  it('parks prompts while any device is paired, connected or not', () => {
     const { server, parked } = setup()
-    expect(parked.canPark('t1')).toBe(true)
     server.authed = 0
+    expect(parked.canPark('t1')).toBe(true)
+    server.paired = 0
     expect(parked.canPark('t1')).toBe(false)
   })
 
@@ -220,19 +241,21 @@ describe('CompanionHub', () => {
     })
   })
 
-  it('hands held prompts back when the last device disconnects', () => {
+  it('keeps holding prompts when the last device disconnects', () => {
     const { server, parked } = setup()
     park(parked)
-    expect(parked.pending()).toHaveLength(1)
     server.onPresence(0)
-    expect(parked.pending()).toHaveLength(0)
+    expect(parked.pending()).toHaveLength(1)
   })
 
-  it('keeps holding while at least one device is still there', () => {
+  it('hands a device that connects everything still waiting', () => {
     const { server, parked } = setup()
-    park(parked)
-    server.onPresence(1)
-    expect(parked.pending()).toHaveLength(1)
+    const id = park(parked)
+    server.onReady('d2', 'phone')
+    expect(server.sent).toContainEqual({
+      deviceId: 'd2',
+      frame: expect.objectContaining({ type: 'prompt', prompt: expect.objectContaining({ id }) })
+    })
   })
 
   it('answers a session list request', () => {
@@ -346,6 +369,7 @@ describe('CompanionHub', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
+      pairedCount: () => server.paired,
       pushTargets: () => [],
       screen: async () => SCREEN_ROWS
     })
@@ -386,6 +410,7 @@ describe('CompanionHub', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
+      pairedCount: () => server.paired,
       pushTargets: () => [],
       screen: async () => SCREEN_ROWS
     })
@@ -443,8 +468,8 @@ describe('CompanionHub', () => {
 
   it('approves without a rule when there is none worth offering', () => {
     const { server, parked, addRule } = setup()
-    // a question carries no shell command, so no rule is suggested
-    const id = park(parked, 't1', 'AskUserQuestion')
+    // only Bash gets a rule, so a Read approval has none to write
+    const id = park(parked, 't1', 'Read')
     server.onFrame('d1', {
       type: 'decide',
       promptId: id,
@@ -492,6 +517,7 @@ describe('CompanionHub', () => {
         fetch: (async () => new Response('{}')) as never,
         onTokenRejected: () => {}
       }),
+      pairedCount: () => server.paired,
       pushTargets: () => [],
       snapshots: () => statuses,
       snapshot: (tabId) => statuses.find((s) => s.tabId === tabId) ?? null,
@@ -580,6 +606,7 @@ describe('who a push is aimed at', () => {
           return 1
         }
       } as unknown as PushSender,
+      pairedCount: () => devices.list().length,
       pushTargets: () =>
         devices
           .list()
