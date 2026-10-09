@@ -232,11 +232,13 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   })
 
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
+  status.onHook = (tabId, evt) => parked.noteHook(tabId, evt)
   status.onModEvent = (tabId, event) => {
     // progress events would bury the keyboard trail this log is for
     if (!PROGRESS_EVENTS.has(String(event.kind))) logUiBridge(tabId, 'mod', event)
     if (event.kind === 'keys') {
       send('tab:uiKeys', tabId, event.state, event.text ?? null)
+      parked.noteKeys(tabId, String(event.state))
       if (event.state === 'prompt' || event.state === 'typing') status.dialogClosed(tabId)
     } else if (event.kind === 'session.end') send('tab:uiKeys', tabId, null)
     else if (event.kind === 'turn.start') status.markTurn(tabId, true)

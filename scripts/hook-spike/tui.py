@@ -14,6 +14,7 @@ allow-perm | deny-perm | park-perm | answer | answer-pre
 Env: SPIKE_PROMPT, SPIKE_MODE (permission mode), SPIKE_EFFORT, SPIKE_REASON,
      SPIKE_EXTRA_ARGS (JSON list appended to the claude command line),
      SPIKE_ANSWER_AT (seconds; presses Enter in the TUI to answer there),
+     SPIKE_ANSWER_KEY (esc: answer no instead),
      SPIKE_TAG (suffix for the run dir), SPIKE_OUT (where run dirs go).
 """
 import os, pty, sys, time, json, fcntl, termios, struct, select, re, shutil, signal, subprocess, socket
@@ -27,6 +28,7 @@ delay = sys.argv[2] if len(sys.argv) > 2 else "0"
 watch = float(sys.argv[3]) if len(sys.argv) > 3 else 45.0
 answer_at = float(os.environ.get("SPIKE_ANSWER_AT", "0"))  # seconds after prompt: press Enter in the TUI
 answer_presses = int(os.environ.get("SPIKE_ANSWER_PRESSES", "1"))  # a question form may want a confirming Enter
+answer_key = b"\x1b" if os.environ.get("SPIKE_ANSWER_KEY") == "esc" else b"\r"
 
 run = os.path.join(SP, f"tui-{policy}-{delay}{os.environ.get('SPIKE_TAG','')}")
 shutil.rmtree(run, ignore_errors=True)
@@ -130,7 +132,7 @@ while time.time() - t0 < watch:
         for i in range(answer_presses):
             if i:
                 pump(1.5)
-            os.write(fd, b"\r")   # confirm the highlighted "1. Yes" in the native dialog
+            os.write(fd, answer_key)   # Enter confirms the highlighted "1. Yes"; Esc says no
         print(f"  t={round(time.time()-t0,1)}s  ANSWERED IN TERMINAL (Enter)", flush=True)
     if not seen_dialog and DIALOG.search(squashed()):
         seen_dialog = True

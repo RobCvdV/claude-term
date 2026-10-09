@@ -129,6 +129,8 @@ export class StatusServer {
    *  whoever parked it. Replying here instead would tell the session "no
    *  decision" and drop the prompt. */
   parkHook: (tabId: TabId, evt: HookEvent, res: ParkedResponse) => boolean = () => false
+  /** Every hook, before parkHook sees it. */
+  onHook: (tabId: TabId, evt: HookEvent) => void = () => {}
 
   /** Set by ipc.ts; a UI event from the term-bridge mod running inside the session. */
   onModEvent: (tabId: TabId, event: Record<string, unknown>) => void = () => {}
@@ -189,6 +191,11 @@ export class StatusServer {
         } catch {
           // Deciding hooks wait up to DECIDING_TIMEOUT_S for us, so a bug in
           // here must never be the reason a session hangs.
+        }
+        try {
+          this.onHook(target, evt)
+        } catch {
+          /* same as handleHook */
         }
         if (!this.parkHook(target, evt, res)) reply()
       })
