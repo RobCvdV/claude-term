@@ -149,7 +149,13 @@ interface Entry {
   sink: Sink
   done: boolean
   outcome?: PromptOutcome
+  /** the mod saw the session's dialog up while this was held */
+  dialogSeen?: boolean
 }
+
+/** Hooks that only fire once a held call's dialog has been answered. */
+const TURN_MOVED_ON = new Set(['UserPromptSubmit', 'Stop', 'SessionEnd'])
+const TOOL_RAN = new Set(['PostToolUse', 'PostToolUseFailure'])
 
 /** What the mod asks to have held for a phone. */
 export interface ModPark {
@@ -186,6 +192,8 @@ export class ParkedPrompts {
   log: (event: string, data: object) => void = () => {}
 
   private sweeper: NodeJS.Timeout | null = null
+  /** The mod's last read of each tab's prompt box. */
+  private keys = new Map<TabId, string>()
 
   constructor(private readonly expireMs = EXPIRE_MS) {}
 
@@ -229,12 +237,18 @@ export class ParkedPrompts {
       input
     })
     const sink: Sink = { type: 'hook', res, expiry: null }
-    const entry: Entry = { prompt, sink, done: false }
+    const entry: Entry = {
+      prompt,
+      sink,
+      done: false,
+      dialogSeen: this.keys.get(tabId) === 'dialog'
+    }
     sink.expiry = setTimeout(() => this.expire(entry), this.expireMs)
     sink.expiry.unref?.()
     this.entries.set(prompt.id, entry)
     this.log('parked', { id: prompt.id, tab: tabId, hook, kind, tool: toolName })
-    // The CLI closes the connection when the user answers in the terminal.
+    // Older CLIs hang up when the user answers in the terminal; newer ones keep
+    // the request open, so noteHook and noteKeys catch that answer too.
     res.on('close', () => this.finish(entry, 'terminal'))
     this.onParked(prompt)
     return true
@@ -334,6 +348,51 @@ export class ParkedPrompts {
     this.write(sink.res, decisionBody(prompt.hook as Exclude<DecidingHook, 'mod'>, decision))
     this.finish(entry, decision.kind === 'release' ? 'released' : 'answered')
     return true
+  }
+
+  /**
+   * A hook from a tab: a held call that ran, or a turn that moved on, was
+   * answered in the terminal.
+   */
+  noteHook(tabId: TabId, evt: HookEvent): void {
+    const name = evt.hook_event_name ?? ''
+    if (!TURN_MOVED_ON.has(name) && !TOOL_RAN.has(name)) return
+    const tool = typeof evt.tool_name === 'string' ? evt.tool_name : ''
+    const ran = TOOL_RAN.has(name) ? callKey(tabId, tool, evt.tool_input ?? {}) : null
+    let answered = this.heldByHook(tabId)
+    if (ran) {
+      const same = answered.filter(
+        (e) => callKey(tabId, e.prompt.toolName, e.prompt.toolInput) === ran
+      )
+      // the dialog can edit the input it approves
+      answered = same.length ? same : answered.filter((e) => e.prompt.toolName === tool).slice(0, 1)
+    }
+    for (const entry of answered) {
+      this.log('answered-at-terminal', { id: entry.prompt.id, by: name })
+      this.release(entry, 'terminal')
+    }
+  }
+
+  /**
+   * The mod's read of the terminal's prompt box. Back to `prompt` or `typing`
+   * after a dialog means the dialog is gone: answered, or dismissed with Esc,
+   * which no hook reports.
+   */
+  noteKeys(tabId: TabId, state: string): void {
+    this.keys.set(tabId, state)
+    for (const entry of this.heldByHook(tabId)) {
+      if (state === 'dialog') entry.dialogSeen = true
+      else if ((state === 'prompt' || state === 'typing') && entry.dialogSeen) {
+        this.log('answered-at-terminal', { id: entry.prompt.id, by: 'keys' })
+        this.release(entry, 'terminal')
+      }
+    }
+  }
+
+  private heldByHook(tabId: TabId): Entry[] {
+    return [...this.entries.values()].filter(
+      (e) => !e.done && e.sink.type === 'hook' && e.prompt.tabId === tabId
+    )
   }
 
   /** Hand every held prompt back to the terminal (we're quitting). */

@@ -253,6 +253,72 @@ describe('ParkedPrompts', () => {
     expect(parked.pending()).toHaveLength(0)
   })
 
+  it('ends a card whose call ran after a terminal answer, the CLI holding on', () => {
+    const parked = listening()
+    const outcomes: PromptOutcome[] = []
+    parked.onResolved = (_p, outcome) => outcomes.push(outcome)
+    const res = fakeRes()
+    parked.tryPark('t1', permission(), res)
+    parked.tryPark('t1', permission({ tool_input: { command: 'ls' } }), fakeRes())
+    parked.noteHook('t1', {
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Bash',
+      tool_input: { description: 'make a dir', command: 'mkdir out' }
+    })
+    expect(outcomes).toEqual(['terminal'])
+    expect(res.body).toBe('{}')
+    expect(parked.pending().map((p) => p.summary)).toEqual(['ls'])
+  })
+
+  it('ends a card whose input the dialog edited before it ran', () => {
+    const parked = listening()
+    parked.tryPark('t1', permission(), fakeRes())
+    parked.noteHook('t1', {
+      hook_event_name: 'PostToolUseFailure',
+      tool_name: 'Bash',
+      tool_input: { command: 'mkdir -p out' }
+    })
+    expect(parked.pending()).toHaveLength(0)
+  })
+
+  it('ends every card of a tab whose turn moved on', () => {
+    const parked = listening()
+    parked.tryPark('t1', permission(), fakeRes())
+    parked.tryPark('t1', plan(), fakeRes())
+    parked.tryPark('t2', permission(), fakeRes())
+    parked.noteHook('t1', { hook_event_name: 'UserPromptSubmit' })
+    expect(parked.pending().map((p) => p.tabId)).toEqual(['t2'])
+  })
+
+  it('ends a card once the prompt box is back after its dialog, Esc included', () => {
+    const parked = listening()
+    parked.noteKeys('t1', 'prompt')
+    parked.tryPark('t1', permission(), fakeRes())
+    // the box still reads as it did before the dialog drew
+    parked.noteKeys('t1', 'typing')
+    expect(parked.pending()).toHaveLength(1)
+    parked.noteKeys('t1', 'dialog')
+    parked.noteKeys('t1', 'prompt')
+    expect(parked.pending()).toHaveLength(0)
+  })
+
+  it('counts a dialog the mod saw before the hook arrived', () => {
+    const parked = listening()
+    parked.noteKeys('t1', 'dialog')
+    parked.tryPark('t1', permission(), fakeRes())
+    parked.noteKeys('t1', 'prompt')
+    expect(parked.pending()).toHaveLength(0)
+  })
+
+  it('leaves cards the mod holds to the mod', () => {
+    const parked = listening()
+    parked.parkForMod('t1', { sessionId: 's1', toolName: 'AskUserQuestion', input: {} })
+    parked.noteKeys('t1', 'dialog')
+    parked.noteKeys('t1', 'prompt')
+    parked.noteHook('t1', { hook_event_name: 'Stop' })
+    expect(parked.pending()).toHaveLength(1)
+  })
+
   it('is idempotent: a resolved prompt cannot be answered again', () => {
     const parked = listening()
     const onResolved = vi.fn()

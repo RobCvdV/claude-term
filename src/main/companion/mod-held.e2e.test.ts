@@ -3,7 +3,7 @@ import { spawn } from 'child_process'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import type { PendingPrompt } from 'claude-term-protocol'
+import type { PendingPrompt, PromptOutcome } from 'claude-term-protocol'
 import { StatusServer } from '../status-server'
 import type { TurnActivity } from '../../shared/types'
 import { buildHooks } from '../hook-config'
@@ -37,6 +37,7 @@ async function session(
 ): Promise<{
   parked: ParkedPrompts
   seen: PendingPrompt[]
+  outcomes: PromptOutcome[]
   doings: TurnActivity[]
   fixture: string
   done: Promise<string>
@@ -48,13 +49,17 @@ async function session(
   parked.canPark = () => true
   const seen: PendingPrompt[] = []
   parked.onParked = (p) => seen.push(p)
+  const outcomes: PromptOutcome[] = []
+  parked.onResolved = (_p, outcome) => outcomes.push(outcome)
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
+  status.onHook = (tabId, evt) => parked.noteHook(tabId, evt)
   const doings: TurnActivity[] = []
   status.onUpdate = (st) => {
     if (st.doing) doings.push({ ...st.doing })
   }
   status.onModEvent = (tabId, event) => {
-    if (event.kind === 'turn.start') status.markTurn(tabId, true)
+    if (event.kind === 'keys') parked.noteKeys(tabId, String(event.state))
+    else if (event.kind === 'turn.start') status.markTurn(tabId, true)
     else if (event.kind === 'turn.complete') status.markTurn(tabId, false)
     else if (event.kind === 'spinner')
       status.markSpinner(tabId, String(event.word), String(event.mode))
@@ -102,6 +107,7 @@ async function session(
   return {
     parked,
     seen,
+    outcomes,
     doings,
     fixture,
     done,
@@ -128,6 +134,28 @@ describe.runIf(RUN_E2E)('mod-held prompts end to end', () => {
       s.stop()
     }
   }, 240_000)
+
+  it.each([
+    ['allowed', '\r'],
+    ['dismissed', 'esc']
+  ])(
+    'takes the card off the phone once the terminal has %s it',
+    async (_how, key) => {
+      const s = await session(
+        'Use the Bash tool to run exactly: mkdir spike-proof-empty   — then stop.',
+        120_000,
+        { SPIKE_ANSWER_AT: '8', ...(key === 'esc' ? { SPIKE_ANSWER_KEY: 'esc' } : {}) }
+      )
+      try {
+        await until('the permission', () => s.seen.find((p) => p.hook === 'PermissionRequest'))
+        await until('the card to go', () => s.outcomes.includes('terminal'), 30_000)
+        expect(s.parked.pending()).toHaveLength(0)
+      } finally {
+        s.stop()
+      }
+    },
+    240_000
+  )
 
   it('runs an expired permission allowed at the terminal', async () => {
     const s = await session(
