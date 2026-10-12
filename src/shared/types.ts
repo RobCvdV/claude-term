@@ -212,6 +212,49 @@ export interface PrInfo {
   mine: boolean
 }
 
+/** A Bitbucket repo's Downloads page, when it has any files on it. */
+export interface RepoDownloads {
+  url: string
+  count: number
+  /** newest file's name */
+  latest: string | null
+}
+
+/** One to-do ticket in the status bar's Jira dropdown. */
+export interface JiraTodo {
+  key: string
+  summary: string
+  /** Bug / Story / Task … — decides the branch prefix on "Start branch" */
+  type: string
+  priority: string | null
+  /** assigned to me (the rest of the list is unassigned) */
+  mine: boolean
+}
+
+/** One workspace repo's to-do tickets, a group in the Jira dropdown. */
+export interface JiraTodoGroup {
+  /** absolute path of the workspace folder */
+  root: string
+  labels: string[]
+  todos: JiraTodo[]
+  /** the same search in Jira, for the "open in Jira" footer */
+  searchUrl: string
+  error?: string
+}
+
+/** Outcome of "Start branch" on a ticket. */
+export type StartTicketResult =
+  | {
+      ok: true
+      branch: string
+      created: boolean
+      /** prompt for the tab's session: the ticket, and what to look at first */
+      prompt: string
+      /** Jira steps that failed — the branch itself is in place */
+      warnings: string[]
+    }
+  | { ok: false; error: string }
+
 /** One workspace repo's open PRs, a group in the status-bar PR dropdown. */
 export interface PrGroup {
   /** absolute path of the workspace folder this repo belongs to */

@@ -14,6 +14,7 @@ import type {
   DocTarget,
   HelpSection,
   JiraStatus,
+  JiraTodoGroup,
   LoggedWorklog,
   NpmScript,
   PersistedSession,
@@ -24,7 +25,9 @@ import type {
   ProjectSettings,
   ProjectSettingsPatch,
   RateForecast,
+  RepoDownloads,
   RevertResult,
+  StartTicketResult,
   SlashCommand,
   TabId,
   TreeNode,
@@ -71,6 +74,14 @@ export interface ClaudeTermApi {
   onOpenFolderTab(cb: (dir: string) => void): () => void
   /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
   listPrs(tabId: TabId): Promise<PrGroup[]>
+  /** to-do tickets of every workspace repo that has Jira labels */
+  jiraTodos(tabId: TabId): Promise<JiraTodoGroup[]>
+  /** native right-click menu for a ticket; resolves 'start' when Start Branch was picked */
+  jiraTicketMenu(key: string): Promise<'start' | null>
+  /** switch/create the ticket's branch in `root`, claim it in Jira */
+  jiraStart(tabId: TabId, root: string, key: string): Promise<StartTicketResult>
+  /** the tab repo's Bitbucket Downloads page, null when it has no files */
+  repoDownloads(tabId: TabId): Promise<RepoDownloads | null>
   /** Help menu picked Quick How-To / User Guide — open the help overlay */
   onShowHelp(cb: (section: HelpSection) => void): () => void
   /** native right-click menu for a PR entry (Open / Merge where allowed);
@@ -222,6 +233,10 @@ const api: ClaudeTermApi = {
   removeDir: (tabId, dir) => ipcRenderer.invoke('dirs:remove', tabId, dir),
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
+  jiraTodos: (tabId) => ipcRenderer.invoke('jira:todos', tabId),
+  jiraTicketMenu: (key) => ipcRenderer.invoke('jira:ticketMenu', key),
+  jiraStart: (tabId, root, key) => ipcRenderer.invoke('jira:start', tabId, root, key),
+  repoDownloads: (tabId) => ipcRenderer.invoke('downloads:get', tabId),
   onShowHelp: (cb) => subscribe('help:show', cb),
   prContextMenu: (tabId, pr, root) => ipcRenderer.send('prs:contextMenu', tabId, pr, root),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),

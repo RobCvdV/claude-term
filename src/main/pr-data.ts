@@ -36,13 +36,12 @@ interface BbPr {
   id?: number
   title?: string
   links?: { html?: { href?: string } }
-  author?: { uuid?: string }
+  author?: { account_id?: string }
 }
 
 /** Bitbucket 2.0 pullrequests listing (sorted -created_on by the query).
- *  `viewerUuid` comes from `/2.0/user` — Bitbucket identifies people by uuid,
- *  display names are not unique enough to compare. */
-export function mapBitbucketPrs(body: unknown, viewerUuid?: string | null): PrInfo[] {
+ *  People are compared by Atlassian account id — display names are not unique. */
+export function mapBitbucketPrs(body: unknown, viewerId?: string | null): PrInfo[] {
   const rows = (body as { values?: BbPr[] }).values ?? []
   return rows
     .filter((r) => r.id != null && !!r.title && !!r.links?.html?.href)
@@ -52,6 +51,22 @@ export function mapBitbucketPrs(body: unknown, viewerUuid?: string | null): PrIn
       title: r.title!,
       url: r.links!.html!.href!,
       canMerge: false,
-      mine: !!viewerUuid && r.author?.uuid === viewerUuid
+      mine: !!viewerId && r.author?.account_id === viewerId
     }))
+}
+
+interface BbCommit {
+  author?: { raw?: string; user?: { account_id?: string } }
+}
+
+/** Our account id from a commits listing: the first commit authored with
+ *  `email` that Bitbucket linked to an account. For API tokens without the
+ *  `read:user` scope, which can't ask `/2.0/user`. */
+export function accountIdFromCommits(body: unknown, email: string): string | null {
+  const needle = `<${email.trim().toLowerCase()}>`
+  const rows = (body as { values?: BbCommit[] }).values ?? []
+  const hit = rows.find(
+    (c) => c.author?.user?.account_id && c.author.raw?.toLowerCase().includes(needle)
+  )
+  return hit?.author?.user?.account_id ?? null
 }

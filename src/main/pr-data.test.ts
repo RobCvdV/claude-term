@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
+import { accountIdFromCommits, mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
 
 const ghRow = (
   n: number,
@@ -61,11 +61,11 @@ describe('mapGithubPrs', () => {
 })
 
 describe('mapBitbucketPrs', () => {
-  const bbRow = (id: number, uuid?: string): Record<string, unknown> => ({
+  const bbRow = (id: number, accountId?: string): Record<string, unknown> => ({
     id,
     title: `MTX-${id} fix`,
     links: { html: { href: `https://bitbucket.org/o/r/pull-requests/${id}` } },
-    ...(uuid ? { author: { uuid } } : {})
+    ...(accountId ? { author: { account_id: accountId } } : {})
   })
 
   it('maps the API listing and never offers merge', () => {
@@ -81,9 +81,9 @@ describe('mapBitbucketPrs', () => {
     ])
   })
 
-  it('marks mine by uuid — display names are not identity', () => {
-    const body = { values: [bbRow(7, '{me}'), bbRow(8, '{them}')] }
-    expect(mapBitbucketPrs(body, '{me}').map((p) => [p.number, p.mine])).toEqual([
+  it('marks mine by account id — display names are not identity', () => {
+    const body = { values: [bbRow(7, 'me-id'), bbRow(8, 'them-id')] }
+    expect(mapBitbucketPrs(body, 'me-id').map((p) => [p.number, p.mine])).toEqual([
       [7, true],
       [8, false]
     ])
@@ -92,5 +92,28 @@ describe('mapBitbucketPrs', () => {
 
   it('tolerates an empty/malformed body', () => {
     expect(mapBitbucketPrs({})).toEqual([])
+  })
+})
+
+describe('accountIdFromCommits', () => {
+  const commit = (raw: string, accountId?: string): Record<string, unknown> => ({
+    author: { raw, ...(accountId ? { user: { account_id: accountId } } : {}) }
+  })
+
+  it('takes the account of the first linked commit with our email', () => {
+    const body = {
+      values: [
+        commit('Someone <other@x.nl>', 'other-id'),
+        commit('Rob <R.Coenen@mendrix.nl>'),
+        commit('Rob C <r.coenen@mendrix.nl>', 'me-id')
+      ]
+    }
+    expect(accountIdFromCommits(body, 'r.coenen@mendrix.nl')).toBe('me-id')
+  })
+
+  it('does not match an email that merely contains ours', () => {
+    const body = { values: [commit('X <xr.coenen@mendrix.nl>', 'x-id')] }
+    expect(accountIdFromCommits(body, 'r.coenen@mendrix.nl')).toBeNull()
+    expect(accountIdFromCommits({}, 'r.coenen@mendrix.nl')).toBeNull()
   })
 })
