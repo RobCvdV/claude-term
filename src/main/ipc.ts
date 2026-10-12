@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  powerSaveBlocker,
+  shell
+} from 'electron'
 import { basename, join } from 'path'
 import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
@@ -70,6 +79,9 @@ import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { repoDownloads } from './downloads'
+import { fetchTodos } from './jira-client'
+import { startTicket } from './jira-start'
+import { jiraLabelsFor, ticketUrl, todoSearchUrl } from '../shared/jira-labels'
 import { sessionDoing } from './session-summary'
 import { searchConversation, conversationTurns } from './conversation-search'
 import { RateStore } from './rate-store'
@@ -77,6 +89,7 @@ import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
 import type {
+  JiraTodoGroup,
   PrGroup,
   PrInfo,
   ProjectChanges,
@@ -84,6 +97,7 @@ import type {
   ProjectSettingsPatch,
   RepoDownloads,
   RevertResult,
+  StartTicketResult,
   TurnStep
 } from '../shared/types'
 import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
@@ -542,6 +556,54 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     const own = repoTargets(tabId).find((t) => t.root === status.snapshot(tabId)?.cwd)
     return own ? repoDownloads(own.repo) : null
   })
+
+  // Status-bar Jira dropdown: to-do tickets per workspace repo that has labels.
+  ipcMain.handle('jira:todos', async (_e, tabId: TabId): Promise<JiraTodoGroup[]> => {
+    const snap = status.snapshot(tabId)
+    if (!snap) return []
+    const repos = [
+      { root: snap.cwd, remoteUrl: snap.git?.remoteUrl },
+      ...snap.extraRepos.map((r) => ({ root: r.root, remoteUrl: r.git.remoteUrl }))
+    ]
+    const groups: JiraTodoGroup[] = []
+    for (const { root, remoteUrl } of repos) {
+      const name = (remoteUrl && parseRemote(remoteUrl)?.repo) || basename(root)
+      const labels = jiraLabelsFor(name)
+      if (!labels) continue
+      const { todos, error } = await fetchTodos(labels)
+      groups.push({ root, labels, todos, searchUrl: todoSearchUrl(labels), error })
+    }
+    return groups
+  })
+
+  // Right-click on a ticket: Open / Copy are handled here, "Start branch" goes
+  // back to the dropdown, which shows its progress.
+  ipcMain.handle(
+    'jira:ticketMenu',
+    (e, key: string): Promise<'start' | null> =>
+      new Promise((resolve) => {
+        const win = BrowserWindow.fromWebContents(e.sender)
+        if (!win || !/^[A-Z]+-\d+$/.test(key)) return resolve(null)
+        Menu.buildFromTemplate([
+          { label: 'Start Branch', click: () => resolve('start') },
+          { type: 'separator' },
+          { label: 'Open in Browser', click: () => void shell.openExternal(ticketUrl(key)) },
+          { label: `Copy ${key}`, click: () => clipboard.writeText(key) }
+          // on macOS the close callback can fire before the item's click
+        ]).popup({ window: win, callback: () => setTimeout(() => resolve(null), 200) })
+      })
+  )
+
+  ipcMain.handle(
+    'jira:start',
+    async (_e, tabId: TabId, root: string, key: string): Promise<StartTicketResult> => {
+      const snap = status.snapshot(tabId)
+      if (!snap || !isWorkspaceRoot(snap, root)) {
+        return { ok: false, error: 'not a workspace folder of this tab' }
+      }
+      return startTicket(root, key, root === snap.cwd ? null : root)
+    }
+  )
 
   ipcMain.on('prs:contextMenu', (e, tabId: TabId, pr: PrInfo, root?: string) => {
     const targets = repoTargets(tabId)

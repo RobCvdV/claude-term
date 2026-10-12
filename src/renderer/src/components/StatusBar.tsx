@@ -7,6 +7,7 @@ import type {
   PrGroup,
   ProjectDocs,
   RateForecast,
+  JiraTodoGroup,
   RepoDownloads,
   RepoStatus,
   TabId,
@@ -21,6 +22,7 @@ import {
   parseRemote,
   releasesUrl
 } from '../../../shared/repo-links'
+import { jiraLabelsFor, ticketUrl } from '../../../shared/jira-labels'
 import { VolumeControl } from './VolumeControl'
 import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
 
@@ -70,8 +72,37 @@ function ExternalLink({
   )
 }
 
-/** Home folder + a "(+N)" badge; hovering/clicking the badge drops down the
- *  extra folders. Every entry opens in Finder; right-click shows the open-in
+/** Status-bar dropdowns open on purpose (right-click, or a click on a chip
+ *  whose only job is the list), never on hover; this closes one on a click
+ *  outside `anchor` or Escape. */
+function useDismiss(
+  open: boolean,
+  anchor: React.RefObject<HTMLElement | null>,
+  close: () => void
+): void {
+  const closeRef = useRef(close)
+  useEffect(() => {
+    closeRef.current = close
+  })
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (!anchor.current?.contains(e.target as Node)) closeRef.current()
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') closeRef.current()
+    }
+    document.addEventListener('mousedown', onDown, true)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [open, anchor])
+}
+
+/** Home folder + a "(+N)" badge; clicking or right-clicking the badge drops
+ *  down the extra folders. Every entry opens in Finder; right-click shows the open-in
  *  menu, which for an `/add-dir`'d folder also offers to remove it from the tab.
  *  The dropdown is fixed-positioned because the status bar clips overflow. */
 function FolderMenu({
@@ -94,14 +125,10 @@ function FolderMenu({
     if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top })
     setOpen(true)
   }
+  useDismiss(open, anchor, () => setOpen(false))
 
   return (
-    <span
-      ref={anchor}
-      className="folder-menu"
-      onMouseEnter={others.length > 0 ? show : undefined}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <span ref={anchor} className="folder-menu">
       <span
         className="folder folder-open"
         title={home.path}
@@ -114,7 +141,14 @@ function FolderMenu({
         {home.name}
       </span>
       {others.length > 0 && (
-        <span className="folder-more" onClick={() => (open ? setOpen(false) : show())}>
+        <span
+          className="folder-more"
+          onClick={() => (open ? setOpen(false) : show())}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            show()
+          }}
+        >
           (+{others.length})
         </span>
       )}
@@ -172,9 +206,10 @@ const BRANCHES_SHOWN = 7
 
 /** The branch chip + dropdown of every workspace repo's local branches
  *  (most-recently-committed first, grouped under folder names with several
- *  repos). Click an entry to `git switch` that repo there — the session gets
- *  the same "branch switched" FYI as /switch; right-click opens the branch on
- *  Bitbucket/GitHub. Fetched lazily on open, like the PR menu. */
+ *  repos), opened by right-clicking the chip. Click an entry to `git switch`
+ *  that repo there — the session gets the same "branch switched" FYI as
+ *  /switch; right-click opens the branch on Bitbucket/GitHub. Fetched lazily
+ *  on open, like the PR menu. */
 function BranchMenu({
   tabId,
   cwd,
@@ -200,6 +235,7 @@ function BranchMenu({
     setErr(null)
     void window.claudeTerm.listWorkspaceBranches(tabId).then(setGroups)
   }
+  useDismiss(open, anchor, () => setOpen(false))
 
   const pick = async (root: string, branch: string): Promise<void> => {
     if (busy) return
@@ -229,13 +265,15 @@ function BranchMenu({
 
   const multi = (groups?.length ?? 0) > 1
   return (
-    <span
-      ref={anchor}
-      className="branch-menu"
-      onMouseEnter={show}
-      onMouseLeave={() => setOpen(false)}
-    >
-      {chip}
+    <span ref={anchor} className="branch-menu">
+      <span
+        onContextMenu={(e) => {
+          e.preventDefault()
+          show()
+        }}
+      >
+        {chip}
+      </span>
       {open && (
         <div className="pr-dropdown branch-dropdown" style={{ left: pos.left, bottom: pos.bottom }}>
           {err && <div className="pr-note branch-error">{err}</div>}
@@ -299,7 +337,7 @@ function BranchMenu({
 }
 
 /** "PRs" link + dropdown of every workspace repo's open PRs (most recent 10
- *  each). With several repos the entries are grouped under small folder-name
+ *  each), opened by clicking or right-clicking the link. With several repos the entries are grouped under small folder-name
  *  titles. Click an entry to open it in the browser; right-click for
  *  Open/Merge. Fetched lazily on open, served from a main-process cache.
  *  Fixed-positioned like the folder dropdown because the status bar clips
@@ -322,11 +360,19 @@ function PrMenu({
     setOpen(true)
     void window.claudeTerm.listPrs(tabId).then(setGroups)
   }
+  useDismiss(open, anchor, () => setOpen(false))
 
   const multi = (groups?.length ?? 0) > 1
   return (
-    <span ref={anchor} className="pr-menu" onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
-      <span className="ext-link" onClick={() => (open ? setOpen(false) : show())}>
+    <span ref={anchor} className="pr-menu">
+      <span
+        className="ext-link"
+        onClick={() => (open ? setOpen(false) : show())}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          show()
+        }}
+      >
         PRs
       </span>
       {open && (
@@ -364,6 +410,136 @@ function PrMenu({
                     {pr.mine && <Mine />}
                   </button>
                 ))}
+              </Fragment>
+            ))
+          )}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** "Jira" link + dropdown of the to-do tickets (free or mine, board order) of
+ *  every workspace repo that has Jira labels. Click opens the branch's ticket,
+ *  or the list when there is none; right-click always opens the list. In the
+ *  list, click opens a ticket and right-click offers Start Branch: switch to
+ *  (or create) its branch, claim it in Jira, and hand the session the ticket. */
+function JiraMenu({
+  tabId,
+  ticket
+}: {
+  tabId: TabId
+  /** ticket of the checked-out branch */
+  ticket: string | null
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [groups, setGroups] = useState<JiraTodoGroup[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const [pos, setPos] = useState({ right: 0, bottom: 0 })
+  const anchor = useRef<HTMLSpanElement>(null)
+
+  const show = (): void => {
+    const r = anchor.current?.getBoundingClientRect()
+    if (r) setPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top })
+    setOpen(true)
+    if (!busy) setNote(null)
+    void window.claudeTerm.jiraTodos(tabId).then(setGroups)
+  }
+  useDismiss(open, anchor, () => setOpen(false))
+
+  const start = async (root: string, key: string): Promise<void> => {
+    if (busy) return
+    setBusy(key)
+    setNote(null)
+    const res = await window.claudeTerm.jiraStart(tabId, root, key)
+    setBusy(null)
+    // reopened so a failure shows even if the list was closed meanwhile
+    if (!res.ok) {
+      setNote(res.error)
+      setOpen(true)
+      return
+    }
+    window.claudeTerm.submitPrompt(tabId, res.prompt, 0)
+    if (res.warnings.length > 0) {
+      setNote(`On ${res.branch}, but Jira: ${res.warnings.join('; ')}`)
+      setOpen(true)
+    } else {
+      setOpen(false)
+    }
+  }
+
+  const multi = (groups?.length ?? 0) > 1
+  return (
+    <span ref={anchor} className="pr-menu">
+      <span
+        className="ext-link"
+        title={ticket ? `${ticket} — right-click for the to-do list` : 'To-do tickets'}
+        onClick={() => {
+          if (ticket) window.open(ticketUrl(ticket))
+          else if (open) setOpen(false)
+          else show()
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          show()
+        }}
+      >
+        Jira
+      </span>
+      {open && (
+        <div className="pr-dropdown jira-dropdown" style={{ right: pos.right, bottom: pos.bottom }}>
+          {note && <div className="pr-note branch-error">{note}</div>}
+          {busy && <div className="pr-note">starting {busy}…</div>}
+          {ticket && (
+            <button
+              className="pr-current"
+              title="ticket of the current branch"
+              onClick={() => {
+                window.open(ticketUrl(ticket))
+                setOpen(false)
+              }}
+            >
+              <span className="ticket">{ticket}</span>
+              <span className="pr-title dim">current branch</span>
+            </button>
+          )}
+          {groups === null ? (
+            <div className="pr-note">loading…</div>
+          ) : (
+            groups.map((g) => (
+              <Fragment key={g.root}>
+                {(multi || ticket) && (
+                  <div className="pr-group" title={g.root}>
+                    {multi ? `${nameOf(g.root)} · ` : ''}to do
+                  </div>
+                )}
+                {g.error && <div className="pr-note branch-error">{g.error}</div>}
+                {!g.error && g.todos.length === 0 && <div className="pr-note">nothing to do</div>}
+                {g.todos.map((t) => (
+                  <button
+                    key={t.key}
+                    className={busy === t.key ? 'branch-busy' : undefined}
+                    title={`${t.summary}\n${[t.type, t.priority].filter(Boolean).join(' · ')} — right-click to start a branch`}
+                    onClick={() => {
+                      window.open(ticketUrl(t.key))
+                      setOpen(false)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      void window.claudeTerm.jiraTicketMenu(t.key).then((pick) => {
+                        if (pick === 'start') void start(g.root, t.key)
+                      })
+                    }}
+                  >
+                    <span className="ticket">{t.key}</span>
+                    <span className="pr-title">{t.summary}</span>
+                    {t.mine && <Mine />}
+                  </button>
+                ))}
+                <button className="jira-more" onClick={() => window.open(g.searchUrl)}>
+                  open in Jira ↗
+                </button>
               </Fragment>
             ))
           )}
@@ -531,6 +707,14 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
     ...(cwd ? [[cwd, git?.prUrl ?? null] as const] : []),
     ...extraRepos.map((r) => [r.root, r.git.prUrl] as const)
   ])
+  // any workspace repo with Jira labels turns the Jira link into the to-do menu
+  const hasTodos = [
+    ...(cwd ? [{ root: cwd, remoteUrl: git?.remoteUrl }] : []),
+    ...extraRepos.map((r) => ({ root: r.root, remoteUrl: r.git.remoteUrl }))
+  ].some(
+    ({ root, remoteUrl }) =>
+      !!jiraLabelsFor((remoteUrl && parseRemote(remoteUrl)?.repo) || nameOf(root))
+  )
   // remote per workspace repo, for the branch menu's right-click open
   const remoteByRoot = new Map<string, string>([
     ...(cwd && git?.remoteUrl ? [[cwd, git.remoteUrl] as const] : []),
@@ -654,10 +838,14 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
       >
         settings
       </button>
-      {ticket && (
-        <ExternalLink url={`https://mendrix.atlassian.net/browse/${ticket}`} className="ext-link">
-          Jira
-        </ExternalLink>
+      {hasTodos && tabId ? (
+        <JiraMenu tabId={tabId} ticket={ticket} />
+      ) : (
+        ticket && (
+          <ExternalLink url={ticketUrl(ticket)} className="ext-link">
+            Jira
+          </ExternalLink>
+        )
       )}
       {jenkins && (
         <ExternalLink

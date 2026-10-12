@@ -1,7 +1,15 @@
 import { safeStorage, app } from 'electron'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { BookResult, BookedWorklog, JiraStatus, WorklogPlanEntry } from '../shared/types'
+import type {
+  BookResult,
+  BookedWorklog,
+  JiraStatus,
+  JiraTodo,
+  WorklogPlanEntry
+} from '../shared/types'
+import { todoJql } from '../shared/jira-labels'
+import { adfToText, mapTodos } from './jira-todo-data'
 import { basicAuth, buildWorklogBody, sinceDateFor, toBookedWorklogs } from './jira-helpers'
 import type { JiraWorklogRaw } from './jira-helpers'
 import { appendLoggedWorklogs } from './worklog-store'
@@ -269,4 +277,108 @@ export async function bookWorklogs(entries: WorklogPlanEntry[]): Promise<BookRes
 
 function pick(e: WorklogPlanEntry): { date: string; issueKey: string; hours: number } {
   return { date: e.date, issueKey: e.issueKey, hours: e.hours }
+}
+
+const NOT_CONNECTED = 'Jira not connected — connect it in the activity overview (🕐)'
+const TODO_LIMIT = 50
+
+const todoCache = new Map<string, { at: number; todos: JiraTodo[] }>()
+
+/** To-do tickets with these labels that are free or mine, in board order (60s cache). */
+export async function fetchTodos(labels: string[]): Promise<{ todos: JiraTodo[]; error?: string }> {
+  const creds = readCreds()
+  if (!creds) return { todos: [], error: NOT_CONNECTED }
+  const key = labels.join(',')
+  const hit = todoCache.get(key)
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return { todos: hit.todos }
+  try {
+    const res = await jiraFetch(creds, '/rest/api/3/search/jql', {
+      method: 'POST',
+      body: {
+        jql: todoJql(labels),
+        fields: ['summary', 'issuetype', 'priority', 'assignee'],
+        maxResults: TODO_LIMIT
+      }
+    })
+    if (!res.ok) throw new Error(await errorText(res))
+    const todos = mapTodos(await res.json(), creds.accountId)
+    todoCache.set(key, { at: Date.now(), todos })
+    return { todos }
+  } catch (e) {
+    return { todos: hit?.todos ?? [], error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export interface TicketDetails {
+  key: string
+  summary: string
+  type: string
+  description: string
+  assigneeId: string | null
+  status: string
+}
+
+export async function fetchTicket(key: string): Promise<TicketDetails> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const res = await jiraFetch(
+    creds,
+    `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,issuetype,description,assignee,status`
+  )
+  if (!res.ok) throw new Error(await errorText(res))
+  const issue = (await res.json()) as {
+    key?: string
+    fields?: {
+      summary?: string
+      issuetype?: { name?: string }
+      description?: unknown
+      assignee?: { accountId?: string } | null
+      status?: { name?: string }
+    }
+  }
+  return {
+    key: issue.key ?? key,
+    summary: issue.fields?.summary ?? '',
+    type: issue.fields?.issuetype?.name ?? '',
+    description: adfToText(issue.fields?.description),
+    assigneeId: issue.fields?.assignee?.accountId ?? null,
+    status: issue.fields?.status?.name ?? ''
+  }
+}
+
+/** Put the ticket on my name and move it to Active; returns what failed. */
+export async function claimTicket(ticket: TicketDetails): Promise<string[]> {
+  const creds = readCreds()
+  if (!creds) return [NOT_CONNECTED]
+  const warnings: string[] = []
+  const path = `/rest/api/3/issue/${encodeURIComponent(ticket.key)}`
+  if (ticket.assigneeId !== creds.accountId) {
+    const res = await jiraFetch(creds, `${path}/assignee`, {
+      method: 'PUT',
+      body: { accountId: creds.accountId }
+    })
+    if (!res.ok) warnings.push(`assign: ${await errorText(res)}`)
+  }
+  if (ticket.status.toLowerCase() !== 'active') {
+    const res = await jiraFetch(creds, `${path}/transitions`)
+    if (!res.ok) {
+      warnings.push(`move to Active: ${await errorText(res)}`)
+    } else {
+      const { transitions = [] } = (await res.json()) as {
+        transitions?: { id: string; to?: { name?: string } }[]
+      }
+      const active = transitions.find((t) => t.to?.name?.toLowerCase() === 'active')
+      if (!active) {
+        warnings.push(`move to Active: no transition to Active from "${ticket.status}"`)
+      } else {
+        const done = await jiraFetch(creds, `${path}/transitions`, {
+          method: 'POST',
+          body: { transition: { id: active.id } }
+        })
+        if (!done.ok) warnings.push(`move to Active: ${await errorText(done)}`)
+      }
+    }
+  }
+  todoCache.clear()
+  return warnings
 }

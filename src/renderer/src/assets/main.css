@@ -2009,6 +2009,23 @@ body {
   white-space: normal;
 }
 
+/* ---- Jira to-do menu (status bar) ---- */
+.jira-dropdown {
+  min-width: 300px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.jira-dropdown .ticket {
+  color: var(--yellow);
+  flex-shrink: 0;
+}
+
+.pr-dropdown .jira-more {
+  color: var(--fg-dim);
+  font-size: 10px;
+}
+
 /* ---- help overlay (Help menu / ⌘/) ---- */
 .help-panel {
   width: min(980px, 94vw);
