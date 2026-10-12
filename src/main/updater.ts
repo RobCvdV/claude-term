@@ -33,16 +33,19 @@ type CheckResult =
  * until the user consents (autoInstallOnAppQuit = false); the renderer surfaces
  * a header pill and calls back through `installUpdate`.
  */
-export function setupUpdater(getWindow: () => BrowserWindow | null): void {
+/** The downloaded update waiting to install, for a window that opens after it arrived. */
+export function pendingUpdate(): string | null {
+  return downloadedVersion
+}
+
+/** `announce` tells every terminal window about a downloaded (or withdrawn) update. */
+export function setupUpdater(announce: (version: string | null) => void): void {
   if (!app.isPackaged) return
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = false
 
-  notifyRenderer = (version) => {
-    const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send('update:downloaded', version)
-  }
+  notifyRenderer = announce
 
   autoUpdater.on('update-downloaded', (info) => {
     downloadedVersion = info.version

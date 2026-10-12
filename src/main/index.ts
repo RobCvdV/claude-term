@@ -3,12 +3,16 @@ import { join } from 'path'
 import { readFileSync, writeFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { createServices, registerIpc } from './ipc'
+import { createServices, registerIpc, type IpcHandles } from './ipc'
 import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
-import { setupUpdater, installUpdate, checkForUpdatesInteractive } from './updater'
-import { installAppMenu, installZoomKeys } from './menu'
+import { setupUpdater, installUpdate, checkForUpdatesInteractive, pendingUpdate } from './updater'
+import { installAppMenu, installCycleKey, installZoomKeys } from './menu'
+import { TerminalWindows } from './terminal-windows'
+import { windowsOf } from './window-order'
+import { onAppSettings } from './app-settings'
+import type { WindowBounds } from '../shared/types'
 import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
 
@@ -41,15 +45,18 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 }
 app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+  const win = windows.focusedOrPrimary()
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
   }
 })
 
-let mainWindow: BrowserWindow | null = null
-const services = createServices(() => mainWindow)
+const windows = new TerminalWindows()
+const services = createServices(windows)
+/** the focused terminal window, else the main one — for dialogs and menu actions */
+const frontWindow = (): BrowserWindow | null => windows.focusedOrPrimary()
 
 // Live CI state per repo+branch (Jenkins / Actions / CircleCI) — polls only
 // while the window is actually on screen; results ride status:update.
@@ -57,8 +64,7 @@ const ciPoller = new CiPoller(
   () => services.status.allSnapshots(),
   (tabId, root, ci) =>
     root === null ? services.status.setCi(tabId, ci) : services.status.setRepoCi(tabId, root, ci),
-  () =>
-    !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()
+  () => windows.anyVisible()
 )
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
@@ -68,12 +74,16 @@ if (process.env['CLAUDE_TERM_DEBUG_PORT']) {
   app.commandLine.appendSwitch('remote-debugging-port', process.env['CLAUDE_TERM_DEBUG_PORT'])
 }
 
-app.on('browser-window-created', (_event, win) => installZoomKeys(win))
+app.on('browser-window-created', (_event, win) => {
+  installZoomKeys(win)
+  installCycleKey(win, () => windows.cycle())
+})
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
+function makeWindow(bounds: WindowBounds | undefined): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    ...bounds,
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -85,23 +95,34 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('closed', () => {
-    mainWindow = null
-    // detached docs/settings windows would otherwise keep the app alive after
-    // the main window is gone (window-all-closed never fires)
-    closeAllDocsWindows()
-  })
+  win.on('ready-to-show', () => win.show())
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+  return win
+}
+
+/** The windows of the saved session; a dev cwd override opens just one tab there. */
+function openStartupWindows(saved: ReturnType<IpcHandles['loadSession']>): void {
+  const cwd = process.env.CLAUDE_TERM_DEFAULT_CWD ?? null
+  const restore = cwd ? [] : windowsOf(saved).filter((w) => w.tabs.length > 0)
+  if (restore.length === 0) {
+    windows.create({ mode: 'fresh', cwd })
+    return
+  }
+  for (const w of restore) {
+    windows.create(
+      { mode: 'restore', session: { tabs: w.tabs, activeIndex: w.activeIndex } },
+      w.bounds
+    )
   }
 }
 
@@ -119,30 +140,46 @@ app.whenReady().then(async () => {
   // Reuse the port a paired phone already knows, so reconnecting doesn't need
   // the QR again. Same trick as status-endpoint.json.
   await startCompanion()
-  registerIpc(services, () => mainWindow)
-  createWindow()
+  const ipc = registerIpc(services, windows)
+  windows.hooks = {
+    make: makeWindow,
+    disposeTabs: ipc.disposeTabs,
+    resendStatus: ipc.resendStatus,
+    persist: ipc.writeSession,
+    // detached docs/settings windows would otherwise keep the app alive after
+    // the last terminal window is gone (window-all-closed never fires)
+    allClosed: () => closeAllDocsWindows()
+  }
+  onAppSettings((s) => windows.broadcast('app:settingsChanged', s))
+  ipcMain.handle('update:pending', () => pendingUpdate())
+  openStartupWindows(ipc.loadSession())
   ciPoller.start()
 
   // Background auto-update: check on launch + daily, download silently, and let
   // the user install on their say-so (renderer pill → 'update:install'). The
   // install quits + relaunches; the normal session restore reopens the tabs and
   // resumes/reattaches their Claude sessions.
-  setupUpdater(() => mainWindow)
-  ipcMain.handle('update:install', () => installUpdate(() => mainWindow, prepareUpdateQuit))
+  setupUpdater((version) => windows.broadcast('update:downloaded', version))
+  ipcMain.handle('update:install', () => installUpdate(frontWindow, prepareUpdateQuit))
 
   // Native menu with a manual "Check for Updates…" item (app menu on macOS,
   // Help menu elsewhere) alongside the standard Edit/View/Window roles.
   installAppMenu(
-    () => void checkForUpdatesInteractive(() => mainWindow, prepareUpdateQuit),
-    (section) => mainWindow?.webContents.send('help:show', section)
+    () => void checkForUpdatesInteractive(frontWindow, prepareUpdateQuit),
+    (section) => frontWindow()?.webContents.send('help:show', section),
+    {
+      newWindow: () => windows.createFresh(),
+      nextWindow: () => windows.cycle(),
+      moveTabToNewWindow: () => frontWindow()?.webContents.send('tabs:moveActive')
+    }
   )
 
   // First-run: offer to install the global activity-logging hook (feeds the
   // 🕐 Activity hours view). Idempotent + merge-only; never blocks startup.
-  void ensureActivityHook(() => mainWindow)
+  void ensureActivityHook(frontWindow)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) windows.createFresh()
   })
 })
 
@@ -154,6 +191,7 @@ app.whenReady().then(async () => {
 let updateQuit = false
 async function prepareUpdateQuit(): Promise<void> {
   updateQuit = true
+  windows.quitting = true
   await shutdown()
 }
 
@@ -163,7 +201,7 @@ app.on('before-quit', (e) => {
   // No window (closed before quit) or no Claude session ever ran → nothing to
   // ask, but the ptys still need draining before the quit may proceed.
   if (
-    !mainWindow ||
+    windows.count() === 0 ||
     (services.status.activeClaudeCount() === 0 && services.status.seenSessionIds().length === 0)
   ) {
     e.preventDefault()
@@ -177,13 +215,14 @@ app.on('before-quit', (e) => {
 
 function finishQuit(stopAgents: LiveAgent[] = []): void {
   quitConfirmed = true
+  windows.quitting = true
   // Stop our daemon background agents (best-effort) alongside shutdown.
   const stop = Promise.all(stopAgents.map((a) => stopBackgroundAgent(a.id ?? a.sessionId)))
   void Promise.allSettled([shutdown(), stop]).then(() => app.quit())
 }
 
 async function confirmQuit(): Promise<void> {
-  const win = mainWindow
+  const win = frontWindow()
   if (!win) return finishQuit()
 
   // Background agents dispatched from our tabs keep running after we quit (they
@@ -195,7 +234,7 @@ async function confirmQuit(): Promise<void> {
   } catch {
     /* best effort — treat as none */
   }
-  if (!mainWindow) return
+  if (windows.count() === 0) return
 
   if (ownAgents.length > 0) {
     const n = ownAgents.length

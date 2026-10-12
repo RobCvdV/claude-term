@@ -63,7 +63,7 @@ async function boot(opts: {
   sent = []
   latest = opts.feed
   const mod = await import('./updater')
-  mod.setupUpdater(getWindow)
+  mod.setupUpdater((version) => sent.push(version))
   if (opts.downloaded) {
     for (const cb of handlers['update-downloaded'] ?? []) cb({ version: opts.downloaded })
     sent = []

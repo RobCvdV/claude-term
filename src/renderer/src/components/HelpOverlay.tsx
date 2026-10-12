@@ -30,8 +30,10 @@ function HowTo(): React.JSX.Element {
         <Keys k="⌘W">Close tab</Keys>
         <Keys k="⌘1 …9">Jump to tab 1–9</Keys>
         <Keys k="⌘[ ⌘]">Previous / next tab</Keys>
-        <Keys k="right-click">Rename a tab (on its title)</Keys>
-        <Keys k="drag">Reorder tabs</Keys>
+        <Keys k="right-click">Tab menu: rename, move to a new or another window, close</Keys>
+        <Keys k="drag">Reorder tabs — drag one off the bar to give it its own window</Keys>
+        <Keys k="⌘N">New window</Keys>
+        <Keys k="⌃`">Next terminal window (skips file windows)</Keys>
         <div className="help-note">
           A tab starts as a plain shell — run <code>claude</code> in it and the prompt box + status
           bar appear automatically.
@@ -128,6 +130,20 @@ function Guide(): React.JSX.Element {
           resumed — even sessions that kept running as background agents are re-attached rather than
           restarted. A session revives in its own home folder, so conversations never get dragged
           into the wrong project.
+        </p>
+      </section>
+      <section>
+        <h3>Several windows</h3>
+        <p>
+          ⌘N opens another terminal window. A tab moves with its session still running — through its
+          right-click menu, or by dragging it off the tab bar: dropped on another window&apos;s tab
+          bar it joins that window, anywhere else it gets a window of its own. ⌃` steps through the
+          terminal windows only. Closing a window that still has tabs asks whether to close them or
+          move them to the main window; a window whose last tab leaves closes by itself. Every
+          window and its tabs come back on the next launch. The Window menu holds two switches:{' '}
+          <b>Tab Shortcuts Stay in Their Window</b> (turn it off and ⌘1–9 and ⌘[ ⌘] number every
+          window&apos;s tabs, windows left to right, then top to bottom) and{' '}
+          <b>Restore Window Positions</b> (turn it off when a window manager places them).
         </p>
       </section>
       <section>

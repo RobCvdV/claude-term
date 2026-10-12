@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { SerializeAddon } from '@xterm/addon-serialize'
 import '@xterm/xterm/css/xterm.css'
 import type { TabId } from '../../shared/types'
 import {
@@ -19,6 +20,7 @@ export interface TermEntry {
   term: Terminal
   fit: FitAddon
   search: SearchAddon
+  serialize: SerializeAddon
   /** Detached container div; TerminalPane parents it into the visible DOM. */
   containerEl: HTMLDivElement
 }
@@ -60,12 +62,13 @@ function ensureRouting(): void {
   })
 }
 
-export function createTerm(tabId: TabId): TermEntry {
+export function createTerm(tabId: TabId, size?: { cols: number; rows: number }): TermEntry {
   ensureRouting()
   const existing = entries.get(tabId)
   if (existing) return existing
 
   const term = new Terminal({
+    ...size,
     fontFamily: 'Menlo, Monaco, monospace',
     fontSize: 13,
     scrollback: 10_000,
@@ -82,6 +85,8 @@ export function createTerm(tabId: TabId): TermEntry {
   term.loadAddon(fit)
   const search = new SearchAddon()
   term.loadAddon(search)
+  const serialize = new SerializeAddon()
+  term.loadAddon(serialize)
 
   // Cmd/Ctrl-click URLs to open them in the default browser (iTerm2 style).
   // A plain click falls through to xterm's normal selection behaviour.
@@ -142,7 +147,7 @@ export function createTerm(tabId: TabId): TermEntry {
     return true
   })
 
-  const entry: TermEntry = { term, fit, search, containerEl }
+  const entry: TermEntry = { term, fit, search, serialize, containerEl }
   entries.set(tabId, entry)
   // exposed for scripted E2E testing (CDP) — harmless at runtime
   const registry = ((window as unknown as Record<string, unknown>).__terms ??= {}) as Record<
@@ -385,6 +390,23 @@ export function fitTerm(tabId: TabId): void {
 
 export function focusTerm(tabId: TabId): void {
   entries.get(tabId)?.term.focus()
+}
+
+/** A tab's screen and scrollback as escape sequences, once pending writes have landed. */
+export async function serializeTerm(
+  tabId: TabId
+): Promise<{ screen: string; cols: number; rows: number }> {
+  const entry = entries.get(tabId)
+  if (!entry) return { screen: '', cols: 80, rows: 24 }
+  await new Promise<void>((resolve) => entry.term.write('', resolve))
+  const { term } = entry
+  return { screen: entry.serialize.serialize(), cols: term.cols, rows: term.rows }
+}
+
+/** A tab arriving from another window: its terminal, already showing what it showed there. */
+export function primeTerm(tabId: TabId, screen: string, cols: number, rows: number): void {
+  const { term } = createTerm(tabId, { cols, rows })
+  if (screen) term.write(screen)
 }
 
 export function disposeTerm(tabId: TabId): void {

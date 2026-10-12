@@ -101,6 +101,12 @@ body {
   cursor: grabbing;
 }
 
+/* pulled off the bar: letting go puts it in a window of its own */
+.tab.dragging.tearing {
+  opacity: 0.45;
+  outline: 1px dashed var(--border-active);
+}
+
 .tab-bar.reordering .tab-close {
   visibility: hidden;
 }

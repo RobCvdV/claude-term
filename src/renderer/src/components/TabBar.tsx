@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ActivityState, TabId, TabInfo, TabStatus } from '../../../shared/types'
+import type { ActivityState, HandoffTarget, TabId, TabInfo, TabStatus } from '../../../shared/types'
 import { tabSubtitle } from '../tab-title'
 import { dropIndex, shiftFor } from '../tab-reorder'
 
@@ -13,6 +13,8 @@ interface Props {
   onNewTab: () => void
   onRename: (tabId: TabId, title: string) => void
   onReorder: (from: number, to: number) => void
+  /** to a new or another window — the right-click menu, or dragged out of the bar */
+  onMove: (tabId: TabId, target: HandoffTarget) => void
   onOpenActivity: () => void
   /** version of a downloaded update, or null — shows the "update ready" pill */
   updateVersion: string | null
@@ -29,10 +31,14 @@ interface Drag {
   dx: number
   /** width of the dragged tab — the slot pitch the others shift by */
   width: number
+  /** pulled away from the bar: letting go moves it to another window */
+  out: boolean
 }
 
 /** Pointer travel before a press turns into a reorder rather than a click. */
 const DRAG_THRESHOLD = 4
+/** How far above/below the bar a dragged tab has to go to leave the window. */
+const TEAR_OFF_DISTANCE = 30
 
 function dotClass(status: TabStatus | null | undefined): string {
   if (status?.activity === 'exited') return 'dot exited'
@@ -65,6 +71,7 @@ export function TabBar({
   onNewTab,
   onRename,
   onReorder,
+  onMove,
   onOpenActivity,
   updateVersion,
   onInstallUpdate,
@@ -97,27 +104,40 @@ export function TabBar({
     const centers = rects.map((r) => r.left + r.width / 2)
     const width = rects[index]?.width ?? 0
     const startX = e.clientX
+    const barRect = bar.getBoundingClientRect()
+    const tabId = tabs[index]?.tabId
     let dragging = false
+    let last: MouseEvent | null = null
+    const isOut = (ev: MouseEvent): boolean =>
+      ev.clientY < barRect.top - TEAR_OFF_DISTANCE ||
+      ev.clientY > barRect.bottom + TEAR_OFF_DISTANCE ||
+      ev.clientX < 0 ||
+      ev.clientX > window.innerWidth
 
     const update = (next: Drag | null): void => {
       dragRef.current = next
       setDrag(next)
     }
 
-    const onMove = (ev: MouseEvent): void => {
+    const onPointer = (ev: MouseEvent): void => {
+      last = ev
       const dx = ev.clientX - startX
-      if (!dragging && Math.abs(dx) < DRAG_THRESHOLD) return
+      const out = isOut(ev)
+      if (!dragging && Math.abs(dx) < DRAG_THRESHOLD && !out) return
       dragging = true
-      update({ from: index, to: dropIndex(centers, index, centers[index] + dx), dx, width })
+      const to = out ? index : dropIndex(centers, index, centers[index] + dx)
+      update({ from: index, to, dx, width, out })
     }
     const onUp = (): void => {
-      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mousemove', onPointer)
       window.removeEventListener('mouseup', onUp)
       const d = dragRef.current
       update(null)
-      if (d && d.to !== d.from) onReorder(d.from, d.to)
+      if (d?.out && last && tabId) {
+        onMove(tabId, { kind: 'drop', x: last.screenX, y: last.screenY })
+      } else if (d && d.to !== d.from) onReorder(d.from, d.to)
     }
-    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mousemove', onPointer)
     window.addEventListener('mouseup', onUp)
   }
 
@@ -137,7 +157,9 @@ export function TabBar({
         return (
           <div
             key={tab.tabId}
-            className={`tab ${isActive ? 'active' : ''} ${isDragged ? 'dragging' : ''}`}
+            className={`tab ${isActive ? 'active' : ''} ${isDragged ? 'dragging' : ''} ${
+              isDragged && drag?.out ? 'tearing' : ''
+            }`}
             style={{
               ...(boxShadow ? { boxShadow } : null),
               ...(shift ? { transform: `translateX(${shift}px)` } : null)
@@ -149,8 +171,13 @@ export function TabBar({
             }}
             onContextMenu={(e) => {
               e.preventDefault()
-              setEditingId(tab.tabId)
-              setDraft(tab.title)
+              void window.claudeTerm.tabContextMenu().then((choice) => {
+                if (choice?.kind === 'rename') {
+                  setEditingId(tab.tabId)
+                  setDraft(tab.title)
+                } else if (choice?.kind === 'close') onClose(tab.tabId)
+                else if (choice?.kind === 'move') onMove(tab.tabId, choice.target)
+              })
             }}
             title={statuses[tab.tabId]?.cwd || tab.cwd}
           >

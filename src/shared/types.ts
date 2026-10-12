@@ -520,9 +520,70 @@ export interface PersistedTab {
   promptDraft?: PromptDraft
 }
 
+/** One terminal window's tabs, as its renderer saves them. */
 export interface PersistedSession {
   tabs: PersistedTab[]
   activeIndex: number
+}
+
+export interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface PersistedWindow extends PersistedSession {
+  bounds?: WindowBounds
+}
+
+/** session.json. `tabs`/`activeIndex` mirror the first window, so a version
+ *  from before multiple windows still restores that one. */
+export interface PersistedSessionFile extends PersistedSession {
+  windows?: PersistedWindow[]
+}
+
+/** What a terminal window does when its renderer starts. */
+export type WindowBoot =
+  | { mode: 'restore'; session: PersistedSession }
+  | { mode: 'fresh'; cwd: string | null }
+  /** tabs are on their way (`tabs:adopt`) */
+  | { mode: 'adopt' }
+
+/** A live tab travelling to another window: its PTY keeps running in main. */
+export interface TabHandoff {
+  tab: TabInfo
+  saved: PersistedTab
+  status: TabStatus | null
+  /** xterm-serialized screen + scrollback, at the size it was taken */
+  screen: string
+  cols: number
+  rows: number
+}
+
+/** Where a moved tab goes. */
+export type HandoffTarget =
+  | { kind: 'new'; at?: { x: number; y: number } }
+  | { kind: 'window'; windowId: number }
+  /** a tab dragged out of the tab bar: onto another window's tab bar, else a new window there */
+  | { kind: 'drop'; x: number; y: number }
+
+/** What was picked in a tab's right-click menu. */
+export type TabMenuChoice =
+  { kind: 'rename' } | { kind: 'close' } | { kind: 'move'; target: HandoffTarget }
+
+/** Another terminal window, for "Move Tab to …". */
+export interface WindowChoice {
+  windowId: number
+  label: string
+}
+
+/** App-wide preferences (app-settings.json). */
+export interface AppSettings {
+  /** ⌘1–9 and ⌘[ ⌘] only reach tabs of their own window */
+  tabKeysPerWindow: boolean
+  /** reopen windows where they were; off when a window manager places them */
+  restoreWindowBounds: boolean
 }
 
 /** Engaged time on one ticket/project within a day or a whole range. */

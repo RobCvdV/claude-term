@@ -6,6 +6,7 @@ import {
   type WebContents
 } from 'electron'
 import type { HelpSection } from '../shared/types'
+import { appSettings, setAppSettings } from './app-settings'
 
 const ZOOM_STEP = 0.5
 /** Writes past what Chromium will render are kept, not clamped, so an unclamped
@@ -32,6 +33,17 @@ export function installZoomKeys(win: BrowserWindow): void {
   })
   // a reload starts back at the default, and the tab bar has to hear about it
   win.webContents.on('did-finish-load', () => publishZoom(win.webContents))
+}
+
+/** ⌃` steps to the next terminal window, from any of the app's windows.
+ *  Caught before the page: xterm would otherwise send it to the shell. */
+export function installCycleKey(win: BrowserWindow, cycle: () => void): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.control || input.meta || input.alt) return
+    if (input.code !== 'Backquote') return
+    event.preventDefault()
+    cycle()
+  })
 }
 
 /** The traffic lights keep their size whatever the page zoom, so the tab bar's
@@ -63,9 +75,16 @@ function zoomBy(step: number): void {
  * "Check for Updates…" item — under the app menu on macOS, under Help
  * elsewhere — plus a Help menu opening the in-app Quick How-To / User Guide.
  */
+export interface WindowActions {
+  newWindow: () => void
+  nextWindow: () => void
+  moveTabToNewWindow: () => void
+}
+
 export function installAppMenu(
   onCheckForUpdates: () => void,
-  onShowHelp: (section: HelpSection) => void
+  onShowHelp: (section: HelpSection) => void,
+  win: WindowActions
 ): void {
   const isMac = process.platform === 'darwin'
   const checkForUpdates: MenuItemConstructorOptions = {
@@ -118,7 +137,38 @@ export function installAppMenu(
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' },
+    {
+      role: 'window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { label: 'New Window', accelerator: 'CommandOrControl+N', click: win.newWindow },
+        // the key itself is caught in installCycleKey, so xterm never sees it
+        {
+          label: 'Next Terminal Window',
+          accelerator: 'Control+`',
+          registerAccelerator: false,
+          click: win.nextWindow
+        },
+        { label: 'Move Tab to New Window', click: win.moveTabToNewWindow },
+        { type: 'separator' },
+        {
+          label: 'Tab Shortcuts Stay in Their Window',
+          type: 'checkbox',
+          checked: appSettings().tabKeysPerWindow,
+          click: (item) => setAppSettings({ tabKeysPerWindow: item.checked })
+        },
+        {
+          label: 'Restore Window Positions',
+          type: 'checkbox',
+          checked: appSettings().restoreWindowBounds,
+          click: (item) => setAppSettings({ restoreWindowBounds: item.checked })
+        },
+        { type: 'separator' },
+        { role: 'front' }
+      ]
+    } as MenuItemConstructorOptions,
     {
       role: 'help',
       submenu: isMac ? helpItems : [...helpItems, { type: 'separator' }, checkForUpdates]

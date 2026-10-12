@@ -36,7 +36,12 @@ import type {
   VolumeOp,
   VolumeState,
   WorklogPlan,
-  WorklogPlanEntry
+  WorklogPlanEntry,
+  AppSettings,
+  HandoffTarget,
+  TabHandoff,
+  TabMenuChoice,
+  WindowBoot
 } from '../shared/types'
 import type { FolderChip } from '../shared/status-folders'
 
@@ -44,7 +49,8 @@ export interface ClaudeTermApi {
   /** the OS this is running on ('darwin', 'win32', 'linux') — for wording that
    *  has to name the file manager */
   platform: string
-  initialCwd(): Promise<string | null>
+  /** what this terminal window shows as it starts (restore / fresh / adopt) */
+  boot(): Promise<WindowBoot>
   createTab(
     cwd?: string,
     resume?: string,
@@ -52,10 +58,9 @@ export interface ClaudeTermApi {
     removedDirs?: string[]
   ): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
-  /** Drop every tab this main process still holds, and return how many there
-   *  were. A renderer calls it as it loads: anything registered belongs to a
-   *  previous load, and its PTY is still running. */
-  resetTabs(): Promise<number>
+  /** Drop every tab main still holds for this window. A renderer calls it as it
+   *  loads: anything registered belongs to a previous load, its PTY still running. */
+  resetTabs(): Promise<void>
   restartTab(tabId: TabId): Promise<void>
   pickFolder(): Promise<string | null>
   openExternal(url: string): Promise<void>
@@ -187,7 +192,32 @@ export interface ClaudeTermApi {
   onDocsRequestSave(cb: () => void): () => void
   /** (docs window only) acknowledge a save request has completed */
   docsSaveDone(): void
-  loadSession(): Promise<PersistedSession | null>
+  /** hold these tabs' traffic in main while they move to another window */
+  beginHandoff(tabIds: TabId[]): Promise<void>
+  handOff(handoffs: TabHandoff[], target: HandoffTarget): void
+  /** this window rebuilt the tabs it was handed */
+  tabsAdopted(tabIds: TabId[]): void
+  /** this window's last tab moved away */
+  windowEmptied(): void
+  onAdoptTabs(cb: (handoffs: TabHandoff[]) => void): () => void
+  /** main (window close → Move to Main Window) asks for every tab to go there */
+  onHandoffAll(cb: (windowId: number) => void): () => void
+  /** Window menu: move the active tab to a new window */
+  onMoveActiveTab(cb: () => void): () => void
+  /** order + active tab of this window, for numbering and cycling across windows */
+  reportTabs(tabIds: TabId[], activeId: TabId | null, title: string): void
+  selectGlobalTab(index: number): void
+  stepGlobalTab(delta: number): void
+  /** another window's ⌘1–9 / ⌘[ ⌘] landed on one of this window's tabs */
+  onActivateTab(cb: (tabId: TabId) => void): () => void
+  tabContextMenu(): Promise<TabMenuChoice | null>
+  appSettings(): Promise<AppSettings>
+  onAppSettings(cb: (settings: AppSettings) => void): () => void
+  newWindow(): void
+  /** ⌃`: focus the next terminal window */
+  nextWindow(): void
+  /** an update downloaded before this window opened */
+  pendingUpdate(): Promise<string | null>
   saveSession(state: PersistedSession): Promise<void>
   saveSessionSync(state: PersistedSession): void
   ptyInput(tabId: TabId, data: string): void
@@ -219,7 +249,7 @@ function subscribe<Args extends unknown[]>(
 
 const api: ClaudeTermApi = {
   platform: process.platform,
-  initialCwd: () => ipcRenderer.invoke('app:initialCwd'),
+  boot: () => ipcRenderer.invoke('window:boot'),
   createTab: (cwd, resume, addedDirs, removedDirs) =>
     ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
@@ -293,7 +323,23 @@ const api: ClaudeTermApi = {
   docsDirty: (dirty) => ipcRenderer.send('docs:dirty', dirty),
   onDocsRequestSave: (cb) => subscribe('docs:requestSave', cb),
   docsSaveDone: () => ipcRenderer.send('docs:saveDone'),
-  loadSession: () => ipcRenderer.invoke('session:load'),
+  beginHandoff: (tabIds) => ipcRenderer.invoke('tabs:beginHandoff', tabIds),
+  handOff: (handoffs, target) => ipcRenderer.send('tabs:handOff', handoffs, target),
+  tabsAdopted: (tabIds) => ipcRenderer.send('tabs:adopted', tabIds),
+  windowEmptied: () => ipcRenderer.send('window:emptied'),
+  onAdoptTabs: (cb) => subscribe('tabs:adopt', cb),
+  onHandoffAll: (cb) => subscribe('tabs:handoffAll', cb),
+  onMoveActiveTab: (cb) => subscribe('tabs:moveActive', cb),
+  reportTabs: (tabIds, activeId, title) => ipcRenderer.send('tabs:report', tabIds, activeId, title),
+  selectGlobalTab: (index) => ipcRenderer.send('tabs:selectGlobal', index),
+  stepGlobalTab: (delta) => ipcRenderer.send('tabs:stepGlobal', delta),
+  onActivateTab: (cb) => subscribe('tabs:activate', cb),
+  tabContextMenu: () => ipcRenderer.invoke('tab:contextMenu'),
+  appSettings: () => ipcRenderer.invoke('app:settings'),
+  onAppSettings: (cb) => subscribe('app:settingsChanged', cb),
+  pendingUpdate: () => ipcRenderer.invoke('update:pending'),
+  newWindow: () => ipcRenderer.send('window:new'),
+  nextWindow: () => ipcRenderer.send('window:next'),
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),
   ptyInput: (tabId, data) => ipcRenderer.send('pty:input', tabId, data),
