@@ -7,6 +7,7 @@ import type {
   PrGroup,
   ProjectDocs,
   RateForecast,
+  RepoDownloads,
   RepoStatus,
   TabId,
   TabStatus,
@@ -485,6 +486,23 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
   const actions = repo && git?.branch && git.hasWorkflows ? actionsUrl(repo, git.branch) : null
   const releases = repo ? releasesUrl(repo) : null
 
+  // Bitbucket's stand-in for Releases; only shown once the repo has files there
+  const remoteUrl = git?.remoteUrl
+  const downloadsKey = tabId && remoteUrl ? `${tabId}|${remoteUrl}` : null
+  // keyed, so a tab or remote switch never shows the previous repo's link
+  const [fetched, setFetched] = useState<{ key: string; value: RepoDownloads | null } | null>(null)
+  const downloads = fetched && fetched.key === downloadsKey ? fetched.value : null
+  useEffect(() => {
+    if (!tabId || !downloadsKey) return
+    let live = true
+    void window.claudeTerm.repoDownloads(tabId).then((value) => {
+      if (live) setFetched({ key: downloadsKey, value })
+    })
+    return () => {
+      live = false
+    }
+  }, [tabId, downloadsKey])
+
   const usedPct = payload?.context_window?.used_percentage
   const ctxClass =
     usedPct == null ? '' : usedPct >= 78 ? 'ctx-red' : usedPct >= 60 ? 'ctx-orange' : ''
@@ -696,6 +714,15 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
       {releases && (
         <ExternalLink url={releases} className="ext-link">
           Releases
+        </ExternalLink>
+      )}
+      {downloads && (
+        <ExternalLink
+          url={downloads.url}
+          className="ext-link"
+          title={`${downloads.count} file${downloads.count === 1 ? '' : 's'}${downloads.latest ? ` — newest: ${downloads.latest}` : ''}`}
+        >
+          Downloads
         </ExternalLink>
       )}
       <VolumeControl />

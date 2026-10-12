@@ -69,6 +69,7 @@ import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } fr
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
+import { repoDownloads } from './downloads'
 import { sessionDoing } from './session-summary'
 import { searchConversation, conversationTurns } from './conversation-search'
 import { RateStore } from './rate-store'
@@ -81,6 +82,7 @@ import type {
   ProjectChanges,
   ProjectSettings,
   ProjectSettingsPatch,
+  RepoDownloads,
   RevertResult,
   TurnStep
 } from '../shared/types'
@@ -534,6 +536,11 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
         prs: await listOpenPrs(root, repo)
       }))
     )
+  })
+
+  ipcMain.handle('downloads:get', async (_e, tabId: TabId): Promise<RepoDownloads | null> => {
+    const own = repoTargets(tabId).find((t) => t.root === status.snapshot(tabId)?.cwd)
+    return own ? repoDownloads(own.repo) : null
   })
 
   ipcMain.on('prs:contextMenu', (e, tabId: TabId, pr: PrInfo, root?: string) => {

@@ -72,3 +72,8 @@ export function releasesUrl(repo: RepoRef): string | null {
   if (repo.host !== 'github') return null
   return `https://github.com/${repo.owner}/${repo.repo}/releases`
 }
+
+export function downloadsUrl(repo: RepoRef): string | null {
+  if (repo.host !== 'bitbucket') return null
+  return `https://bitbucket.org/${repo.owner}/${repo.repo}/downloads/`
+}

@@ -3,7 +3,8 @@ import { BrowserWindow, dialog, Menu, shell } from 'electron'
 import type { PrInfo } from '../shared/types'
 import type { RepoRef } from '../shared/repo-links'
 import { loginShellEnv } from './shell-env'
-import { mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
+import { accountIdFromCommits, mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
+import { bitbucketCreds, bitbucketGet } from './bitbucket-api'
 
 /** How long a fetched PR list stays good. */
 const TTL_MS = 60_000
@@ -135,48 +136,52 @@ async function githubMergeInfo(cwd: string, env: NodeJS.ProcessEnv): Promise<Mer
 }
 
 async function fetchBitbucket(repo: RepoRef): Promise<PrInfo[]> {
-  const env = await loginShellEnv()
-  const email = env.BITBUCKET_EMAIL
-  const token = env.BITBUCKET_API_TOKEN
-  if (!email || !token) throw new Error('no bitbucket credentials')
   const params = new URLSearchParams({
     state: 'OPEN',
     sort: '-created_on',
     pagelen: String(MAX_PRS),
-    fields: 'values.id,values.title,values.links.html.href,values.author.uuid'
+    fields: 'values.id,values.title,values.links.html.href,values.author.account_id'
   })
-  const res = await fetch(
-    `https://api.bitbucket.org/2.0/repositories/${repo.owner}/${repo.repo}/pullrequests?${params}`,
-    {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`,
-        Accept: 'application/json'
-      },
-      signal: AbortSignal.timeout(10_000)
-    }
-  )
-  if (!res.ok) throw new Error(`bitbucket ${res.status}`)
-  return mapBitbucketPrs(await res.json(), await bitbucketViewer(email, token))
+  const body = await bitbucketGet(`/repositories/${repo.owner}/${repo.repo}/pullrequests`, params)
+  return mapBitbucketPrs(body, await bitbucketViewer(repo))
 }
 
-// Our own Bitbucket uuid, for the same reason as githubViewer above.
-let viewerUuid: string | null | undefined
+// Our own Bitbucket account id, for the same reason as githubViewer above.
+// `/2.0/user` needs the read:user scope many API tokens lack; then our email on
+// a commit in this repo tells. A repo where that finds nothing is not re-asked.
+let viewerId: string | null | undefined
+let userAsked = false
+const viewerMisses = new Set<string>()
 
-async function bitbucketViewer(email: string, token: string): Promise<string | null> {
-  if (viewerUuid !== undefined) return viewerUuid
-  try {
-    const res = await fetch('https://api.bitbucket.org/2.0/user?fields=uuid', {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`,
-        Accept: 'application/json'
-      },
-      signal: AbortSignal.timeout(10_000)
-    })
-    viewerUuid = res.ok ? (((await res.json()) as { uuid?: string }).uuid ?? null) : null
-  } catch {
-    viewerUuid = null
+async function bitbucketViewer(repo: RepoRef): Promise<string | null> {
+  if (viewerId !== undefined) return viewerId
+  if (!userAsked) {
+    userAsked = true
+    try {
+      const me = (await bitbucketGet('/user', new URLSearchParams({ fields: 'account_id' }))) as {
+        account_id?: string
+      }
+      if (me.account_id) return (viewerId = me.account_id)
+    } catch {
+      // scope missing → try the commits
+    }
   }
-  return viewerUuid
+  const key = repoKey(repo)
+  const email = (await bitbucketCreds())?.email
+  if (!email || viewerMisses.has(key)) return null
+  try {
+    const params = new URLSearchParams({
+      pagelen: '100',
+      fields: 'values.author.raw,values.author.user.account_id'
+    })
+    const body = await bitbucketGet(`/repositories/${repo.owner}/${repo.repo}/commits`, params)
+    const id = accountIdFromCommits(body, email)
+    if (id) return (viewerId = id)
+  } catch {
+    // fall through: unmarked beats wrongly marked
+  }
+  viewerMisses.add(key)
+  return null
 }
 
 /**

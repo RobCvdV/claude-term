@@ -100,7 +100,7 @@ function HowTo(): React.JSX.Element {
         <Keys k="~N">
           Changed-file count opens the diff window — review this turn&apos;s changes, or undo them
         </Keys>
-        <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases</Keys>
+        <Keys k="links">Branch → repo · ticket → Jira · CI / Actions / Releases / Downloads</Keys>
         <Keys k="● CI">Dot on a CI link = live build state (green / red / pulsing)</Keys>
         <Keys k="🕐">Activity hours (tab bar, top right) — engaged time per ticket</Keys>
         <Keys k="⌘K">
@@ -199,8 +199,8 @@ function Guide(): React.JSX.Element {
           time-to-reset — hover them for a burn forecast, and they turn orange early when the
           current pace hits 100% before the reset. On the right: plan / roadmap / docs / settings
           editor windows for the project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions)
-          with a live build-state dot, the open-PRs dropdown, Releases, notification volume, and the
-          clock.
+          with a live build-state dot, the open-PRs dropdown, Releases (GitHub) or Downloads (a
+          Bitbucket repo with files there), notification volume, and the clock.
         </p>
       </section>
       <section>

@@ -3,6 +3,7 @@ import {
   actionsUrl,
   branchUrl,
   circleCiUrl,
+  downloadsUrl,
   isTrunkBranch,
   parseRemote,
   releasesUrl
@@ -60,6 +61,11 @@ describe('branch links', () => {
     expect(releasesUrl(gh)).toBe('https://github.com/RobCvdV/claude-term/releases')
     expect(actionsUrl(bb, 'main')).toBeNull()
     expect(releasesUrl(bb)).toBeNull()
+  })
+
+  it('gives Downloads only for bitbucket', () => {
+    expect(downloadsUrl(bb)).toBe(`https://bitbucket.org/${bb.owner}/${bb.repo}/downloads/`)
+    expect(downloadsUrl(gh)).toBeNull()
   })
 })
 

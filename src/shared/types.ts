@@ -212,6 +212,14 @@ export interface PrInfo {
   mine: boolean
 }
 
+/** A Bitbucket repo's Downloads page, when it has any files on it. */
+export interface RepoDownloads {
+  url: string
+  count: number
+  /** newest file's name */
+  latest: string | null
+}
+
 /** One workspace repo's open PRs, a group in the status-bar PR dropdown. */
 export interface PrGroup {
   /** absolute path of the workspace folder this repo belongs to */

@@ -24,6 +24,7 @@ import type {
   ProjectSettings,
   ProjectSettingsPatch,
   RateForecast,
+  RepoDownloads,
   RevertResult,
   SlashCommand,
   TabId,
@@ -71,6 +72,8 @@ export interface ClaudeTermApi {
   onOpenFolderTab(cb: (dir: string) => void): () => void
   /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
   listPrs(tabId: TabId): Promise<PrGroup[]>
+  /** the tab repo's Bitbucket Downloads page, null when it has no files */
+  repoDownloads(tabId: TabId): Promise<RepoDownloads | null>
   /** Help menu picked Quick How-To / User Guide — open the help overlay */
   onShowHelp(cb: (section: HelpSection) => void): () => void
   /** native right-click menu for a PR entry (Open / Merge where allowed);
@@ -222,6 +225,7 @@ const api: ClaudeTermApi = {
   removeDir: (tabId, dir) => ipcRenderer.invoke('dirs:remove', tabId, dir),
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
+  repoDownloads: (tabId) => ipcRenderer.invoke('downloads:get', tabId),
   onShowHelp: (cb) => subscribe('help:show', cb),
   prContextMenu: (tabId, pr, root) => ipcRenderer.send('prs:contextMenu', tabId, pr, root),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
