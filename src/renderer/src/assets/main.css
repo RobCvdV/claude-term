@@ -255,6 +255,11 @@ body {
   background: transparent;
   border: 1px solid var(--fg-dim);
 }
+/* not in a turn, but a shell command or background task is still running */
+.dot.running {
+  background: var(--cyan);
+  animation: pulse 2s ease-in-out infinite;
+}
 
 @keyframes pulse {
   50% {

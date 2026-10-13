@@ -122,6 +122,8 @@ export interface ClaudeTermApi {
   screenReply(requestId: string, rows: string[]): void
   /** record where keyboard focus landed, next to the term-bridge mod's events */
   logFocus(tabId: TabId, target: string): void
+  /** the tab's shell started a command, or (null) is back at its prompt */
+  reportShellCommand(tabId: TabId, command: string | null): void
   /** an Esc on its way to the session, for ui-bridge.log */
   logKey(tabId: TabId, key: string, from: 'box' | 'terminal'): void
   companionOffer(): Promise<PairingInfo>
@@ -294,6 +296,7 @@ const api: ClaudeTermApi = {
   screenReply: (requestId: string, rows: string[]) =>
     ipcRenderer.send('screen:reply', requestId, rows),
   logFocus: (tabId, target) => ipcRenderer.send('ui:focusLog', tabId, target),
+  reportShellCommand: (tabId, command) => ipcRenderer.send('tab:shellCommand', tabId, command),
   logKey: (tabId, key, from) => ipcRenderer.send('ui:keyLog', tabId, key, from),
   companionOffer: () => ipcRenderer.invoke('companion:offer'),
   companionCancelOffer: () => ipcRenderer.invoke('companion:cancelOffer'),

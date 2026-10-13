@@ -35,6 +35,11 @@ function HowTo(): React.JSX.Element {
         <Keys k="⌘N">New window</Keys>
         <Keys k="⌃`">Next terminal window (skips file windows)</Keys>
         <div className="help-note">
+          A pulsing cyan dot and <code>▶ command</code> under the title mean the tab is still
+          running something — a script in its shell, or background tasks a session left behind — so
+          it isn&apos;t done even when idle.
+        </div>
+        <div className="help-note">
           A tab starts as a plain shell — run <code>claude</code> in it and the prompt box + status
           bar appear automatically.
         </div>

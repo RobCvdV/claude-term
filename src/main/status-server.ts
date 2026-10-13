@@ -8,6 +8,7 @@ import type {
   CiInfo,
   GitInfo,
   HookEvent,
+  RunningWork,
   RepoStatus,
   StatuslinePayload,
   TabId,
@@ -18,6 +19,7 @@ import { parseRemote } from '../shared/repo-links'
 import { statusFolders } from '../shared/status-folders'
 import { pullRequestUrl } from './pr-links'
 import { sessionNameForBranch } from './session-name'
+import { backgroundWork, runningOf } from './running-work'
 import { attachedActivity } from './attached-activity'
 import { transcriptPathFor } from './session-home'
 import { readJobState } from './agents'
@@ -55,6 +57,10 @@ interface TabState {
   lastRenamedName: string | null
   /** Between the mod's turn.start and turn.complete. */
   turnRunning?: boolean
+  /** the command the tab's shell is running (zsh preexec → precmd) */
+  shellCommand?: { command: string; since: number } | null
+  /** background tasks the session reported at its last Stop */
+  background?: RunningWork[]
 }
 
 /**
@@ -332,6 +338,21 @@ export class StatusServer {
       }
     })
     void this.refreshGit(tabId)
+  }
+
+  /** The tab's shell started a command, or (null) is back at its prompt. */
+  setShellCommand(tabId: TabId, command: string | null): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen) return
+    tab.shellCommand = command ? { command, since: Date.now() } : null
+    this.refreshRunning(tab)
+  }
+
+  private refreshRunning(tab: TabState): void {
+    const next = runningOf(tab.status.claudeActive, tab.shellCommand ?? null, tab.background ?? [])
+    if (JSON.stringify(next) === JSON.stringify(tab.status.running ?? [])) return
+    tab.status.running = next
+    this.onUpdate(tab.status)
   }
 
   removeTab(tabId: TabId): void {
@@ -630,6 +651,8 @@ export class StatusServer {
       tab.status.claudeActive = true
       tab.status.activity = 'idle'
       tab.status.busySince = null
+      tab.background = []
+      tab.status.running = runningOf(true, null, [])
       this.onUpdate(tab.status)
       return
     }
@@ -642,6 +665,8 @@ export class StatusServer {
       tab.status.payload = null
       tab.status.doing = null
       tab.turnRunning = false
+      tab.background = []
+      tab.status.running = runningOf(false, tab.shellCommand ?? null, [])
       this.onUpdate(tab.status)
       return
     }
@@ -660,6 +685,10 @@ export class StatusServer {
       this.onAttention(tabId, name)
     }
     if (name === 'UserPromptSubmit') this.onTurnStart(tabId, tab.cwd)
+    if (name === 'Stop') {
+      tab.background = backgroundWork(evt)
+      tab.status.running = runningOf(true, tab.shellCommand ?? null, tab.background)
+    }
     const next = map[name]
     if (!next) return
     tab.status.claudeActive = true

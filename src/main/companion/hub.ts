@@ -26,7 +26,8 @@ export function toSession(status: TabStatus, pendingPromptIds: string[]): Compan
     branch: status.git?.branch ?? null,
     model: status.payload?.model?.display_name ?? null,
     pendingPromptIds,
-    doing: status.activity === 'busy' ? (status.doing ?? null) : null
+    doing: status.activity === 'busy' ? (status.doing ?? null) : null,
+    running: status.running ?? []
   }
 }
 

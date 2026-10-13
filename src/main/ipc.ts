@@ -273,6 +273,9 @@ export function createServices(windows: TerminalWindows): AppServices {
   }
   status.onModRequest = (tabId, action, body) =>
     handleModRequest({ parked, dialogOpen: (id) => status.markDialogOpen(id) }, tabId, action, body)
+  ipcMain.on('tab:shellCommand', (_e, tabId: TabId, command: string | null) =>
+    status.setShellCommand(tabId, command)
+  )
   ipcMain.on('ui:focusLog', (_e, tabId: TabId, target: string) =>
     logUiBridge(tabId, 'focus', { target })
   )

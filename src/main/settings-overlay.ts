@@ -97,6 +97,12 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
         `__claude_term_cwd() { printf '\\e]7;file://%s%s\\a' "$HOST" "$PWD" }\n` +
         `autoload -Uz add-zsh-hook && add-zsh-hook chpwd __claude_term_cwd\n` +
         `__claude_term_cwd\n` +
+        `# claude-term: report the command running in the shell, so a tab busy with\n` +
+        `# a long script doesn't read as idle (base64: the command may hold escapes).\n` +
+        `__claude_term_preexec() { printf '\\e]1337;ClaudeTermCmd=%s\\a' "$(print -rn -- "$1" | base64 | tr -d '\\n')" }\n` +
+        `__claude_term_precmd() { printf '\\e]1337;ClaudeTermCmd=\\a' }\n` +
+        `add-zsh-hook preexec __claude_term_preexec\n` +
+        `add-zsh-hook precmd __claude_term_precmd\n` +
         `# claude-term: wrap claude so sessions started here light up the UI and\n` +
         `# carry the tab's branch name (via the session-namer) into the Claude app.\n` +
         `claude() {\n` +

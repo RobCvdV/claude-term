@@ -35,6 +35,14 @@ export function tabSubtitle(title: string, status: TabStatus | null | undefined)
   return `${parts.short}/${parts.rest}`
 }
 
+/** What a tab is still running outside a turn, as one short line, or ''. */
+export function runningSummary(status: TabStatus | null | undefined): string {
+  const running = status?.running ?? []
+  if (running.length === 0) return ''
+  const first = running[0].label
+  return running.length === 1 ? `▶ ${first}` : `▶ ${first} +${running.length - 1}`
+}
+
 /** One-line title combining a tab's title with its subtitle — used for the
  *  docs window's OS title so it's identifiable as belonging to that tab. */
 export function composeWindowTitle(title: string, status: TabStatus | null | undefined): string {
