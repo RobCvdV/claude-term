@@ -200,6 +200,11 @@ export interface ClaudeTermApi {
   /** this window's last tab moved away */
   windowEmptied(): void
   onAdoptTabs(cb: (handoffs: TabHandoff[]) => void): () => void
+  /** a tab dragged out of the window: show (or with null, drop) its floating ghost */
+  tabDragGhost(ghost: { title: string; color: string | null; width: number } | null): void
+  tabDragMove(screenX: number, screenY: number): void
+  /** a tab dragged from another window is over this window's tab bar */
+  onDropHover(cb: (over: boolean) => void): () => void
   /** main (window close → Move to Main Window) asks for every tab to go there */
   onHandoffAll(cb: (windowId: number) => void): () => void
   /** Window menu: move the active tab to a new window */
@@ -328,6 +333,9 @@ const api: ClaudeTermApi = {
   tabsAdopted: (tabIds) => ipcRenderer.send('tabs:adopted', tabIds),
   windowEmptied: () => ipcRenderer.send('window:emptied'),
   onAdoptTabs: (cb) => subscribe('tabs:adopt', cb),
+  tabDragGhost: (ghost) => ipcRenderer.send('tabs:dragGhost', ghost),
+  tabDragMove: (x, y) => ipcRenderer.send('tabs:dragMove', x, y),
+  onDropHover: (cb) => subscribe('tabs:dropHover', cb),
   onHandoffAll: (cb) => subscribe('tabs:handoffAll', cb),
   onMoveActiveTab: (cb) => subscribe('tabs:moveActive', cb),
   reportTabs: (tabIds, activeId, title) => ipcRenderer.send('tabs:report', tabIds, activeId, title),

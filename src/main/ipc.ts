@@ -30,6 +30,7 @@ import type {
 } from '../shared/types'
 import type { TerminalWindows } from './terminal-windows'
 import { windowsOf } from './window-order'
+import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
 import { appSettings } from './app-settings'
 import { PtyManager } from './pty-manager'
 import { ConversationFeed } from './companion/conversation-feed'
@@ -769,6 +770,21 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.on('tabs:handOff', (e, handoffs: TabHandoff[], target: HandoffTarget) =>
     windows.handOff(e.sender, handoffs, target)
   )
+  // a tab dragged out of its window: the ghost that follows the cursor
+  ipcMain.on(
+    'tabs:dragGhost',
+    (_e, ghost: { title: string; color: string | null; width: number } | null) => {
+      if (ghost) showDragGhost(ghost.title, ghost.color, ghost.width)
+      else {
+        hideDragGhost()
+        windows.dragHover(null)
+      }
+    }
+  )
+  ipcMain.on('tabs:dragMove', (e, x: number, y: number) => {
+    moveDragGhost(x, y)
+    windows.dragHover(e.sender, x, y)
+  })
   ipcMain.on('tabs:adopted', (e, tabIds: TabId[]) => windows.adopted(e.sender, tabIds))
   ipcMain.on('window:emptied', (e) => windows.emptied(e.sender))
   ipcMain.on('tabs:report', (e, tabIds: TabId[], activeTab: TabId | null, title: string) =>

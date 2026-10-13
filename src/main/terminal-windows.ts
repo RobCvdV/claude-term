@@ -252,6 +252,33 @@ export class TerminalWindows {
     targetWin.focus()
   }
 
+  /** the window whose tab bar a dragged tab is over, if any but its own */
+  private dropTarget(from: BrowserWindow | null, x: number, y: number): number | null {
+    const others = [...this.entries.values()]
+      .filter((e) => e.win !== from && e.win.isVisible() && !e.win.isMinimized())
+      .map((e) => ({ id: e.win.id, bounds: e.win.getContentBounds() }))
+    return windowAtTabBar(others, x, y)
+  }
+
+  private hoverId: number | null = null
+
+  /** light up the tab bar a dragged tab would join */
+  dragHover(sender: WebContents | null, x?: number, y?: number): void {
+    const next =
+      sender && x !== undefined && y !== undefined
+        ? this.dropTarget(this.fromSender(sender), x, y)
+        : null
+    if (next === this.hoverId) return
+    for (const [id, on] of [
+      [this.hoverId, false],
+      [next, true]
+    ] as const) {
+      const win = id !== null ? this.entries.get(id)?.win : undefined
+      if (win && !win.isDestroyed()) win.webContents.send('tabs:dropHover', on)
+    }
+    this.hoverId = next
+  }
+
   private resolveTarget(target: HandoffTarget, from: BrowserWindow | null): BrowserWindow {
     const size = from?.getBounds() ?? { width: 1200, height: 800 }
     const at = (x: number, y: number): BrowserWindow =>
@@ -265,10 +292,7 @@ export class TerminalWindows {
       return this.createAdoptNear(from)
     }
     if (target.kind === 'drop') {
-      const others = [...this.entries.values()]
-        .filter((e) => e.win !== from && e.win.isVisible() && !e.win.isMinimized())
-        .map((e) => ({ id: e.win.id, bounds: e.win.getContentBounds() }))
-      const hit = windowAtTabBar(others, target.x, target.y)
+      const hit = this.dropTarget(from, target.x, target.y)
       if (hit !== null) return this.entries.get(hit)!.win
       return at(target.x, target.y)
     }

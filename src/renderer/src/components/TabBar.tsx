@@ -82,6 +82,9 @@ export function TabBar({
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
+  // a tab dragged from another window is over this bar
+  const [dropHover, setDropHover] = useState(false)
+  useEffect(() => window.claudeTerm.onDropHover(setDropHover), [])
   // mirrors `drag` so the mouseup listener can read it without re-subscribing
   const dragRef = useRef<Drag | null>(null)
 
@@ -108,6 +111,15 @@ export function TabBar({
     const tabId = tabs[index]?.tabId
     let dragging = false
     let last: MouseEvent | null = null
+    let ghost = false
+    const setGhost = (on: boolean): void => {
+      if (on === ghost) return
+      ghost = on
+      const tab = tabs[index]
+      window.claudeTerm.tabDragGhost(
+        on && tab ? { title: tab.title, color: colors[tab.tabId] ?? null, width } : null
+      )
+    }
     const isOut = (ev: MouseEvent): boolean =>
       ev.clientY < barRect.top - TEAR_OFF_DISTANCE ||
       ev.clientY > barRect.bottom + TEAR_OFF_DISTANCE ||
@@ -127,12 +139,15 @@ export function TabBar({
       dragging = true
       const to = out ? index : dropIndex(centers, index, centers[index] + dx)
       update({ from: index, to, dx, width, out })
+      setGhost(out)
+      if (out) window.claudeTerm.tabDragMove(ev.screenX, ev.screenY)
     }
     const onUp = (): void => {
       window.removeEventListener('mousemove', onPointer)
       window.removeEventListener('mouseup', onUp)
       const d = dragRef.current
       update(null)
+      setGhost(false)
       if (d?.out && last && tabId) {
         onMove(tabId, { kind: 'drop', x: last.screenX, y: last.screenY })
       } else if (d && d.to !== d.from) onReorder(d.from, d.to)
@@ -142,7 +157,7 @@ export function TabBar({
   }
 
   return (
-    <div className={`tab-bar ${drag ? 'reordering' : ''}`}>
+    <div className={`tab-bar ${drag ? 'reordering' : ''} ${dropHover ? 'drop-hover' : ''}`}>
       <div className="tab-drag-region" />
       {tabs.map((tab, index) => {
         const isActive = tab.tabId === activeId
