@@ -131,6 +131,7 @@ export function createTerm(tabId: TabId, size?: { cols: number; rows: number }):
       return false
     }
     if (e.type === 'keydown' && e.key === 'Escape') {
+      window.claudeTerm.logKey(tabId, 'Escape', 'terminal')
       setTermView(tabId, null)
       window.setTimeout(() => escapeHandler(tabId), 0)
     }

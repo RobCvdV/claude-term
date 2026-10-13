@@ -276,6 +276,9 @@ export function createServices(windows: TerminalWindows): AppServices {
   ipcMain.on('ui:focusLog', (_e, tabId: TabId, target: string) =>
     logUiBridge(tabId, 'focus', { target })
   )
+  ipcMain.on('ui:keyLog', (_e, tabId: TabId, key: string, from: string) =>
+    logUiBridge(tabId, 'key', { key, from, activity: status.snapshot(tabId)?.activity ?? null })
+  )
 
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
