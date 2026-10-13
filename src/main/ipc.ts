@@ -19,11 +19,21 @@ import type {
   CreateDocResult,
   DocGroup,
   DocTarget,
+  HandoffTarget,
   PersistedSession,
+  PersistedSessionFile,
+  TabHandoff,
   TabId,
-  TabInfo
+  TabInfo,
+  TabMenuChoice,
+  WindowBoot
 } from '../shared/types'
+import type { TerminalWindows } from './terminal-windows'
+import { windowsOf } from './window-order'
+import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
+import { appSettings } from './app-settings'
 import { PtyManager } from './pty-manager'
+import { KeepAwake } from './keep-awake'
 import { ConversationFeed } from './companion/conversation-feed'
 import { Notifier } from './companion/notifier'
 import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
@@ -123,7 +133,7 @@ export interface AppServices {
   releaseSleepBlocker: () => void
 }
 
-export function createServices(getWindow: () => BrowserWindow | null): AppServices {
+export function createServices(windows: TerminalWindows): AppServices {
   // stable endpoint (port+token survive restarts) so a background agent's
   // baked-in --settings keep reaching us after an app update
   const status = new StatusServer(() => join(app.getPath('userData'), 'status-endpoint.json'))
@@ -149,27 +159,20 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     // deadlocked pairing in the first place.
   })
 
-  // Sleeping mid-turn would strand a phone waiting on this session, so hold the
-  // machine awake — but only while a device is connected AND work is running.
-  let sleepBlockerId: number | null = null
-  const updateSleepBlocker = (): void => {
-    const wanted = companion.authenticatedCount() > 0 && status.busyCount() > 0
-    if (wanted === (sleepBlockerId !== null)) return
-    if (wanted) sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension')
-    else {
-      powerSaveBlocker.stop(sleepBlockerId!)
-      sleepBlockerId = null
-    }
-  }
-  const releaseSleepBlocker = (): void => {
-    if (sleepBlockerId === null) return
-    powerSaveBlocker.stop(sleepBlockerId)
-    sleepBlockerId = null
-  }
+  // Sleeping mid-turn stops the work (and strands a phone waiting on it), so the
+  // Mac stays awake while any session works, and 10 minutes after.
+  const keepAwake = new KeepAwake({
+    start: () => powerSaveBlocker.start('prevent-app-suspension'),
+    stop: (id) => powerSaveBlocker.stop(id)
+  })
+  const updateSleepBlocker = (): void => keepAwake.update(status.busyCount() > 0)
+  const releaseSleepBlocker = (): void => keepAwake.release()
 
   // Only the renderer's xterm knows what is on a tab's screen, so asking is a
   // round trip over the otherwise one-way main→renderer channel.
-  const screens = new ScreenRequests((requestId, tabId) => send('screen:request', requestId, tabId))
+  const screens = new ScreenRequests((requestId, tabId) =>
+    windows.sendForTab(tabId, 'screen:request', requestId, tabId)
+  )
   // A dialog owns the keyboard, so a prompt arriving then would answer it
   // instead of asking anything — hold it until the tab can take input again.
   const queue = new PromptQueue({
@@ -185,7 +188,7 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   })
   const notifier = new Notifier({
     // Someone with the app in front of them does not need their phone to buzz.
-    hostFocused: () => Boolean(getWindow()?.isFocused())
+    hostFocused: () => windows.anyFocused()
   })
   const push = new PushSender({
     fetch: (input, init) => fetch(input, init),
@@ -224,10 +227,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
     hubGone(deviceId)
   }
 
-  const send = (channel: string, ...args: unknown[]): void => {
-    const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
-  }
+  // every main→renderer message here is about one tab: it goes to that tab's window
+  const send = (channel: string, tabId: TabId, ...args: unknown[]): void =>
+    windows.sendForTab(tabId, channel, tabId, ...args)
 
   const ptys = new PtyManager(() => ({ port: status.port, token: status.token }), {
     data: (tabId, data) => send('pty:data', tabId, data),
@@ -274,6 +276,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   ipcMain.on('ui:focusLog', (_e, tabId: TabId, target: string) =>
     logUiBridge(tabId, 'focus', { target })
   )
+  ipcMain.on('ui:keyLog', (_e, tabId: TabId, key: string, from: string) =>
+    logUiBridge(tabId, 'key', { key, from, activity: status.snapshot(tabId)?.activity ?? null })
+  )
 
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
@@ -283,8 +288,9 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
       ptys.stopRefusalWatch(tabStatus.tabId)
       rate.record(tabStatus.payload)
     }
-    send('status:update', tabStatus)
+    windows.sendForTab(tabStatus.tabId, 'status:update', tabStatus)
     hub.publishStatus(tabStatus)
+    updateSleepBlocker()
   }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // The tab re-homed onto its session's launch folder — a shell respawned after
@@ -329,7 +335,15 @@ export function createServices(getWindow: () => BrowserWindow | null): AppServic
   }
 }
 
-export function registerIpc(services: AppServices, getWindow: () => BrowserWindow | null): void {
+export interface IpcHandles {
+  /** session.json for startup, with daemon warm-up started for its revives */
+  loadSession: () => PersistedSessionFile | null
+  writeSession: (file: PersistedSessionFile) => void
+  disposeTabs: (tabIds: TabId[]) => Promise<void>
+  resendStatus: (tabId: TabId) => void
+}
+
+export function registerIpc(services: AppServices, windows: TerminalWindows): IpcHandles {
   const { ptys, status, checkpoints, parked, queue, notifier } = services
 
   // Started when the renderer loads the persisted session (which is where we
@@ -342,7 +356,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle(
     'tab:create',
     async (
-      _e,
+      e,
       cwd?: string,
       resume?: string,
       addedDirs?: string[],
@@ -356,6 +370,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       // — see below.
       let homeUnclaimed = true
       const tabId: TabId = randomUUID()
+      windows.assign(tabId, e.sender)
       // Resolve how to restore a persisted session (only when `resume` is set):
       //  - live daemon-managed background agent → `claude attach` (--resume
       //    refuses a live bg session);
@@ -455,16 +470,18 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     forgetCheckpoints: (tabId) => checkpoints.forget(tabId)
   }
 
-  ipcMain.handle('tab:close', (_e, tabId: TabId) => disposeTab(tabId, tabResources))
+  ipcMain.handle('tab:close', async (_e, tabId: TabId) => {
+    await disposeTab(tabId, tabResources)
+    windows.release(tabId)
+  })
 
-  // A renderer that has just loaded owns no tabs, so anything still registered
-  // here is from a previous load and has to go — PTY included (see disposeAll).
-  ipcMain.handle('tab:reset', () =>
-    disposeAll(
-      status.allSnapshots().map((s) => s.tabId),
-      tabResources
-    )
-  )
+  // A renderer that has just loaded owns no tabs, so anything its window still
+  // holds is from a previous load and has to go — PTY included (see disposeAll).
+  ipcMain.handle('tab:reset', async (e) => {
+    const tabIds = windows.tabsOf(e.sender)
+    await disposeAll(tabIds, tabResources)
+    for (const t of tabIds) windows.release(t)
+  })
 
   ipcMain.on(
     'docs:openWindow',
@@ -478,8 +495,8 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     await ptys.restart(tabId)
   })
 
-  ipcMain.handle('dialog:pickFolder', async (): Promise<string | null> => {
-    const win = getWindow()
+  ipcMain.handle('dialog:pickFolder', async (e): Promise<string | null> => {
+    const win = BrowserWindow.fromWebContents(e.sender)
     if (!win) return null
     const result = await dialog.showOpenDialog(win, {
       properties: ['openDirectory', 'createDirectory'],
@@ -668,9 +685,6 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
   ipcMain.handle('volume:get', () => getVolume())
   ipcMain.handle('volume:set', (_e, op: VolumeOp) => setVolume(op))
 
-  // dev/scripting convenience: auto-open a tab in this folder at startup
-  ipcMain.handle('app:initialCwd', () => process.env.CLAUDE_TERM_DEFAULT_CWD ?? null)
-
   // Harper's grammar engine, as raw wasm bytes. The renderer can't fetch it
   // itself — the packaged app runs from file://, where fetch is blocked — so it
   // travels over IPC and becomes a blob: URL there. Copied into resources/ by
@@ -686,9 +700,9 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
 
   // tab/session persistence across launches
   const sessionFile = join(app.getPath('userData'), 'session.json')
-  const readSession = (): PersistedSession | null => {
+  const readSession = (): PersistedSessionFile | null => {
     try {
-      return JSON.parse(readFileSync(sessionFile, 'utf8')) as PersistedSession
+      return JSON.parse(readFileSync(sessionFile, 'utf8')) as PersistedSessionFile
     } catch {
       return null
     }
@@ -711,7 +725,7 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       unlinkSync(join(backupDir, f))
     }
   }
-  const writeSession = (state: PersistedSession): void => {
+  const writeSession = (state: PersistedSessionFile): void => {
     try {
       const next = JSON.stringify(state, null, 2)
       try {
@@ -724,23 +738,93 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
       /* best effort — a failed save just means no restore next launch */
     }
   }
-  ipcMain.handle('session:load', () => {
+  const loadSession = (): PersistedSessionFile | null => {
     const state = readSession()
+    const tabs = windowsOf(state).flatMap((w) => w.tabs)
     // Kick off daemon warm-up for the sessions this launch is about to revive,
     // so the first tab:create doesn't have to decide against a cold daemon.
-    const ids = (state?.tabs ?? [])
-      .filter((t) => t.claudeActive && t.sessionId)
-      .map((t) => t.sessionId as string)
+    const ids = tabs.filter((t) => t.claudeActive && t.sessionId).map((t) => t.sessionId as string)
     if (ids.length > 0) agentWarmup = warmLiveAgents(ids)
-    prefetchConfigDirs((state?.tabs ?? []).flatMap((t) => (t.cwd ? [t.cwd] : [])))
+    prefetchConfigDirs(tabs.flatMap((t) => (t.cwd ? [t.cwd] : [])))
     return state
+  }
+  ipcMain.handle('window:boot', (e): WindowBoot => windows.boot(e.sender))
+  // each window saves its own tabs; the file holds every window
+  ipcMain.handle('session:save', (e, state: PersistedSession) => {
+    const file = windows.saveSlice(e.sender, state)
+    if (file) writeSession(file)
   })
-  ipcMain.handle('session:save', (_e, state: PersistedSession) => writeSession(state))
   // synchronous variant for beforeunload, where async IPC may not finish
   ipcMain.on('session:saveSync', (e, state: PersistedSession) => {
-    writeSession(state)
+    const file = windows.saveSlice(e.sender, state)
+    if (file) writeSession(file)
     e.returnValue = true
   })
+
+  // ---- several terminal windows ----
+  ipcMain.handle('tabs:beginHandoff', (_e, tabIds: TabId[]) => windows.beginHandoff(tabIds))
+  ipcMain.on('tabs:handOff', (e, handoffs: TabHandoff[], target: HandoffTarget) =>
+    windows.handOff(e.sender, handoffs, target)
+  )
+  // a tab dragged out of its window: the ghost that follows the cursor
+  ipcMain.on(
+    'tabs:dragGhost',
+    (_e, ghost: { title: string; color: string | null; width: number } | null) => {
+      if (ghost) showDragGhost(ghost.title, ghost.color, ghost.width)
+      else {
+        hideDragGhost()
+        windows.dragHover(null)
+      }
+    }
+  )
+  ipcMain.on('tabs:dragMove', (e, x: number, y: number) => {
+    moveDragGhost(x, y)
+    windows.dragHover(e.sender, x, y)
+  })
+  ipcMain.on('tabs:adopted', (e, tabIds: TabId[]) => windows.adopted(e.sender, tabIds))
+  ipcMain.on('window:emptied', (e) => windows.emptied(e.sender))
+  ipcMain.on('tabs:report', (e, tabIds: TabId[], activeTab: TabId | null, title: string) =>
+    windows.reportTabs(e.sender, tabIds, activeTab, title)
+  )
+  ipcMain.on('tabs:selectGlobal', (_e, index: number) => windows.selectGlobal(index))
+  ipcMain.on('tabs:stepGlobal', (e, delta: number) => windows.stepGlobal(e.sender, delta))
+  ipcMain.handle('app:settings', () => appSettings())
+  ipcMain.on('window:new', () => windows.createFresh())
+  ipcMain.on('window:next', () => windows.cycle())
+
+  // Right-click on a tab. Rename and Close stay with the renderer; a move
+  // comes back as its target.
+  ipcMain.handle(
+    'tab:contextMenu',
+    (e): Promise<TabMenuChoice | null> =>
+      new Promise((resolve) => {
+        const win = BrowserWindow.fromWebContents(e.sender)
+        if (!win) return resolve(null)
+        const others = windows.choicesFor(e.sender)
+        Menu.buildFromTemplate([
+          { label: 'Rename…', click: () => resolve({ kind: 'rename' }) },
+          { type: 'separator' },
+          {
+            label: 'Move to New Window',
+            click: () => resolve({ kind: 'move', target: { kind: 'new' } })
+          },
+          ...(others.length > 0
+            ? [
+                {
+                  label: 'Move to',
+                  submenu: others.map((o) => ({
+                    label: o.label,
+                    click: () =>
+                      resolve({ kind: 'move', target: { kind: 'window', windowId: o.windowId } })
+                  }))
+                }
+              ]
+            : []),
+          { type: 'separator' },
+          { label: 'Close Tab', click: () => resolve({ kind: 'close' }) }
+        ]).popup({ window: win, callback: () => setTimeout(() => resolve(null), 200) })
+      })
+  )
 
   // Both file windows reach the tab's cwd plus its added directories — always
   // resolved here from the tab's own state, never passed in by a renderer.
@@ -977,4 +1061,16 @@ export function registerIpc(services: AppServices, getWindow: () => BrowserWindo
     }
     ptys.injectPrompt(tabId, text, imageCount ?? 0)
   })
+
+  return {
+    loadSession,
+    writeSession,
+    disposeTabs: async (tabIds) => {
+      await disposeAll(tabIds, tabResources)
+    },
+    resendStatus: (tabId) => {
+      const snap = status.snapshot(tabId)
+      if (snap) windows.sendForTab(tabId, 'status:update', snap)
+    }
+  }
 }

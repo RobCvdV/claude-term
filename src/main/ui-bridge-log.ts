@@ -6,10 +6,10 @@ import type { TabId } from '../shared/types'
 const MAX_BYTES = 5 * 1024 * 1024
 
 /**
- * Side-by-side record of the term-bridge mod's UI events and where the app
- * actually put focus, for judging the mod before focus decisions rely on it.
+ * Side-by-side record of the term-bridge mod's UI events, where the app put
+ * focus, and the Esc presses it sent on — for when a session ignores one.
  */
-export function logUiBridge(tabId: TabId, source: 'mod' | 'focus', data: object): void {
+export function logUiBridge(tabId: TabId, source: 'mod' | 'focus' | 'key', data: object): void {
   const file = join(app.getPath('userData'), 'ui-bridge.log')
   try {
     if ((statSync(file, { throwIfNoEntry: false })?.size ?? 0) > MAX_BYTES)

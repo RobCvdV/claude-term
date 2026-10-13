@@ -524,6 +524,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       monaco.KeyCode.Escape,
       () => {
         window.claudeTerm.ptyInput(tabId, '\x1b')
+        window.claudeTerm.logKey(tabId, 'Escape', 'box')
         focusTerm(tabId)
       },
       '!suggestWidgetVisible'

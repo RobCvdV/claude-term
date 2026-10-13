@@ -3,8 +3,11 @@ import type {
   BranchHistoryEntry,
   DocGroup,
   DocTarget,
+  HandoffTarget,
   HelpSection,
   PersistedSession,
+  PersistedTab,
+  TabHandoff,
   TabId,
   TabInfo,
   TabStatus
@@ -30,6 +33,8 @@ import { setUiKeys } from './ui-keys'
 import {
   disposeTerm,
   focusTerm,
+  primeTerm,
+  serializeTerm,
   setTerminalEscapeHandler,
   setTerminalFocusToggleHandler,
   setTerminalCwdHandler,
@@ -96,6 +101,8 @@ export default function App(): React.JSX.Element {
   const [searchNonces, setSearchNonces] = useState<Record<TabId, number>>({})
   // version of a downloaded update waiting to install (drives the header pill)
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  // ⌘1–9 / ⌘[ ⌘] stay in this window (else they number every window's tabs)
+  const [tabKeysPerWindow, setTabKeysPerWindow] = useState(true)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
   // What the persisted session said each restored tab was hosting. Kept as the
@@ -200,7 +207,13 @@ export default function App(): React.JSX.Element {
   // an update finished downloading — surface the header pill (null withdraws it
   // again when a newer release turned up and that download became obsolete)
   useEffect(() => {
+    void window.claudeTerm.pendingUpdate().then((v) => v && setUpdateVersion(v))
     return window.claudeTerm.onUpdateDownloaded((version) => setUpdateVersion(version))
+  }, [])
+
+  useEffect(() => {
+    void window.claudeTerm.appSettings().then((s) => setTabKeysPerWindow(s.tabKeysPerWindow))
+    return window.claudeTerm.onAppSettings((s) => setTabKeysPerWindow(s.tabKeysPerWindow))
   }, [])
 
   // Help menu (or its ⌘/ accelerator) picked a section; the same section
@@ -406,42 +419,43 @@ export default function App(): React.JSX.Element {
       // still running. Reap before restoring, or the restore resumes a
       // conversation a second time — two claude processes on one transcript.
       await window.claudeTerm.resetTabs()
-      // dev override wins; otherwise restore the saved session; otherwise home
-      const initial = await window.claudeTerm.initialCwd()
-      if (initial) {
-        await openTab(initial)
-      } else {
-        const saved = await window.claudeTerm.loadSession()
-        if (saved && saved.tabs.length > 0) await restoreSession(saved)
-        else await openTab()
+      // main decides: this window's saved tabs, a fresh tab, or tabs on their way
+      const boot = await window.claudeTerm.boot()
+      if (boot.mode === 'restore' && boot.session.tabs.length > 0) {
+        await restoreSession(boot.session)
+      } else if (boot.mode !== 'adopt') {
+        await openTab(boot.mode === 'fresh' ? (boot.cwd ?? undefined) : undefined)
       }
       restoredRef.current = true
     })()
   }, [openTab, restoreSession])
 
+  // One tab as it is saved — and as it travels to another window.
+  const persistTab = useCallback((t: TabInfo): PersistedTab => {
+    const st = statusesRef.current[t.tabId]
+    return {
+      cwd: st?.cwd || t.cwd,
+      title: t.title,
+      manualTitle: manualTitles.current.has(t.tabId),
+      color: colorsRef.current[t.tabId],
+      addedDirs: st?.addedDirs ?? [],
+      removedDirs: st?.removedDirs ?? [],
+      promptHistory: persistedHistoryFor(t.tabId),
+      promptDraft: persistedDraftFor(t.tabId),
+      ...persistedSessionOf(st, lastKnown.current.get(t.tabId))
+    }
+  }, [])
+
   // Assemble the current session for persistence (reads refs so it's stable).
   const buildPersisted = useCallback(
     (): PersistedSession => ({
-      tabs: tabsRef.current.map((t) => {
-        const st = statusesRef.current[t.tabId]
-        return {
-          cwd: st?.cwd || t.cwd,
-          title: t.title,
-          manualTitle: manualTitles.current.has(t.tabId),
-          color: colorsRef.current[t.tabId],
-          addedDirs: st?.addedDirs ?? [],
-          removedDirs: st?.removedDirs ?? [],
-          promptHistory: persistedHistoryFor(t.tabId),
-          promptDraft: persistedDraftFor(t.tabId),
-          ...persistedSessionOf(st, lastKnown.current.get(t.tabId))
-        }
-      }),
+      tabs: tabsRef.current.map(persistTab),
       activeIndex: Math.max(
         0,
         tabsRef.current.findIndex((t) => t.tabId === activeIdRef.current)
       )
     }),
-    []
+    [persistTab]
   )
 
   // debounced save on any change to the persisted-relevant state
@@ -460,45 +474,130 @@ export default function App(): React.JSX.Element {
     return () => window.removeEventListener('beforeunload', flush)
   }, [buildPersisted])
 
+  // Drop a tab from this window — closed, or moved to another one.
+  const forgetTab = useCallback((tabId: TabId): void => {
+    disposeTerm(tabId)
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.tabId !== tabId)
+      setActiveId((current) => {
+        if (current !== tabId) return current
+        const idx = prev.findIndex((t) => t.tabId === tabId)
+        return next[Math.min(idx, next.length - 1)]?.tabId ?? null
+      })
+      return next
+    })
+    setStatuses((prev) => {
+      const rest = { ...prev }
+      delete rest[tabId]
+      return rest
+    })
+    setColors((prev) => {
+      const rest = { ...prev }
+      delete rest[tabId]
+      return rest
+    })
+    setShellCwds((prev) => {
+      const rest = { ...prev }
+      delete rest[tabId]
+      return rest
+    })
+    promptRefs.current.delete(tabId)
+    manualTitles.current.delete(tabId)
+    lastKnown.current.delete(tabId)
+    forgetPromptHistory(tabId)
+    forgetDraft(tabId)
+  }, [])
+
   const closeTab = useCallback(
     (tabId: TabId): void => {
-      const status = statuses[tabId]
-      const confirmMsg = closeTabConfirmMessage(status)
+      const confirmMsg = closeTabConfirmMessage(statuses[tabId])
       if (confirmMsg && !window.confirm(confirmMsg)) return
       void window.claudeTerm.closeTab(tabId)
-      disposeTerm(tabId)
-      setTabs((prev) => {
-        const next = prev.filter((t) => t.tabId !== tabId)
-        setActiveId((current) => {
-          if (current !== tabId) return current
-          const idx = prev.findIndex((t) => t.tabId === tabId)
-          return next[Math.min(idx, next.length - 1)]?.tabId ?? null
-        })
-        return next
-      })
-      setStatuses((prev) => {
-        const rest = { ...prev }
-        delete rest[tabId]
-        return rest
-      })
-      setColors((prev) => {
-        const rest = { ...prev }
-        delete rest[tabId]
-        return rest
-      })
-      setShellCwds((prev) => {
-        const rest = { ...prev }
-        delete rest[tabId]
-        return rest
-      })
-      promptRefs.current.delete(tabId)
-      manualTitles.current.delete(tabId)
-      lastKnown.current.delete(tabId)
-      forgetPromptHistory(tabId)
-      forgetDraft(tabId)
+      forgetTab(tabId)
     },
-    [statuses]
+    [statuses, forgetTab]
   )
+
+  // Move live tabs to another window. Main holds their output from here on,
+  // so what is serialized below is everything this window got.
+  const handOffTabs = useCallback(
+    async (tabIds: TabId[], target: HandoffTarget): Promise<void> => {
+      const moving = tabsRef.current.filter((t) => tabIds.includes(t.tabId))
+      if (moving.length === 0) return
+      const ids = moving.map((t) => t.tabId)
+      await window.claudeTerm.beginHandoff(ids)
+      const handoffs: TabHandoff[] = await Promise.all(
+        moving.map(async (tab) => ({
+          tab,
+          saved: persistTab(tab),
+          status: statusesRef.current[tab.tabId] ?? null,
+          ...(await serializeTerm(tab.tabId))
+        }))
+      )
+      window.claudeTerm.handOff(handoffs, target)
+      for (const id of ids) forgetTab(id)
+    },
+    [persistTab, forgetTab]
+  )
+
+  // Tabs arriving from another window: same PTY, same session, rebuilt here.
+  const adoptTabs = useCallback((handoffs: TabHandoff[]): void => {
+    const colorInit: Record<TabId, string> = {}
+    const statusInit: Record<TabId, TabStatus | null> = {}
+    for (const { tab, saved, status, screen, cols, rows } of handoffs) {
+      primeTerm(tab.tabId, screen, cols, rows)
+      lastKnown.current.set(tab.tabId, {
+        sessionId: saved.sessionId ?? null,
+        claudeActive: !!saved.claudeActive
+      })
+      if (saved.manualTitle) manualTitles.current.add(tab.tabId)
+      if (saved.color) colorInit[tab.tabId] = saved.color
+      restorePromptHistory(tab.tabId, saved.promptHistory)
+      restoreDraft(tab.tabId, saved.promptDraft)
+      statusInit[tab.tabId] = status
+    }
+    setTabs((prev) => [
+      ...prev,
+      ...handoffs.map(({ tab, saved }) => ({ ...tab, title: saved.title || tab.title }))
+    ])
+    setColors((prev) => ({ ...prev, ...colorInit }))
+    setStatuses((prev) => ({ ...prev, ...statusInit }))
+    const last = handoffs[handoffs.length - 1]
+    if (last) setActiveId(last.tab.tabId)
+    window.claudeTerm.tabsAdopted(handoffs.map((h) => h.tab.tabId))
+  }, [])
+
+  useEffect(() => window.claudeTerm.onAdoptTabs(adoptTabs), [adoptTabs])
+  useEffect(
+    () =>
+      window.claudeTerm.onHandoffAll((windowId) => {
+        const all = tabsRef.current.map((t) => t.tabId)
+        void handOffTabs(all, { kind: 'window', windowId })
+      }),
+    [handOffTabs]
+  )
+  useEffect(
+    () =>
+      window.claudeTerm.onMoveActiveTab(() => {
+        const id = activeIdRef.current
+        if (id) void handOffTabs([id], { kind: 'new' })
+      }),
+    [handOffTabs]
+  )
+  useEffect(
+    () =>
+      window.claudeTerm.onActivateTab((tabId) => {
+        if (tabsRef.current.some((t) => t.tabId === tabId)) setActiveId(tabId)
+      }),
+    []
+  )
+
+  // A window whose last tab closed or moved away goes, unless it's the only one.
+  const hadTabs = useRef(false)
+  useEffect(() => {
+    if (tabs.length > 0) hadTabs.current = true
+    else if (hadTabs.current && restoredRef.current) window.claudeTerm.windowEmptied()
+  }, [tabs.length])
 
   const renameTab = useCallback((tabId: TabId, title: string): void => {
     manualTitles.current.add(tabId)
@@ -527,16 +626,20 @@ export default function App(): React.JSX.Element {
     void window.claudeTerm.setProjectSettings(tabId, { tabColor: off ? null : color })
   }, [])
 
-  // step to the prev/next tab, wrapping around
+  // step to the prev/next tab, wrapping around — across windows when set so
   const stepTab = useCallback(
     (delta: number): void => {
+      if (!tabKeysPerWindow) {
+        window.claudeTerm.stepGlobalTab(delta)
+        return
+      }
       setActiveId((current) => {
         if (tabs.length === 0) return current
         const idx = tabs.findIndex((t) => t.tabId === current)
         return tabs[(idx + delta + tabs.length) % tabs.length]?.tabId ?? current
       })
     },
-    [tabs]
+    [tabs, tabKeysPerWindow]
   )
 
   // ⌘⇧A: jump to the next tab blocked on a permission prompt / picker
@@ -600,6 +703,11 @@ export default function App(): React.JSX.Element {
         e.preventDefault()
         stepTab(e.key === ']' ? 1 : -1)
       } else if (e.key >= '1' && e.key <= '9') {
+        if (!tabKeysPerWindow) {
+          e.preventDefault()
+          window.claudeTerm.selectGlobalTab(Number(e.key) - 1)
+          return
+        }
         const tab = tabs[Number(e.key) - 1]
         if (tab) {
           e.preventDefault()
@@ -619,12 +727,22 @@ export default function App(): React.JSX.Element {
     jumpAttention,
     openSearch,
     showPalette,
-    restoreFocus
+    restoreFocus,
+    tabKeysPerWindow
   ])
 
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
   const showClaudeUi = !!activeStatus?.claudeActive
   const activeTitle = tabs.find((t) => t.tabId === activeId)?.title ?? ''
+
+  // main numbers and cycles tabs across windows from what each one reports
+  useEffect(() => {
+    window.claudeTerm.reportTabs(
+      tabs.map((t) => t.tabId),
+      activeId,
+      activeTitle
+    )
+  }, [tabs, activeId, activeTitle])
 
   // The OS window title. It leads with the fixed kind so switchers and window
   // managers can find this window by title, then names the tab it is showing
@@ -681,6 +799,27 @@ export default function App(): React.JSX.Element {
       run: jumpAttention
     },
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
+    {
+      id: 'new-window',
+      label: 'New window',
+      shortcut: '⌘N',
+      run: () => window.claudeTerm.newWindow()
+    },
+    ...(activeId
+      ? [
+          {
+            id: 'move-tab',
+            label: 'Move tab to new window',
+            run: () => void handOffTabs([activeId], { kind: 'new' })
+          }
+        ]
+      : []),
+    {
+      id: 'next-window',
+      label: 'Next terminal window',
+      shortcut: '⌃`',
+      run: () => window.claudeTerm.nextWindow()
+    },
     { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
     { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },
@@ -747,6 +886,7 @@ export default function App(): React.JSX.Element {
         onNewTab={newTab}
         onRename={renameTab}
         onReorder={reorderTabs}
+        onMove={(tabId, target) => void handOffTabs([tabId], target)}
         onOpenActivity={() => setShowActivity(true)}
         updateVersion={updateVersion}
         onInstallUpdate={() => void window.claudeTerm.installUpdate()}
