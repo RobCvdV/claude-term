@@ -33,6 +33,7 @@ import { windowsOf } from './window-order'
 import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
 import { appSettings } from './app-settings'
 import { PtyManager } from './pty-manager'
+import { KeepAwake } from './keep-awake'
 import { ConversationFeed } from './companion/conversation-feed'
 import { Notifier } from './companion/notifier'
 import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
@@ -158,23 +159,14 @@ export function createServices(windows: TerminalWindows): AppServices {
     // deadlocked pairing in the first place.
   })
 
-  // Sleeping mid-turn would strand a phone waiting on this session, so hold the
-  // machine awake — but only while a device is connected AND work is running.
-  let sleepBlockerId: number | null = null
-  const updateSleepBlocker = (): void => {
-    const wanted = companion.authenticatedCount() > 0 && status.busyCount() > 0
-    if (wanted === (sleepBlockerId !== null)) return
-    if (wanted) sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension')
-    else {
-      powerSaveBlocker.stop(sleepBlockerId!)
-      sleepBlockerId = null
-    }
-  }
-  const releaseSleepBlocker = (): void => {
-    if (sleepBlockerId === null) return
-    powerSaveBlocker.stop(sleepBlockerId)
-    sleepBlockerId = null
-  }
+  // Sleeping mid-turn stops the work (and strands a phone waiting on it), so the
+  // Mac stays awake while any session works, and 10 minutes after.
+  const keepAwake = new KeepAwake({
+    start: () => powerSaveBlocker.start('prevent-app-suspension'),
+    stop: (id) => powerSaveBlocker.stop(id)
+  })
+  const updateSleepBlocker = (): void => keepAwake.update(status.busyCount() > 0)
+  const releaseSleepBlocker = (): void => keepAwake.release()
 
   // Only the renderer's xterm knows what is on a tab's screen, so asking is a
   // round trip over the otherwise one-way main→renderer channel.
@@ -295,6 +287,7 @@ export function createServices(windows: TerminalWindows): AppServices {
     }
     windows.sendForTab(tabStatus.tabId, 'status:update', tabStatus)
     hub.publishStatus(tabStatus)
+    updateSleepBlocker()
   }
   status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
   // The tab re-homed onto its session's launch folder — a shell respawned after
