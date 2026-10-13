@@ -117,6 +117,8 @@ export interface ClaudeTermApi {
   screenReply(requestId: string, rows: string[]): void
   /** record where keyboard focus landed, next to the term-bridge mod's events */
   logFocus(tabId: TabId, target: string): void
+  /** an Esc on its way to the session, for ui-bridge.log */
+  logKey(tabId: TabId, key: string, from: 'box' | 'terminal'): void
   companionOffer(): Promise<PairingInfo>
   companionCancelOffer(): Promise<void>
   companionDevices(): Promise<CompanionInfo>
@@ -257,6 +259,7 @@ const api: ClaudeTermApi = {
   screenReply: (requestId: string, rows: string[]) =>
     ipcRenderer.send('screen:reply', requestId, rows),
   logFocus: (tabId, target) => ipcRenderer.send('ui:focusLog', tabId, target),
+  logKey: (tabId, key, from) => ipcRenderer.send('ui:keyLog', tabId, key, from),
   companionOffer: () => ipcRenderer.invoke('companion:offer'),
   companionCancelOffer: () => ipcRenderer.invoke('companion:cancelOffer'),
   companionDevices: () => ipcRenderer.invoke('companion:devices'),
