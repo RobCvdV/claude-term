@@ -127,7 +127,8 @@ function Guide(): React.JSX.Element {
           history are persisted; on the next launch every tab is recreated and its Claude session
           resumed — even sessions that kept running as background agents are re-attached rather than
           restarted. A session revives in its own home folder, so conversations never get dragged
-          into the wrong project.
+          into the wrong project. While any session is working, and for 10 minutes after, the Mac
+          won&apos;t go to sleep (the display still may, and closing the lid still sleeps).
         </p>
       </section>
       <section>
