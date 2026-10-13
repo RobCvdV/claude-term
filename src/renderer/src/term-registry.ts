@@ -55,6 +55,19 @@ export function setTerminalCwdHandler(fn: (tabId: TabId, cwd: string) => void): 
   cwdHandler = fn
 }
 
+/** Our zsh preexec/precmd report: base64 command line, empty when back at the prompt. */
+const SHELL_CMD_OSC = 'ClaudeTermCmd='
+
+export function decodeShellCommand(b64: string): string | null {
+  if (!b64) return null
+  try {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    return new TextDecoder().decode(bytes).trim() || null
+  } catch {
+    return null
+  }
+}
+
 function ensureRouting(): void {
   if (dataUnsub) return
   dataUnsub = window.claudeTerm.onPtyData((tabId, data) => {
@@ -107,6 +120,14 @@ export function createTerm(tabId: TabId, size?: { cols: number; rows: number }):
 
   term.onData((data) => window.claudeTerm.ptyInput(tabId, data))
   term.onResize(({ cols, rows }) => window.claudeTerm.ptyResize(tabId, cols, rows))
+  term.parser.registerOscHandler(1337, (data) => {
+    if (!data.startsWith(SHELL_CMD_OSC)) return false
+    window.claudeTerm.reportShellCommand(
+      tabId,
+      decodeShellCommand(data.slice(SHELL_CMD_OSC.length))
+    )
+    return true
+  })
   term.parser.registerOscHandler(7, (data) => {
     const cwd = cwdFromOsc7(data)
     if (cwd) cwdHandler(tabId, cwd)

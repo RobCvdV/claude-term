@@ -148,6 +148,17 @@ export interface TabStatus {
   /** other workspace repos (added dirs in a different repo), with their own
    *  git + CI state — drives the grouped PR dropdown and extra CI links */
   extraRepos: RepoStatus[]
+  /** a command running in the tab's shell, or background tasks a session left
+   *  running — keeps an idle-looking tab from reading as done */
+  running?: RunningWork[]
+}
+
+/** Work that keeps a tab busy outside a turn (same shape as the companion protocol's). */
+export interface RunningWork {
+  /** `shell` for the tab's own command; otherwise Claude Code's task type */
+  kind: string
+  label: string
+  since: number | null
 }
 
 /** Which tab of the Help overlay to open (Help menu / ⌘/). */

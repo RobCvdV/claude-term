@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActivityState, HandoffTarget, TabId, TabInfo, TabStatus } from '../../../shared/types'
-import { tabSubtitle } from '../tab-title'
+import { runningSummary, tabSubtitle } from '../tab-title'
 import { dropIndex, shiftFor } from '../tab-reorder'
 
 interface Props {
@@ -42,8 +42,10 @@ const TEAR_OFF_DISTANCE = 30
 
 function dotClass(status: TabStatus | null | undefined): string {
   if (status?.activity === 'exited') return 'dot exited'
-  // plain terminal (no claude session) — neutral dot
-  if (!status?.claudeActive) return 'dot terminal'
+  const running = (status?.running?.length ?? 0) > 0
+  // plain terminal (no claude session) — neutral dot, unless a command runs
+  if (!status?.claudeActive) return running ? 'dot running' : 'dot terminal'
+  if (running && status.activity === 'idle') return 'dot running'
   const map: Partial<Record<ActivityState, string>> = {
     busy: 'dot busy',
     'needs-attention': 'dot attention',
@@ -161,7 +163,10 @@ export function TabBar({
       <div className="tab-drag-region" />
       {tabs.map((tab, index) => {
         const isActive = tab.tabId === activeId
-        const subtitle = tabSubtitle(tab.title, statuses[tab.tabId])
+        const st = statuses[tab.tabId]
+        // still-running work wins over the branch: it's why the tab isn't done
+        const running = st?.activity === 'busy' ? '' : runningSummary(st)
+        const subtitle = running || tabSubtitle(tab.title, st)
         const boxShadow = tabShadow(colors[tab.tabId], isActive)
         const isDragged = drag?.from === index
         const shift = !drag
@@ -194,7 +199,10 @@ export function TabBar({
                 else if (choice?.kind === 'move') onMove(tab.tabId, choice.target)
               })
             }}
-            title={statuses[tab.tabId]?.cwd || tab.cwd}
+            title={[
+              statuses[tab.tabId]?.cwd || tab.cwd,
+              ...(statuses[tab.tabId]?.running ?? []).map((w) => `${w.kind}: ${w.label}`)
+            ].join('\n')}
           >
             <span className={dotClass(statuses[tab.tabId])} />
             {editingId === tab.tabId ? (
