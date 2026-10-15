@@ -3,12 +3,16 @@ import type { Engine, Register } from 'claude-code'
 // Transcript rows redraw constantly and say nothing about who owns the keys.
 const RENDERS = new Set(['AbovePrompt', 'PromptHint', 'SessionMode', 'AskUserQuestion'])
 const PROBE_MS = 400
+/** Re-send an unchanged keyboard state this often, so a missed change heals. */
+const HEARTBEAT_MS = 5000
 
 let endpoint: string | null = null
 let requests: { base: string; query: string } | null = null
 let sessionId = ''
 let loopGen = 0
 const lastRender: Record<string, number> = {}
+/** Background tasks whose end has been reported (their rows redraw). */
+const endedTasks = new Set<string>()
 
 async function report($: Engine, kind: string, data: object = {}): Promise<void> {
   if (!endpoint) return
@@ -124,6 +128,7 @@ async function within<T>($: Engine, ms: number, p: Promise<T>): Promise<T | 'tim
 // `no_composer` while no prompt box is drawn: the one generic signal for both.
 async function probeLoop($: Engine, gen: number): Promise<void> {
   let prev = ''
+  let sentAt = 0
   while (gen === loopGen) {
     await $.clock.sleep(PROBE_MS)
     let state: string
@@ -141,10 +146,14 @@ async function probeLoop($: Engine, gen: number): Promise<void> {
     } catch (err) {
       state = `error: ${String(err)}`
     }
-    if (state !== prev) {
+    // a dialog answered between two probes is never seen: the heartbeat still
+    // tells claude-term the prompt box is back
+    const beat = state === prev && Date.now() - sentAt > HEARTBEAT_MS
+    if (state !== prev || beat) {
       prev = state
+      sentAt = Date.now()
       // the TUI's own draft: what a history-search pick landed there
-      await report($, 'keys', text ? { state, text } : { state })
+      await report($, 'keys', { state, ...(text ? { text } : {}), ...(beat ? { beat: true } : {}) })
     }
   }
 }
@@ -206,6 +215,17 @@ export const register: Register = (on) => {
         spinner = { word, mode: p.mode }
         // never hold a frame up for it
         void report($, 'spinner', spinner)
+      }
+    }
+    if (c === 'UserMessage') {
+      const task = (e.props as { task?: { id?: string; status?: string } }).task
+      if (
+        task?.id &&
+        /^(completed|failed|killed)$/.test(task.status ?? '') &&
+        !endedTasks.has(task.id)
+      ) {
+        endedTasks.add(task.id)
+        void report($, 'task.end', { id: task.id, status: task.status })
       }
     }
     const now = Date.now()

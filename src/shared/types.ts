@@ -159,6 +159,8 @@ export interface RunningWork {
   kind: string
   label: string
   since: number | null
+  /** a background task's id, as Claude Code names it */
+  id?: string
 }
 
 /** Which tab of the Help overlay to open (Help menu / ⌘/). */
