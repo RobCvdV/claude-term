@@ -277,6 +277,12 @@ export class PtyManager {
     return !!tab && !tab.exited
   }
 
+  /** The tab's shell process id, while it runs. */
+  pid(tabId: TabId): number | null {
+    const tab = this.tabs.get(tabId)
+    return tab && !tab.exited ? tab.proc.pid : null
+  }
+
   kill(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
     if (tab && !tab.exited) tab.proc.kill()

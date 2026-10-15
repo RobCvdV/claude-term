@@ -3,6 +3,7 @@ import type { HookEvent, RunningWork } from '../shared/types'
 const MAX_LABEL = 200
 
 interface BackgroundTask {
+  id?: string
   type?: string
   status?: string
   description?: string
@@ -18,7 +19,8 @@ export function backgroundWork(evt: HookEvent): RunningWork[] {
     .map((t) => ({
       kind: t.type || 'task',
       label: (t.command || t.description || '').split('\n')[0].slice(0, MAX_LABEL),
-      since: null
+      since: null,
+      ...(t.id ? { id: t.id } : {})
     }))
     .filter((w) => w.label)
 }

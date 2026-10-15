@@ -1,3 +1,4 @@
+import { execFile } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -33,6 +34,7 @@ import { windowsOf } from './window-order'
 import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
 import { appSettings } from './app-settings'
 import { PtyManager } from './pty-manager'
+import { descendantCommands, parsePs, shellTaskAlive } from './background-liveness'
 import { KeepAwake } from './keep-awake'
 import { ConversationFeed } from './companion/conversation-feed'
 import { Notifier } from './companion/notifier'
@@ -249,11 +251,41 @@ export function createServices(windows: TerminalWindows): AppServices {
     }
   })
 
+  // A background shell stopped without a notification (killed from Claude
+  // Code's task list) would keep its tab marked busy. Only a task once seen
+  // running is dropped, so a wrapper we can't recognise never hides real work.
+  const seenAlive = new Set<string>()
+  const checkBackgroundShells = (): void => {
+    const tabs = status.backgroundShells()
+    if (tabs.length === 0) return
+    execFile(
+      'ps',
+      ['-A', '-ww', '-o', 'pid=,ppid=,command='],
+      { maxBuffer: 16 * 1024 * 1024 },
+      (err, out) => {
+        if (err) return
+        const procs = parsePs(out)
+        for (const { tabId, work } of tabs) {
+          const pid = ptys.pid(tabId)
+          if (!pid) continue
+          const commands = descendantCommands(procs, pid)
+          for (const w of work) {
+            const key = `${tabId}:${w.id}`
+            if (shellTaskAlive(w, commands)) seenAlive.add(key)
+            else if (seenAlive.delete(key)) status.markTaskEnded(tabId, w.id as string)
+          }
+        }
+      }
+    )
+  }
+  setInterval(checkBackgroundShells, 10_000).unref()
+
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
   status.onHook = (tabId, evt) => parked.noteHook(tabId, evt)
   status.onModEvent = (tabId, event) => {
     // progress events would bury the keyboard trail this log is for
-    if (!PROGRESS_EVENTS.has(String(event.kind))) logUiBridge(tabId, 'mod', event)
+    // a heartbeat repeats what the log already says
+    if (!PROGRESS_EVENTS.has(String(event.kind)) && !event.beat) logUiBridge(tabId, 'mod', event)
     if (event.kind === 'keys') {
       send('tab:uiKeys', tabId, event.state, event.text ?? null)
       parked.noteKeys(tabId, String(event.state))
@@ -270,6 +302,7 @@ export function createServices(windows: TerminalWindows): AppServices {
         typeof event.detail === 'string' ? event.detail : null
       )
     else if (event.kind === 'tool.end') status.markTool(tabId, null)
+    else if (event.kind === 'task.end') status.markTaskEnded(tabId, String(event.id ?? ''))
   }
   status.onModRequest = (tabId, action, body) =>
     handleModRequest({ parked, dialogOpen: (id) => status.markDialogOpen(id) }, tabId, action, body)

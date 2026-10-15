@@ -42,6 +42,9 @@ interface AttachedFeed {
   live: boolean
 }
 
+/** How long after a dialog opened a "prompt is back" report is still trusted to be stale. */
+const DIALOG_GRACE_MS = 1500
+
 interface TabState {
   status: TabStatus
   cwd: string
@@ -61,6 +64,8 @@ interface TabState {
   shellCommand?: { command: string; since: number } | null
   /** background tasks the session reported at its last Stop */
   background?: RunningWork[]
+  /** when the tab last went to needs-attention */
+  attentionSince?: number
 }
 
 /**
@@ -340,6 +345,24 @@ export class StatusServer {
     void this.refreshGit(tabId)
   }
 
+  /** A background task ended (its notification row, or its process is gone). */
+  markTaskEnded(tabId: TabId, id: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen || !tab.background?.some((w) => w.id === id)) return
+    tab.background = tab.background.filter((w) => w.id !== id)
+    this.refreshRunning(tab)
+  }
+
+  /** Background shells per tab, for the liveness check. */
+  backgroundShells(): Array<{ tabId: TabId; work: RunningWork[] }> {
+    return [...this.tabs]
+      .map(([tabId, tab]) => ({
+        tabId,
+        work: (tab.background ?? []).filter((w) => w.kind === 'shell' && w.id)
+      }))
+      .filter((t) => t.work.length > 0)
+  }
+
   /** The tab's shell started a command, or (null) is back at its prompt. */
   setShellCommand(tabId: TabId, command: string | null): void {
     const tab = this.tabs.get(tabId)
@@ -521,6 +544,7 @@ export class StatusServer {
     const tab = this.tabs.get(tabId)
     if (!tab || this.frozen || tab.status.activity === 'needs-attention') return
     tab.status.activity = 'needs-attention'
+    tab.attentionSince = Date.now()
     tab.status.busySince = null
     this.onAttention(tabId, 'AskUserQuestion')
     this.onUpdate(tab.status)
@@ -534,6 +558,8 @@ export class StatusServer {
   dialogClosed(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
     if (!tab || this.frozen || tab.status.activity !== 'needs-attention') return
+    // a report sampled before the dialog was drawn says nothing about it
+    if (Date.now() - (tab.attentionSince ?? 0) < DIALOG_GRACE_MS) return
     tab.status.activity = tab.turnRunning ? 'busy' : 'idle'
     tab.status.busySince = tab.turnRunning ? Date.now() : null
     this.onUpdate(tab.status)
@@ -682,6 +708,7 @@ export class StatusServer {
       Elicitation: 'needs-attention'
     }
     if (name === 'PermissionRequest' || name === 'Elicitation') {
+      tab.attentionSince = Date.now()
       this.onAttention(tabId, name)
     }
     if (name === 'UserPromptSubmit') this.onTurnStart(tabId, tab.cwd)
