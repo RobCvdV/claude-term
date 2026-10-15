@@ -170,7 +170,14 @@ app.whenReady().then(async () => {
     {
       newWindow: () => windows.createFresh(),
       nextWindow: () => windows.cycle(),
-      moveTabToNewWindow: () => frontWindow()?.webContents.send('tabs:moveActive')
+      moveTabToNewWindow: () => frontWindow()?.webContents.send('tabs:moveActive', { kind: 'new' }),
+      moveTabToMainWindow: () => {
+        const front = frontWindow()
+        const main = windows.mainWindowFor(front)
+        if (front && main) {
+          front.webContents.send('tabs:moveActive', { kind: 'window', windowId: main.id })
+        }
+      }
     }
   )
 

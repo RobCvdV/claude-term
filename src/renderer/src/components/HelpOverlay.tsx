@@ -31,8 +31,13 @@ function HowTo(): React.JSX.Element {
         <Keys k="⌘1 …9">Jump to tab 1–9</Keys>
         <Keys k="⌘[ ⌘]">Previous / next tab</Keys>
         <Keys k="right-click">Tab menu: rename, move to a new or another window, close</Keys>
-        <Keys k="drag">Reorder tabs — drag one off the bar to give it its own window</Keys>
+        <Keys k="drag">
+          Reorder tabs — drag one off the bar to give it its own window, or onto another
+          window&apos;s bar (a marker shows the gap it lands in)
+        </Keys>
         <Keys k="⌘N">New window</Keys>
+        <Keys k="⇧⌘N">Move the tab to a new window</Keys>
+        <Keys k="⇧⌘M">Move the tab back to the main window</Keys>
         <Keys k="⌃`">Next terminal window (skips file windows)</Keys>
         <div className="help-note">
           A pulsing cyan dot and <code>▶ command</code> under the title mean the tab is still
@@ -141,9 +146,10 @@ function Guide(): React.JSX.Element {
       <section>
         <h3>Several windows</h3>
         <p>
-          ⌘N opens another terminal window. A tab moves with its session still running — through its
-          right-click menu, or by dragging it off the tab bar: dropped on another window&apos;s tab
-          bar it joins that window, anywhere else it gets a window of its own. ⌃` steps through the
+          ⌘N opens another terminal window. A tab moves with its session still running — ⇧⌘N to a
+          new window, ⇧⌘M back to the main one (the oldest open window), through its right-click
+          menu, or by dragging it off the tab bar: over another window&apos;s tab bar a marker shows
+          the gap it will drop into, anywhere else it gets a window of its own. ⌃` steps through the
           terminal windows only. Closing a window that still has tabs asks whether to close them or
           move them to the main window; a window whose last tab leaves closes by itself. Every
           window and its tabs come back on the next launch. The Window menu holds two switches:{' '}

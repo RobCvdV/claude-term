@@ -30,3 +30,16 @@ export function shiftFor(i: number, from: number, to: number, width: number): nu
   if (to < from && i >= to && i < from) return width
   return 0
 }
+
+/** The slot a tab dropped at `x` takes: after every tab whose centre is left of it. */
+export function insertIndexAt(centers: number[], x: number): number {
+  return centers.filter((c) => c < x).length
+}
+
+/** Centres of the tab bar's tabs, in window coordinates. */
+export function tabCenters(): number[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('.tab-bar .tab')).map((t) => {
+    const r = t.getBoundingClientRect()
+    return r.left + r.width / 2
+  })
+}
