@@ -1,4 +1,4 @@
-import type { BranchPr, CiInfo, TicketStatus } from '../../shared/types'
+import type { BranchPr, CiInfo, GitInfo, TicketStatus } from '../../shared/types'
 import { ticketStage, type TicketStage } from '../../shared/work-rules'
 
 /** Labels and colour classes for PR review, CI and Jira status — shared by the
@@ -11,14 +11,26 @@ export function prReviewLabel(pr: BranchPr): string {
   return 'awaiting review'
 }
 
-/** `tone-*` class: pending → blue, approved → green, changes → orange. */
+/** `tone-*` class: not reviewed → orange, approved → green, changes → red
+ *  (merged → blue and no PR → grey are the branch's, see branchPrTone). */
 export function prTone(pr: BranchPr): string {
   if (pr.draft) return 'tone-dim'
   return pr.review === 'approved'
     ? 'tone-green'
     : pr.review === 'changes'
-      ? 'tone-orange'
-      : 'tone-blue'
+      ? 'tone-red'
+      : 'tone-orange'
+}
+
+/** The branch's PR dot: its open PR's review, else blue when merged, else grey. */
+export function branchPrTone(git: GitInfo): string {
+  if (git.pr) return prTone(git.pr)
+  return git.mergedPr ? 'tone-blue' : 'tone-dim'
+}
+
+export function branchPrLabel(git: GitInfo): string {
+  if (git.pr) return `#${git.pr.number} ${prReviewLabel(git.pr)}`
+  return git.mergedPr ? `#${git.mergedPr.number} merged` : 'no PR for this branch'
 }
 
 export function ciLabel(ci: CiInfo): string {

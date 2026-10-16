@@ -5,6 +5,7 @@ import type {
   CiInfo,
   CiProvider,
   DocGroup,
+  GitInfo,
   PrGroup,
   ProjectDocs,
   RateForecast,
@@ -20,13 +21,21 @@ import {
   actionsUrl,
   branchUrl,
   circleCiUrl,
+  isTrunkBranch,
   jenkinsJobUrl,
   parseRemote,
   releasesUrl
 } from '../../../shared/repo-links'
 import { jiraLabelsFor, ticketUrl } from '../../../shared/jira-labels'
 import { VolumeControl } from './VolumeControl'
-import { ciLabel, prReviewLabel, prTone, ticketTone } from '../work-status'
+import {
+  branchPrLabel,
+  branchPrTone,
+  ciLabel,
+  prReviewLabel,
+  prTone,
+  ticketTone
+} from '../work-status'
 import { readyToMerge, tooFarBehind } from '../../../shared/work-rules'
 import { useAppSettings } from '../use-app-settings'
 import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
@@ -351,12 +360,15 @@ function PrMenu({
   tabId,
   prUrlByRoot,
   current,
+  branchGit,
   ready
 }: {
   tabId: TabId
   prUrlByRoot: Map<string, string | null>
   /** the tab's own branch PR, for the review dot */
   current: BranchPr | null
+  /** the tab's own branch, for the dot: open PR review, merged, or none */
+  branchGit: GitInfo | null
   /** approved, green and clean — the dot gets a check */
   ready: boolean
 }): React.JSX.Element {
@@ -374,13 +386,15 @@ function PrMenu({
   useDismiss(open, anchor, () => setOpen(false))
 
   const multi = (groups?.length ?? 0) > 1
+  // trunk never has a PR of its own — no dot rather than a grey "no PR"
+  const showDot = !!branchGit?.branch && !isTrunkBranch(branchGit.branch)
   return (
     <span ref={anchor} className="pr-menu">
       <span
         className="ext-link"
         title={
-          current
-            ? `#${current.number} ${prReviewLabel(current)}${ready ? ' — ready to merge' : ''}${current.comments ? ` · ${current.comments} comments` : ''}`
+          showDot && branchGit
+            ? `${branchPrLabel(branchGit)}${ready ? ' — ready to merge' : ''}${current?.comments ? ` · ${current.comments} comments` : ''}`
             : undefined
         }
         onClick={() => (open ? setOpen(false) : show())}
@@ -389,7 +403,9 @@ function PrMenu({
           show()
         }}
       >
-        {current && <span className={`ci-dot ${prTone(current)}`}>{ready ? '✓' : '●'}</span>}
+        {showDot && branchGit && (
+          <span className={`ci-dot ${branchPrTone(branchGit)}`}>{ready ? '✓' : '●'}</span>
+        )}
         PRs
       </span>
       {open && (
@@ -930,6 +946,7 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
           tabId={tabId}
           prUrlByRoot={prUrlByRoot}
           current={git?.pr ?? null}
+          branchGit={git ?? null}
           ready={!!git && readyToMerge(git, status?.ci ?? null, settings.behindThreshold)}
         />
       )}

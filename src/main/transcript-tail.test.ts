@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lastAssistantText } from './transcript-tail'
+import { lastAssistantText, lastUserPrompt } from './transcript-tail'
 
 const rec = (obj: object): string => JSON.stringify(obj)
 const assistant = (content: unknown, extra: object = {}): string =>
@@ -51,5 +51,25 @@ describe('lastAssistantText', () => {
   it('returns null when no assistant text exists', () => {
     const tail = [rec({ type: 'file-history-snapshot' }), rec({ type: 'user' }), ''].join('\n')
     expect(lastAssistantText(tail)).toBeNull()
+  })
+})
+
+describe('lastUserPrompt', () => {
+  it("prefers Claude Code's last-prompt record", () => {
+    const tail = [
+      rec({ type: 'user', message: { content: 'older' } }),
+      rec({ type: 'last-prompt', lastPrompt: 'fix the PR dots' })
+    ].join('\n')
+    expect(lastUserPrompt(tail)).toBe('fix the PR dots')
+  })
+
+  it('falls back to the newest typed user message', () => {
+    const tail = [
+      rec({ type: 'user', message: { content: 'what about CircleCI?' } }),
+      rec({ type: 'user', message: { content: [{ type: 'tool_result' }] } }),
+      rec({ type: 'user', message: { content: '<command-name>/clear</command-name>' } }),
+      rec({ type: 'user', isMeta: true, message: { content: 'meta' } })
+    ].join('\n')
+    expect(lastUserPrompt(tail)).toBe('what about CircleCI?')
   })
 })

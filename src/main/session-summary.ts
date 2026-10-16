@@ -1,7 +1,7 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync } from 'fs'
 import { join } from 'path'
 import { claudeConfigDir } from './claude-dir'
-import { lastAssistantText } from './transcript-tail'
+import { lastAssistantText, lastUserPrompt } from './transcript-tail'
 import { bonsaiOneLiner } from './bonsai-client'
 import { sanitizeOneLiner } from './bonsai-text'
 
@@ -85,4 +85,15 @@ export function sessionDoing(
   const value = raw ? summarize(raw, wanted) : Promise.resolve(null)
   cache.set(path, { mtimeMs: tail.mtimeMs, size: tail.size, value })
   return value
+}
+
+/** The session's last prompt, one line, for Mission control's "asked" row. */
+export function sessionLastAsk(
+  sessionId: string,
+  projectsDir = join(claudeConfigDir(), 'projects')
+): string | null {
+  const path = transcriptPath(sessionId, projectsDir)
+  const tail = path ? readTail(path) : null
+  const ask = tail ? lastUserPrompt(tail.text) : null
+  return ask ? sanitizeOneLiner(ask, 200) : null
 }

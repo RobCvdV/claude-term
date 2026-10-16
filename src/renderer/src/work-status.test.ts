@@ -22,9 +22,9 @@ const ticket = (status: string, category: TicketStatus['category']): TicketStatu
 
 describe('work-status', () => {
   it('colours PR review states', () => {
-    expect(prTone(pr({}))).toBe('tone-blue')
+    expect(prTone(pr({}))).toBe('tone-orange')
     expect(prTone(pr({ review: 'approved', approvals: 1 }))).toBe('tone-green')
-    expect(prTone(pr({ review: 'changes' }))).toBe('tone-orange')
+    expect(prTone(pr({ review: 'changes' }))).toBe('tone-red')
     expect(prReviewLabel(pr({ review: 'approved', approvals: 2 }))).toBe('approved ×2')
     expect(prReviewLabel(pr({ draft: true, review: 'approved' }))).toBe('draft')
   })

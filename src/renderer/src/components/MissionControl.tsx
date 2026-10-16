@@ -9,6 +9,7 @@ import type {
   TabStatus
 } from '../../../shared/types'
 import { nameOf } from '../../../shared/status-folders'
+import { isTrunkBranch } from '../../../shared/repo-links'
 import { ticketUrl } from '../../../shared/jira-labels'
 import { useModalOverlay } from '../modal-overlay'
 import { ciLabel, ciTone, prReviewLabel, prTone, ticketTone } from '../work-status'
@@ -143,9 +144,7 @@ function RepoWork({
     <div className="mission-work">
       <div className="mission-row mission-branch-row">
         {label && <span className="mission-repo">{label}</span>}
-        <span className="mission-branch" title={git.branch}>
-          {git.branch}
-        </span>
+        <span className="mission-branch">{git.branch}</span>
         {ticket && (
           <LinkChip
             url={ticketUrl(ticket.key)}
@@ -156,6 +155,9 @@ function RepoWork({
           </LinkChip>
         )}
       </div>
+      {(ticket?.summary || pr?.title) && (
+        <div className="mission-topic">{ticket?.summary || pr?.title}</div>
+      )}
       <div className="mission-row mission-chips">
         {ready && <span className="mission-chip mission-ready">✓ ready to merge</span>}
         {pr ? (
@@ -164,16 +166,12 @@ function RepoWork({
             {pr.comments ? <span className="dim"> · {pr.comments} 💬</span> : null}
           </LinkChip>
         ) : git.mergedPr ? (
-          <LinkChip url={git.mergedPr.url} className="tone-magenta">
+          <LinkChip url={git.mergedPr.url} className="tone-blue">
             PR #{git.mergedPr.number} merged
           </LinkChip>
         ) : (
-          git.unpushed === 0 &&
-          git.changed === 0 &&
           git.branch &&
-          !['main', 'master', 'develop'].includes(git.branch) && (
-            <span className="mission-chip tone-dim">no PR</span>
-          )
+          !isTrunkBranch(git.branch) && <span className="mission-chip tone-dim">no PR</span>
         )}
         {ci && (
           <LinkChip
@@ -268,9 +266,9 @@ function summary(
   return [
     { n: input, text: 'need input', tone: 'tone-red' },
     { n: failed, text: 'build failed', tone: 'tone-red' },
-    { n: changes, text: 'changes requested', tone: 'tone-orange' },
+    { n: changes, text: 'changes requested', tone: 'tone-red' },
     { n: building, text: 'building', tone: 'tone-orange' },
-    { n: waiting, text: 'awaiting review', tone: 'tone-blue' },
+    { n: waiting, text: 'awaiting review', tone: 'tone-orange' },
     { n: ready, text: 'ready to merge', tone: 'tone-green' },
     { n: approved - ready, text: 'approved', tone: 'tone-green' }
   ]
@@ -309,6 +307,7 @@ export function MissionControl({
   // "doing" snippets: fetched when a card first appears, refreshed when its
   // tab's turn ends (busy → not-busy) — the moment the transcript has news.
   const [doing, setDoing] = useState<Record<TabId, string>>({})
+  const [asked, setAsked] = useState<Record<TabId, string>>({})
   const prevActivity = useRef<Record<TabId, ActivityState>>({})
   useEffect(() => {
     for (const tab of tabs) {
@@ -316,6 +315,12 @@ export function MissionControl({
       const known = tab.tabId in prevActivity.current
       const prev = prevActivity.current[tab.tabId]
       prevActivity.current[tab.tabId] = activity
+      // a new prompt starts a turn, so the "asked" line moves on any change
+      if (!known || prev !== activity) {
+        void window.claudeTerm.missionAsk(tab.tabId).then((text) => {
+          if (text) setAsked((d) => ({ ...d, [tab.tabId]: text }))
+        })
+      }
       if (!known || (prev === 'busy' && activity !== 'busy')) {
         void window.claudeTerm.missionDoing(tab.tabId).then((text) => {
           if (text) setDoing((d) => ({ ...d, [tab.tabId]: text }))
@@ -432,7 +437,18 @@ export function MissionControl({
                       behindThreshold={settings.behindThreshold}
                     />
                   ))}
-                {doing[tab.tabId] && <div className="mission-doing">{doing[tab.tabId]}</div>}
+                {asked[tab.tabId] && (
+                  <div className="mission-asked" title={asked[tab.tabId]}>
+                    <span className="mission-label">asked</span>
+                    {asked[tab.tabId]}
+                  </div>
+                )}
+                {doing[tab.tabId] && (
+                  <div className="mission-doing">
+                    <span className="mission-label">latest</span>
+                    {doing[tab.tabId]}
+                  </div>
+                )}
               </button>
             )
           })}

@@ -107,7 +107,7 @@ import { repoDownloads } from './downloads'
 import { fetchTodos } from './jira-client'
 import { startTicket } from './jira-start'
 import { jiraLabelsFor, ticketUrl, todoSearchUrl } from '../shared/jira-labels'
-import { sessionDoing } from './session-summary'
+import { sessionDoing, sessionLastAsk } from './session-summary'
 import { searchConversation, conversationTurns } from './conversation-search'
 import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
@@ -713,6 +713,10 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   // Mission control: one-line "doing" snippet from the tab session's transcript
   // tail. `wanted` drops a queued Bonsai job once the tab is gone.
+  ipcMain.handle('mission:ask', (_e, tabId: TabId): string | null => {
+    const sessionId = status.snapshot(tabId)?.sessionId
+    return sessionId ? sessionLastAsk(sessionId) : null
+  })
   ipcMain.handle('mission:doing', (_e, tabId: TabId): Promise<string | null> => {
     const sessionId = status.snapshot(tabId)?.sessionId
     if (!sessionId) return Promise.resolve(null)

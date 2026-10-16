@@ -29,7 +29,7 @@ const POLL_MS = 60_000
 /** a running build is re-asked sooner, so its progress moves */
 const RUNNING_POLL_MS = 20_000
 /** hold failures longer, so a missing token / offline CI isn't hammered */
-const ERROR_BACKOFF_MS = 10 * 60_000
+const ERROR_BACKOFF_MS = 2 * 60_000
 const FETCH_TIMEOUT_MS = 10_000
 
 /** What one fetch learns; `url` points at the build itself when known. */

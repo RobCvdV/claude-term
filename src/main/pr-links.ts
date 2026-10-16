@@ -3,15 +3,15 @@ import type { BranchPr } from '../shared/types'
 import type { RepoRef } from '../shared/repo-links'
 import { isTrunkBranch } from '../shared/repo-links'
 import { bitbucketGet } from './bitbucket-api'
+import { forBranch, mergedBitbucketPrs, openBitbucketPrs } from './bitbucket-prs'
 import { bitbucketBranchPr, githubBranchPr } from './pr-data'
 import { loginShellEnv } from './shell-env'
-import { branchTicket } from './ticket-status'
 
 /** How long a resolved answer (PR or "no PR") stays good. */
 const TTL_MS = 120_000
-/** Longer hold after a failed lookup, so a missing token or offline network
- *  doesn't turn into a request every git poll. */
-const TTL_ERROR_MS = 600_000
+/** Hold after a failed lookup (the last answer stays up meanwhile) — short,
+ *  since most failures are a dropped connection, not a missing token. */
+const TTL_ERROR_MS = 90_000
 
 export interface MergedPr {
   number: number
@@ -60,8 +60,7 @@ async function refresh(key: string, cwd: string, repo: RepoRef, branch: string):
   let ok = true
   try {
     pr = repo.host === 'github' ? await githubPr(cwd, branch) : await bitbucketPr(repo, branch)
-    // only ticket branches have a board state a merge should have moved on
-    if (!pr && branchTicket(branch)) {
+    if (!pr) {
       merged =
         repo.host === 'github'
           ? await githubMerged(cwd, branch)
@@ -104,7 +103,12 @@ async function githubPr(cwd: string, branch: string): Promise<BranchPr | null> {
   return githubBranchPr(out)
 }
 
+/** From the repo's shared open listing; only a branch missing from a full
+ *  page costs a query of its own. */
 async function bitbucketPr(repo: RepoRef, branch: string): Promise<BranchPr | null> {
+  const listing = await openBitbucketPrs(repo)
+  const hit = bitbucketBranchPr(forBranch(listing, branch))
+  if (hit || !listing.truncated) return hit
   const params = new URLSearchParams({
     q: `source.branch.name="${branch}"`,
     state: 'OPEN',
@@ -133,19 +137,13 @@ async function githubMerged(cwd: string, branch: string): Promise<MergedPr | nul
   return row?.number != null && row.url ? { number: row.number, url: row.url } : null
 }
 
+/** Only branches merged recently (the listing's one page) are found — an old
+ *  merge is no longer news anyway. */
 async function bitbucketMerged(repo: RepoRef, branch: string): Promise<MergedPr | null> {
-  const params = new URLSearchParams({
-    q: `source.branch.name="${branch}"`,
-    state: 'MERGED',
-    sort: '-updated_on',
-    pagelen: '1',
-    fields: 'values.id,values.links.html.href'
-  })
-  const body = (await bitbucketGet(
-    `/repositories/${repo.owner}/${repo.repo}/pullrequests`,
-    params
-  )) as { values?: { id?: number; links?: { html?: { href?: string } } }[] }
-  const row = body.values?.[0]
-  const url = row?.links?.html?.href
-  return row?.id != null && url ? { number: row.id, url } : null
+  const rows = forBranch(await mergedBitbucketPrs(repo), branch).values as {
+    id?: number
+    links?: { html?: { href?: string } }
+  }[]
+  const url = rows[0]?.links?.html?.href
+  return rows[0]?.id != null && url ? { number: rows[0].id, url } : null
 }
