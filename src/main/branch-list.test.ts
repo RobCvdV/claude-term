@@ -28,6 +28,8 @@ const gitInfo = {
   behind: 0,
   remoteUrl: '',
   prUrl: null,
+  pr: null,
+  ticket: null,
   hasWorkflows: false
 }
 

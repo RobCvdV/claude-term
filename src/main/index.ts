@@ -15,6 +15,8 @@ import { onAppSettings } from './app-settings'
 import type { WindowBounds } from '../shared/types'
 import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
+import { setTicketFetcher } from './ticket-status'
+import { fetchTicketStatus } from './jira-client'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
 // anything reads app.getPath('userData').
@@ -66,6 +68,8 @@ const ciPoller = new CiPoller(
     root === null ? services.status.setCi(tabId, ci) : services.status.setRepoCi(tabId, root, ci),
   () => windows.anyVisible()
 )
+
+setTicketFetcher(fetchTicketStatus)
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
 // unless the env var is set, so normal runs are unaffected. Must be set before

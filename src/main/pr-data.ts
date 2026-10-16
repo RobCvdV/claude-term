@@ -1,4 +1,4 @@
-import type { PrInfo } from '../shared/types'
+import type { BranchPr, PrInfo, PrReview } from '../shared/types'
 
 // Pure mapping from the gh CLI / Bitbucket API shapes to PrInfo — kept free of
 // electron imports so it's unit-testable (pr-list.ts owns the I/O).
@@ -69,4 +69,69 @@ export function accountIdFromCommits(body: unknown, email: string): string | nul
     (c) => c.author?.user?.account_id && c.author.raw?.toLowerCase().includes(needle)
   )
   return hit?.author?.user?.account_id ?? null
+}
+
+interface GhBranchPr {
+  url?: string
+  number?: number
+  title?: string
+  isDraft?: boolean
+  reviewDecision?: string | null
+  latestReviews?: { state?: string }[]
+  comments?: unknown[]
+}
+
+/** `gh pr list --head <branch> --json url,number,title,isDraft,reviewDecision,latestReviews,comments`.
+ *  reviewDecision is empty on repos without required reviews — then the
+ *  latest review per reviewer decides. */
+export function githubBranchPr(json: string): BranchPr | null {
+  const row = (JSON.parse(json) as GhBranchPr[])[0]
+  if (!row?.url || row.number == null) return null
+  const states = (row.latestReviews ?? []).map((r) => r.state)
+  const approvals = states.filter((s) => s === 'APPROVED').length
+  let review: PrReview = 'pending'
+  if (row.reviewDecision === 'APPROVED') review = 'approved'
+  else if (row.reviewDecision === 'CHANGES_REQUESTED') review = 'changes'
+  else if (!row.reviewDecision) {
+    if (states.includes('CHANGES_REQUESTED')) review = 'changes'
+    else if (approvals > 0) review = 'approved'
+  }
+  return {
+    url: row.url,
+    number: row.number,
+    title: row.title ?? '',
+    review,
+    approvals,
+    draft: !!row.isDraft,
+    comments: row.comments?.length ?? null
+  }
+}
+
+interface BbBranchPr {
+  id?: number
+  title?: string
+  draft?: boolean
+  comment_count?: number
+  links?: { html?: { href?: string } }
+  participants?: { approved?: boolean; state?: string | null }[]
+}
+
+/** Bitbucket pullrequests listing filtered on the source branch, with
+ *  participants. Any "changes requested" outweighs approvals. */
+export function bitbucketBranchPr(body: unknown): BranchPr | null {
+  const row = ((body as { values?: BbBranchPr[] }).values ?? [])[0]
+  const url = row?.links?.html?.href
+  if (!row || !url || row.id == null) return null
+  const people = row.participants ?? []
+  const approvals = people.filter((p) => p.approved || p.state === 'approved').length
+  const changes = people.some((p) => p.state === 'changes_requested')
+  return {
+    url,
+    number: row.id,
+    title: row.title ?? '',
+    review: changes ? 'changes' : approvals > 0 ? 'approved' : 'pending',
+    approvals,
+    draft: !!row.draft,
+    comments: row.comment_count ?? null
+  }
 }

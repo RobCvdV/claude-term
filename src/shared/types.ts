@@ -68,8 +68,38 @@ export interface GitInfo {
   remoteUrl: string
   /** open PR for this branch, resolved in the background (null until known) */
   prUrl: string | null
+  /** review state of that PR (same lookup as prUrl) */
+  pr: BranchPr | null
+  /** Jira status of the branch's ticket, when Jira is connected */
+  ticket: TicketStatus | null
   /** repo has .github/workflows — drives the Actions link */
   hasWorkflows: boolean
+}
+
+/** blue = no verdict yet, green = approved, orange = changes requested */
+export type PrReview = 'pending' | 'approved' | 'changes'
+
+export interface BranchPr {
+  url: string
+  number: number
+  title: string
+  review: PrReview
+  approvals: number
+  draft: boolean
+  /** comments on the PR; null when the host doesn't tell */
+  comments: number | null
+}
+
+/** Jira's own three buckets: new / in progress / done. */
+export type TicketCategory = 'todo' | 'progress' | 'done'
+
+export interface TicketStatus {
+  key: string
+  /** the board's status name, e.g. "Peer review" */
+  status: string
+  category: TicketCategory
+  summary: string
+  assignee: string | null
 }
 
 export type CiState = 'success' | 'failed' | 'running' | 'unknown'
@@ -81,6 +111,10 @@ export interface CiInfo {
   state: CiState
   /** the build/run this state came from (falls back to the branch overview) */
   url: string
+  /** 0–99 while running, when the provider gives enough to estimate it */
+  progress?: number
+  /** short extra, e.g. "#412" or "3/7 jobs" */
+  detail?: string
 }
 
 /** Projected time one rate-limit window hits 100% at the current pace. */

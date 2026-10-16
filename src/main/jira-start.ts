@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 import type { StartTicketResult } from '../shared/types'
 import { claimTicket, fetchTicket } from './jira-client'
+import { forgetTicket } from './ticket-status'
 import { branchNameFor, findTicketBranch, startPrompt } from './jira-todo-data'
 
 function git(cwd: string, args: string[], timeout = 10_000): Promise<string> {
@@ -59,6 +60,7 @@ export async function startTicket(
       created = true
     }
     const warnings = await claimTicket(ticket)
+    forgetTicket(ticket.key)
     const prompt = startPrompt({
       key: ticket.key,
       summary: ticket.summary,

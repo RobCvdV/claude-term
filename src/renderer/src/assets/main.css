@@ -19,6 +19,9 @@
   --orange: #d19a66;
   --cyan: #56b6c2;
   --magenta: #c678dd;
+  --blue: #61afef;
+  /* the current item in a dropdown */
+  --current-bg: color-mix(in srgb, var(--yellow) 13%, transparent);
 }
 
 html,
@@ -1980,6 +1983,16 @@ body {
   font-weight: 600;
 }
 
+.pr-dropdown .pr-current,
+.pr-dropdown .pr-current:hover {
+  background: var(--current-bg);
+}
+
+.pr-review {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+}
+
 /* "mine": your own PR, or a branch whose newest commit is yours */
 .pr-mine {
   margin-left: auto;
@@ -2203,6 +2216,92 @@ body {
   flex-wrap: wrap;
 }
 
+.mission-card.mission-alert {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.mission-summary {
+  display: flex;
+  gap: 12px;
+  margin-left: 16px;
+  font-size: 12px;
+}
+
+.mission-work {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.mission-branch-row {
+  font-size: 11.5px;
+}
+
+.mission-repo {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.mission-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.mission-chips {
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.mission-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  white-space: nowrap;
+}
+
+.mission-chip[role='link'] {
+  cursor: pointer;
+}
+
+.mission-chip[role='link']:hover {
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.mission-pill {
+  flex-shrink: 0;
+  font-size: 10.5px;
+}
+
+.mission-git {
+  color: var(--fg-dim);
+  gap: 6px;
+}
+
+/* build progress inside the CI chip */
+.mission-bar {
+  display: inline-block;
+  width: 40px;
+  height: 4px;
+  margin-left: 5px;
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 25%, transparent);
+  overflow: hidden;
+}
+
+.mission-bar > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+
 .mission-doing {
   color: var(--fg);
   font-size: 11.5px;
@@ -2234,6 +2333,48 @@ body {
 }
 
 .ci-unknown {
+  color: var(--fg-dim);
+}
+
+/* progress of a running build, behind its link */
+.ci-pct {
+  margin-left: 3px;
+  color: var(--orange);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Jira status of the branch's ticket: a dot behind the branch chip, and a
+   label in the Jira dropdown */
+.ticket-status {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.ticket-dot {
+  margin-left: -2px;
+  cursor: default;
+}
+
+/* status colours shared by the status bar and Mission Control */
+.tone-green {
+  color: var(--green);
+}
+.tone-blue {
+  color: var(--blue);
+}
+.tone-orange {
+  color: var(--orange);
+}
+.tone-red {
+  color: var(--red);
+}
+.tone-magenta {
+  color: var(--magenta);
+}
+.tone-cyan {
+  color: var(--cyan);
+}
+.tone-dim {
   color: var(--fg-dim);
 }
 

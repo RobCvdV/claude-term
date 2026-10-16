@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type {
   BranchGroup,
+  BranchPr,
   CiInfo,
   CiProvider,
   DocGroup,
@@ -12,6 +13,7 @@ import type {
   RepoStatus,
   TabId,
   TabStatus,
+  TicketStatus,
   WindowForecast
 } from '../../../shared/types'
 import {
@@ -24,6 +26,7 @@ import {
 } from '../../../shared/repo-links'
 import { jiraLabelsFor, ticketUrl } from '../../../shared/jira-labels'
 import { VolumeControl } from './VolumeControl'
+import { ciLabel, prReviewLabel, prTone, ticketTone } from '../work-status'
 import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
 
 interface Props {
@@ -344,10 +347,13 @@ function BranchMenu({
  *  overflow. */
 function PrMenu({
   tabId,
-  prUrlByRoot
+  prUrlByRoot,
+  current
 }: {
   tabId: TabId
   prUrlByRoot: Map<string, string | null>
+  /** the tab's own branch PR, for the review dot */
+  current: BranchPr | null
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [groups, setGroups] = useState<PrGroup[] | null>(null)
@@ -367,12 +373,18 @@ function PrMenu({
     <span ref={anchor} className="pr-menu">
       <span
         className="ext-link"
+        title={
+          current
+            ? `#${current.number} ${prReviewLabel(current)}${current.comments ? ` · ${current.comments} comments` : ''}`
+            : undefined
+        }
         onClick={() => (open ? setOpen(false) : show())}
         onContextMenu={(e) => {
           e.preventDefault()
           show()
         }}
       >
+        {current && <span className={`ci-dot ${prTone(current)}`}>●</span>}
         PRs
       </span>
       {open && (
@@ -407,6 +419,11 @@ function PrMenu({
                   >
                     <span className="pr-number">#{pr.number}</span>
                     <span className="pr-title">{pr.title}</span>
+                    {current?.url === pr.url && (
+                      <span className={`pr-review ${prTone(current)}`}>
+                        {prReviewLabel(current)}
+                      </span>
+                    )}
                     {pr.mine && <Mine />}
                   </button>
                 ))}
@@ -426,11 +443,13 @@ function PrMenu({
  *  (or create) its branch, claim it in Jira, and hand the session the ticket. */
 function JiraMenu({
   tabId,
-  ticket
+  ticket,
+  ticketState
 }: {
   tabId: TabId
   /** ticket of the checked-out branch */
   ticket: string | null
+  ticketState: TicketStatus | null
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [groups, setGroups] = useState<JiraTodoGroup[] | null>(null)
@@ -501,7 +520,12 @@ function JiraMenu({
               }}
             >
               <span className="ticket">{ticket}</span>
-              <span className="pr-title dim">current branch</span>
+              <span className="pr-title">{ticketState?.summary || 'current branch'}</span>
+              {ticketState && (
+                <span className={`ticket-status ${ticketTone(ticketState)}`}>
+                  {ticketState.status}
+                </span>
+              )}
             </button>
           )}
           {groups === null ? (
@@ -519,7 +543,9 @@ function JiraMenu({
                 {g.todos.map((t) => (
                   <button
                     key={t.key}
-                    className={busy === t.key ? 'branch-busy' : undefined}
+                    className={
+                      busy === t.key ? 'branch-busy' : t.key === ticket ? 'pr-current' : undefined
+                    }
                     title={`${t.summary}\n${[t.type, t.priority].filter(Boolean).join(' · ')} — right-click to start a branch`}
                     onClick={() => {
                       window.open(ticketUrl(t.key))
@@ -568,6 +594,17 @@ function extraCiLink(r: RepoStatus): { url: string; provider: CiProvider; label:
 function CiDot({ ci, provider }: { ci: CiInfo | null; provider: CiProvider }): React.ReactNode {
   if (!ci || ci.provider !== provider) return null
   return <span className={`ci-dot ci-${ci.state}`}>●</span>
+}
+
+/** "45%" behind a CI link while its build runs. */
+function CiPct({ ci, provider }: { ci: CiInfo | null; provider: CiProvider }): React.ReactNode {
+  if (ci?.provider !== provider || ci.state !== 'running' || ci.progress == null) return null
+  return <span className="ci-pct">{ci.progress}%</span>
+}
+
+function ciTitle(ci: CiInfo | null, provider: CiProvider, noun: string): string | undefined {
+  if (ci?.provider !== provider) return undefined
+  return `${noun} ${ci.detail ? `${ci.detail} ` : ''}${ciLabel(ci)}`
 }
 
 /** "~14:32" within a day, "~Wed 14:32" beyond. */
@@ -762,6 +799,14 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
         ) : (
           branchEl
         ))}
+      {git?.ticket && (
+        <span
+          className={`ci-dot ticket-dot ${ticketTone(git.ticket)}`}
+          title={`${git.ticket.key} — ${git.ticket.status}\n${git.ticket.summary}${git.ticket.assignee ? `\n${git.ticket.assignee}` : ''}`}
+        >
+          ●
+        </span>
+      )}
       {git && (
         <span className="git-stats">
           {/* the changed count is the way into the diff — it is what you are
@@ -839,7 +884,7 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
         settings
       </button>
       {hasTodos && tabId ? (
-        <JiraMenu tabId={tabId} ticket={ticket} />
+        <JiraMenu tabId={tabId} ticket={ticket} ticketState={git?.ticket ?? null} />
       ) : (
         ticket && (
           <ExternalLink url={ticketUrl(ticket)} className="ext-link">
@@ -848,36 +893,31 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
         )
       )}
       {jenkins && (
-        <ExternalLink
-          url={jenkins}
-          className="ext-link"
-          title={ci?.provider === 'jenkins' ? `build: ${ci.state}` : undefined}
-        >
+        <ExternalLink url={jenkins} className="ext-link" title={ciTitle(ci, 'jenkins', 'build')}>
           <CiDot ci={ci} provider="jenkins" />
           Jenkins
+          <CiPct ci={ci} provider="jenkins" />
         </ExternalLink>
       )}
       {circleci && (
         <ExternalLink
           url={circleci}
           className="ext-link"
-          title={ci?.provider === 'circleci' ? `pipeline: ${ci.state}` : undefined}
+          title={ciTitle(ci, 'circleci', 'pipeline')}
         >
           <CiDot ci={ci} provider="circleci" />
           CircleCI
+          <CiPct ci={ci} provider="circleci" />
         </ExternalLink>
       )}
       {(repo || extraRepos.length > 0) && tabId && (
-        <PrMenu tabId={tabId} prUrlByRoot={prUrlByRoot} />
+        <PrMenu tabId={tabId} prUrlByRoot={prUrlByRoot} current={git?.pr ?? null} />
       )}
       {actions && (
-        <ExternalLink
-          url={actions}
-          className="ext-link"
-          title={ci?.provider === 'actions' ? `run: ${ci.state}` : undefined}
-        >
+        <ExternalLink url={actions} className="ext-link" title={ciTitle(ci, 'actions', 'run')}>
           <CiDot ci={ci} provider="actions" />
           Actions
+          <CiPct ci={ci} provider="actions" />
         </ExternalLink>
       )}
       {extraRepos.map((r) => {
@@ -891,10 +931,11 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
             <ExternalLink
               url={link.url}
               className="ext-link"
-              title={r.ci ? `build: ${r.ci.state}` : undefined}
+              title={ciTitle(r.ci, link.provider, 'build')}
             >
               <CiDot ci={r.ci} provider={link.provider} />
               {link.label}
+              <CiPct ci={r.ci} provider={link.provider} />
             </ExternalLink>
           </span>
         )

@@ -6,10 +6,12 @@ import type {
   BookedWorklog,
   JiraStatus,
   JiraTodo,
+  TicketStatus,
   WorklogPlanEntry
 } from '../shared/types'
 import { todoJql } from '../shared/jira-labels'
-import { adfToText, mapTodos } from './jira-todo-data'
+import { adfToText, mapTicketStatus, mapTodos } from './jira-todo-data'
+import { forgetTicket } from './ticket-status'
 import { basicAuth, buildWorklogBody, sinceDateFor, toBookedWorklogs } from './jira-helpers'
 import type { JiraWorklogRaw } from './jira-helpers'
 import { appendLoggedWorklogs } from './worklog-store'
@@ -142,6 +144,7 @@ export async function jiraConnect(
     }
     if (!attempt.me.accountId) return { ok: false, error: 'Jira did not return an account id' }
     writeCreds(email.trim(), token.trim(), attempt.me.accountId, base)
+    forgetTicket()
     bookedCache = null
     return { ok: true }
   } catch (e) {
@@ -156,6 +159,7 @@ export function jiraDisconnect(): void {
     /* already gone */
   }
   bookedCache = null
+  forgetTicket()
 }
 
 let bookedCache: { since: string; at: number; data: BookedWorklog[] } | null = null
@@ -307,6 +311,19 @@ export async function fetchTodos(labels: string[]): Promise<{ todos: JiraTodo[];
   } catch (e) {
     return { todos: hit?.todos ?? [], error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** Status of one ticket for the status bar; null when Jira doesn't know it. */
+export async function fetchTicketStatus(key: string): Promise<TicketStatus | null> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const res = await jiraFetch(
+    creds,
+    `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,status,assignee`
+  )
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(await errorText(res))
+  return mapTicketStatus(await res.json(), key)
 }
 
 export interface TicketDetails {

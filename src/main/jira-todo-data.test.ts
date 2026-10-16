@@ -3,6 +3,7 @@ import {
   adfToText,
   branchNameFor,
   findTicketBranch,
+  mapTicketStatus,
   mapTodos,
   MAX_DESCRIPTION_CHARS,
   startPrompt
@@ -134,5 +135,28 @@ describe('startPrompt', () => {
       description: 'x'.repeat(MAX_DESCRIPTION_CHARS + 50)
     })
     expect(p).toContain('[…cut off]')
+  })
+})
+
+describe('mapTicketStatus', () => {
+  it('maps status name and category', () => {
+    const issue = (cat: string): unknown => ({
+      key: 'MTX-1',
+      fields: {
+        summary: 'S',
+        status: { name: 'Peer review', statusCategory: { key: cat } },
+        assignee: { displayName: 'Rob' }
+      }
+    })
+    expect(mapTicketStatus(issue('indeterminate'), 'MTX-1')).toEqual({
+      key: 'MTX-1',
+      status: 'Peer review',
+      category: 'progress',
+      summary: 'S',
+      assignee: 'Rob'
+    })
+    expect(mapTicketStatus(issue('done'), 'MTX-1')?.category).toBe('done')
+    expect(mapTicketStatus(issue('new'), 'MTX-1')?.category).toBe('todo')
+    expect(mapTicketStatus({}, 'MTX-1')).toBeNull()
   })
 })

@@ -17,7 +17,8 @@ import type {
 } from '../shared/types'
 import { parseRemote } from '../shared/repo-links'
 import { statusFolders } from '../shared/status-folders'
-import { pullRequestUrl } from './pr-links'
+import { branchPullRequest } from './pr-links'
+import { ticketStatus } from './ticket-status'
 import { sessionNameForBranch } from './session-name'
 import { backgroundWork, runningOf } from './running-work'
 import { attachedActivity } from './attached-activity'
@@ -874,13 +875,16 @@ async function gitInfo(cwd: string): Promise<GitInfo | null> {
     }
   }
   const repo = parseRemote(remoteUrl ?? '')
+  const pr = repo ? branchPullRequest(cwd, repo, branch) : null
   return {
     branch,
     changed,
     unpushed,
     behind,
     remoteUrl: remoteUrl ?? '',
-    prUrl: repo ? pullRequestUrl(cwd, repo, branch) : null,
+    prUrl: pr?.url ?? null,
+    pr,
+    ticket: ticketStatus(branch),
     hasWorkflows: topLevel ? existsSync(join(topLevel, '.github', 'workflows')) : false
   }
 }
