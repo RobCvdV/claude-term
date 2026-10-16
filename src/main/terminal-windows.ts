@@ -246,7 +246,12 @@ export class TerminalWindows {
     const targetWin = this.resolveTarget(target, from)
     const entry = this.entries.get(targetWin.id)
     if (!entry) return
-    if (entry.booted) this.sendAdopt(entry, handoffs)
+    // dropped on a tab bar: where along it, in that window's own coordinates
+    const atX =
+      target.kind === 'drop' && targetWin !== from && entry.booted
+        ? target.x - targetWin.getContentBounds().x
+        : undefined
+    if (entry.booted) this.sendAdopt(entry, handoffs, atX)
     else entry.pendingAdopt.push(...handoffs)
     targetWin.show()
     targetWin.focus()
@@ -262,21 +267,27 @@ export class TerminalWindows {
 
   private hoverId: number | null = null
 
-  /** light up the tab bar a dragged tab would join */
+  /** tell the tab bar a dragged tab would join where it is (x in that window), or null */
   dragHover(sender: WebContents | null, x?: number, y?: number): void {
     const next =
       sender && x !== undefined && y !== undefined
         ? this.dropTarget(this.fromSender(sender), x, y)
         : null
-    if (next === this.hoverId) return
-    for (const [id, on] of [
-      [this.hoverId, false],
-      [next, true]
-    ] as const) {
+    const send = (id: number | null, clientX: number | null): void => {
       const win = id !== null ? this.entries.get(id)?.win : undefined
-      if (win && !win.isDestroyed()) win.webContents.send('tabs:dropHover', on)
+      if (win && !win.isDestroyed()) win.webContents.send('tabs:dropHover', clientX)
+    }
+    if (next !== this.hoverId) send(this.hoverId, null)
+    if (next !== null && x !== undefined) {
+      send(next, x - this.entries.get(next)!.win.getContentBounds().x)
     }
     this.hoverId = next
+  }
+
+  /** the main (oldest) window, unless that's where `sender` already is */
+  mainWindowFor(sender: BrowserWindow | null): BrowserWindow | null {
+    const main = this.primary()
+    return main && main !== sender ? main : null
   }
 
   private resolveTarget(target: HandoffTarget, from: BrowserWindow | null): BrowserWindow {
@@ -304,8 +315,8 @@ export class TerminalWindows {
     return this.create({ mode: 'adopt' }, b ? { ...b, x: b.x + 30, y: b.y + 30 } : undefined)
   }
 
-  private sendAdopt(entry: Entry, handoffs: TabHandoff[]): void {
-    if (!entry.win.isDestroyed()) entry.win.webContents.send('tabs:adopt', handoffs)
+  private sendAdopt(entry: Entry, handoffs: TabHandoff[], atX?: number): void {
+    if (!entry.win.isDestroyed()) entry.win.webContents.send('tabs:adopt', handoffs, atX)
   }
 
   /** the target rebuilt these tabs: they are its own now, held traffic follows */

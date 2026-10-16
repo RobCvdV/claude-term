@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActivityState, HandoffTarget, TabId, TabInfo, TabStatus } from '../../../shared/types'
 import { runningSummary, tabSubtitle } from '../tab-title'
-import { dropIndex, shiftFor } from '../tab-reorder'
+import { dropIndex, insertIndexAt, shiftFor } from '../tab-reorder'
 
 interface Props {
   tabs: TabInfo[]
@@ -84,9 +84,27 @@ export function TabBar({
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
-  // a tab dragged from another window is over this bar
-  const [dropHover, setDropHover] = useState(false)
-  useEffect(() => window.claudeTerm.onDropHover(setDropHover), [])
+  // a tab dragged from another window is over this bar: where it would land
+  const barRef = useRef<HTMLDivElement>(null)
+  const [dropMarker, setDropMarker] = useState<number | null>(null)
+  useEffect(
+    () =>
+      window.claudeTerm.onDropHover((x) => {
+        const bar = barRef.current
+        if (x === null || !bar) return setDropMarker(null)
+        const rects = Array.from(bar.querySelectorAll<HTMLElement>('.tab')).map((t) =>
+          t.getBoundingClientRect()
+        )
+        const i = insertIndexAt(
+          rects.map((r) => r.left + r.width / 2),
+          x
+        )
+        const barLeft = bar.getBoundingClientRect().left
+        const edge = i < rects.length ? rects[i].left : (rects[rects.length - 1]?.right ?? x)
+        setDropMarker(edge - barLeft)
+      }),
+    []
+  )
   // mirrors `drag` so the mouseup listener can read it without re-subscribing
   const dragRef = useRef<Drag | null>(null)
 
@@ -159,7 +177,11 @@ export function TabBar({
   }
 
   return (
-    <div className={`tab-bar ${drag ? 'reordering' : ''} ${dropHover ? 'drop-hover' : ''}`}>
+    <div
+      ref={barRef}
+      className={`tab-bar ${drag ? 'reordering' : ''} ${dropMarker !== null ? 'drop-hover' : ''}`}
+    >
+      {dropMarker !== null && <div className="tab-drop-marker" style={{ left: dropMarker - 1 }} />}
       <div className="tab-drag-region" />
       {tabs.map((tab, index) => {
         const isActive = tab.tabId === activeId

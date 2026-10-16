@@ -24,7 +24,7 @@ import { MissionControl } from './components/MissionControl'
 import { SettingsPanel } from './components/SettingsPanel'
 import { autoTabTitle, composeWindowTitle } from './tab-title'
 import { WINDOW_KIND, windowTitle } from '../../shared/window-titles'
-import { moveItem } from './tab-reorder'
+import { insertIndexAt, moveItem, tabCenters } from './tab-reorder'
 import { needsInput, nextAttentionTab } from './attention'
 import { closeTabConfirmMessage } from './close-guard'
 import { persistedSessionOf, type RestoredSession } from './session-persist'
@@ -553,7 +553,7 @@ export default function App(): React.JSX.Element {
   )
 
   // Tabs arriving from another window: same PTY, same session, rebuilt here.
-  const adoptTabs = useCallback((handoffs: TabHandoff[]): void => {
+  const adoptTabs = useCallback((handoffs: TabHandoff[], atX?: number): void => {
     const colorInit: Record<TabId, string> = {}
     const statusInit: Record<TabId, TabStatus | null> = {}
     for (const { tab, saved, status, screen, cols, rows } of handoffs) {
@@ -568,10 +568,13 @@ export default function App(): React.JSX.Element {
       restoreDraft(tab.tabId, saved.promptDraft)
       statusInit[tab.tabId] = status
     }
-    setTabs((prev) => [
-      ...prev,
-      ...handoffs.map(({ tab, saved }) => ({ ...tab, title: saved.title || tab.title }))
-    ])
+    const arriving = handoffs.map(({ tab, saved }) => ({ ...tab, title: saved.title || tab.title }))
+    // dropped on the bar: in the gap it was dropped in, else at the end
+    const at = atX === undefined ? null : insertIndexAt(tabCenters(), atX)
+    setTabs((prev) => {
+      const i = at === null ? prev.length : Math.min(at, prev.length)
+      return [...prev.slice(0, i), ...arriving, ...prev.slice(i)]
+    })
     setColors((prev) => ({ ...prev, ...colorInit }))
     setStatuses((prev) => ({ ...prev, ...statusInit }))
     const last = handoffs[handoffs.length - 1]
@@ -590,9 +593,9 @@ export default function App(): React.JSX.Element {
   )
   useEffect(
     () =>
-      window.claudeTerm.onMoveActiveTab(() => {
+      window.claudeTerm.onMoveActiveTab((target) => {
         const id = activeIdRef.current
-        if (id) void handOffTabs([id], { kind: 'new' })
+        if (id) void handOffTabs([id], target)
       }),
     [handOffTabs]
   )
@@ -822,7 +825,14 @@ export default function App(): React.JSX.Element {
           {
             id: 'move-tab',
             label: 'Move tab to new window',
+            shortcut: '⇧⌘N',
             run: () => void handOffTabs([activeId], { kind: 'new' })
+          },
+          {
+            id: 'move-tab-main',
+            label: 'Move tab to main window',
+            shortcut: '⇧⌘M',
+            run: () => window.claudeTerm.moveTabToMainWindow()
           }
         ]
       : []),

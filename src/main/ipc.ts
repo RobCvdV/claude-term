@@ -900,6 +900,10 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     }
   )
   ipcMain.on('window:new', () => windows.createFresh())
+  ipcMain.on('tabs:moveToMain', (e) => {
+    const main = windows.mainWindowFor(BrowserWindow.fromWebContents(e.sender))
+    if (main) e.sender.send('tabs:moveActive', { kind: 'window', windowId: main.id })
+  })
   ipcMain.on('window:next', () => windows.cycle())
 
   // Right-click on a tab. Rename and Close stay with the renderer; a move

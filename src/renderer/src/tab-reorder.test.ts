@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dropIndex, moveItem, shiftFor } from './tab-reorder'
+import { dropIndex, insertIndexAt, moveItem, shiftFor } from './tab-reorder'
 
 describe('moveItem', () => {
   it('moves an item to the right', () => {
@@ -62,5 +62,16 @@ describe('shiftFor', () => {
 
   it('leaves everything alone when the drag has not crossed a slot', () => {
     expect([0, 1, 2].map((i) => shiftFor(i, 1, 1, 100))).toEqual([0, 0, 0])
+  })
+})
+
+describe('insertIndexAt', () => {
+  it('drops into the gap nearest the pointer', () => {
+    const centers = [100, 200, 300]
+    expect(insertIndexAt(centers, 50)).toBe(0)
+    expect(insertIndexAt(centers, 150)).toBe(1)
+    expect(insertIndexAt(centers, 299)).toBe(2)
+    expect(insertIndexAt(centers, 999)).toBe(3)
+    expect(insertIndexAt([], 10)).toBe(0)
   })
 })

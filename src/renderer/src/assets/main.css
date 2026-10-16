@@ -106,7 +106,20 @@ body {
 
 /* a tab dragged from another window would land here */
 .tab-bar.drop-hover {
+  position: relative;
   box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* the gap it would drop into */
+.tab-drop-marker {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* pulled off the bar: letting go puts it in a window of its own */
