@@ -19,6 +19,9 @@
   --orange: #d19a66;
   --cyan: #56b6c2;
   --magenta: #c678dd;
+  --blue: #61afef;
+  /* the current item in a dropdown */
+  --current-bg: color-mix(in srgb, var(--yellow) 13%, transparent);
 }
 
 html,
@@ -1993,6 +1996,16 @@ body {
   font-weight: 600;
 }
 
+.pr-dropdown .pr-current,
+.pr-dropdown .pr-current:hover {
+  background: var(--current-bg);
+}
+
+.pr-review {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+}
+
 /* "mine": your own PR, or a branch whose newest commit is yours */
 .pr-mine {
   margin-left: auto;
@@ -2216,6 +2229,159 @@ body {
   flex-wrap: wrap;
 }
 
+.mission-card.mission-alert {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.mission-summary {
+  display: flex;
+  gap: 12px;
+  margin-left: 16px;
+  font-size: 12px;
+}
+
+.mission-work {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.mission-branch-row {
+  font-size: 11.5px;
+}
+
+.mission-repo {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.mission-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.mission-chips {
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.mission-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  white-space: nowrap;
+}
+
+.mission-chip[role='link'] {
+  cursor: pointer;
+}
+
+.mission-chip[role='link']:hover {
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.mission-pill {
+  flex-shrink: 0;
+  font-size: 10.5px;
+}
+
+.mission-git {
+  color: var(--fg-dim);
+  gap: 6px;
+}
+
+.mission-reviews {
+  padding: 10px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mission-reviews-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+
+.mission-review {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-review:hover {
+  background: var(--bg-input);
+}
+
+.mission-review-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-ready {
+  color: var(--green);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+}
+
+.mission-action {
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mission-action:hover {
+  border-color: var(--fg-dim);
+}
+
+.mission-drift {
+  font-size: 11px;
+  color: var(--yellow);
+  gap: 8px;
+}
+
+/* build progress inside the CI chip */
+.mission-bar {
+  display: inline-block;
+  width: 40px;
+  height: 4px;
+  margin-left: 5px;
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 25%, transparent);
+  overflow: hidden;
+}
+
+.mission-bar > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+
 .mission-doing {
   color: var(--fg);
   font-size: 11.5px;
@@ -2224,6 +2390,103 @@ body {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ---- settings panel (⌘,) ---- */
+.settings-panel {
+  width: min(720px, 92vw);
+}
+
+.settings-body {
+  overflow-y: auto;
+  padding: 6px 18px 18px;
+}
+
+.settings-body section {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-body section:last-child {
+  border-bottom: none;
+}
+
+.settings-body h3 {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+label.settings-row {
+  cursor: pointer;
+}
+
+.settings-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.settings-off {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.settings-sub {
+  margin: 4px 0 6px 22px;
+}
+
+.settings-hint {
+  margin-left: auto;
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.settings-note {
+  display: block;
+  margin-top: 6px;
+  text-align: left;
+}
+
+.settings-number {
+  width: 56px;
+  background: var(--bg-input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: inherit;
+}
+
+.settings-button {
+  margin-top: 6px;
+  background: var(--bg-input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-button:hover:not(:disabled) {
+  border-color: var(--fg-dim);
+}
+
+.settings-button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* ---- live CI state dot on status-bar links ---- */
@@ -2246,7 +2509,53 @@ body {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.ci-held {
+  color: var(--orange);
+}
+
 .ci-unknown {
+  color: var(--fg-dim);
+}
+
+/* progress of a running build, behind its link */
+.ci-pct {
+  margin-left: 3px;
+  color: var(--orange);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Jira status of the branch's ticket: a dot behind the branch chip, and a
+   label in the Jira dropdown */
+.ticket-status {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.ticket-dot {
+  margin-left: -2px;
+  cursor: default;
+}
+
+/* status colours shared by the status bar and Mission Control */
+.tone-green {
+  color: var(--green);
+}
+.tone-blue {
+  color: var(--blue);
+}
+.tone-orange {
+  color: var(--orange);
+}
+.tone-red {
+  color: var(--red);
+}
+.tone-magenta {
+  color: var(--magenta);
+}
+.tone-cyan {
+  color: var(--cyan);
+}
+.tone-dim {
   color: var(--fg-dim);
 }
 

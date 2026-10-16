@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { accountIdFromCommits, mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
+import {
+  accountIdFromCommits,
+  bitbucketBranchPr,
+  githubBranchPr,
+  mapBitbucketReviews,
+  mapGithubReviews,
+  mapBitbucketPrs,
+  mapGithubPrs,
+  MAX_PRS
+} from './pr-data'
 
 const ghRow = (
   n: number,
@@ -115,5 +124,110 @@ describe('accountIdFromCommits', () => {
     const body = { values: [commit('X <xr.coenen@mendrix.nl>', 'x-id')] }
     expect(accountIdFromCommits(body, 'r.coenen@mendrix.nl')).toBeNull()
     expect(accountIdFromCommits({}, 'r.coenen@mendrix.nl')).toBeNull()
+  })
+})
+
+describe('githubBranchPr', () => {
+  const row = (extra: object): string =>
+    JSON.stringify([{ url: 'https://x/pull/7', number: 7, title: 'T', isDraft: false, ...extra }])
+
+  it('uses reviewDecision when the repo requires reviews', () => {
+    expect(
+      githubBranchPr(row({ reviewDecision: 'APPROVED', latestReviews: [{ state: 'APPROVED' }] }))
+    ).toMatchObject({ review: 'approved', approvals: 1 })
+    expect(githubBranchPr(row({ reviewDecision: 'CHANGES_REQUESTED' }))?.review).toBe('changes')
+    expect(githubBranchPr(row({ reviewDecision: 'REVIEW_REQUIRED' }))?.review).toBe('pending')
+  })
+
+  it('falls back on the latest reviews without required reviews', () => {
+    const reviews = (...s: string[]): object => ({
+      reviewDecision: '',
+      latestReviews: s.map((state) => ({ state }))
+    })
+    expect(githubBranchPr(row(reviews()))?.review).toBe('pending')
+    expect(githubBranchPr(row(reviews('APPROVED')))?.review).toBe('approved')
+    expect(githubBranchPr(row(reviews('APPROVED', 'CHANGES_REQUESTED')))?.review).toBe('changes')
+  })
+
+  it('is null without a PR', () => {
+    expect(githubBranchPr('[]')).toBeNull()
+  })
+})
+
+describe('bitbucketBranchPr', () => {
+  const body = (participants: object[]): unknown => ({
+    values: [
+      {
+        id: 280,
+        title: 'T',
+        draft: false,
+        comment_count: 7,
+        links: { html: { href: 'https://bb/pr/280' } },
+        participants
+      }
+    ]
+  })
+
+  it('reads approvals and requested changes from the participants', () => {
+    expect(bitbucketBranchPr(body([{ approved: false, state: null }]))).toMatchObject({
+      number: 280,
+      review: 'pending',
+      comments: 7
+    })
+    expect(
+      bitbucketBranchPr(body([{ approved: true, state: 'approved' }, { approved: true }]))
+    ).toMatchObject({ review: 'approved', approvals: 2 })
+    expect(
+      bitbucketBranchPr(body([{ approved: true }, { state: 'changes_requested' }]))?.review
+    ).toBe('changes')
+  })
+
+  it('is null without a PR', () => {
+    expect(bitbucketBranchPr({ values: [] })).toBeNull()
+  })
+})
+
+describe('review queue mapping', () => {
+  it('reads my verdict from the Bitbucket participants', () => {
+    const body = {
+      values: [
+        {
+          id: 3,
+          title: 'Fix',
+          links: { html: { href: 'https://bb/3' } },
+          author: { display_name: 'Ann' },
+          participants: [{ user: { account_id: 'me' }, approved: true, state: 'approved' }]
+        },
+        {
+          id: 4,
+          title: 'Feat',
+          links: { html: { href: 'https://bb/4' } },
+          participants: [
+            { user: { account_id: 'me' }, approved: false, state: 'changes_requested' }
+          ]
+        },
+        { id: 5, title: 'New', links: { html: { href: 'https://bb/5' } } }
+      ]
+    }
+    expect(mapBitbucketReviews(body, 'ws/repo', 'me').map((r) => r.myVerdict)).toEqual([
+      'approved',
+      'changes',
+      null
+    ])
+  })
+
+  it('maps a gh search', () => {
+    const json = JSON.stringify([
+      {
+        number: 7,
+        title: 'T',
+        url: 'https://gh/7',
+        repository: { nameWithOwner: 'o/r' },
+        author: { login: 'x' }
+      }
+    ])
+    expect(mapGithubReviews(json)).toEqual([
+      { repo: 'o/r', number: 7, title: 'T', url: 'https://gh/7', author: 'x', myVerdict: null }
+    ])
   })
 })

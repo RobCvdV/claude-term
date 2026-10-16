@@ -17,7 +17,8 @@ import type {
 } from '../shared/types'
 import { parseRemote } from '../shared/repo-links'
 import { statusFolders } from '../shared/status-folders'
-import { pullRequestUrl } from './pr-links'
+import { branchPullRequest } from './pr-links'
+import { ticketStatus } from './ticket-status'
 import { sessionNameForBranch } from './session-name'
 import { backgroundWork, runningOf } from './running-work'
 import { attachedActivity } from './attached-activity'
@@ -741,6 +742,13 @@ export class StatusServer {
     if (feed) feed.live = true
   }
 
+  /** After an action that changes PR / ticket state: the first pass starts the
+   *  lookups, the second shows what they found. */
+  refreshGitSoon(): void {
+    this.refreshAllGit()
+    setTimeout(() => this.refreshAllGit(), 3_000)
+  }
+
   private refreshAllGit(): void {
     for (const tabId of this.tabs.keys()) void this.refreshGit(tabId)
   }
@@ -874,13 +882,18 @@ async function gitInfo(cwd: string): Promise<GitInfo | null> {
     }
   }
   const repo = parseRemote(remoteUrl ?? '')
+  const prs = repo ? branchPullRequest(cwd, repo, branch) : null
+  const pr = prs?.pr ?? null
   return {
     branch,
     changed,
     unpushed,
     behind,
     remoteUrl: remoteUrl ?? '',
-    prUrl: repo ? pullRequestUrl(cwd, repo, branch) : null,
+    prUrl: pr?.url ?? null,
+    pr,
+    mergedPr: prs?.merged ?? null,
+    ticket: ticketStatus(branch),
     hasWorkflows: topLevel ? existsSync(join(topLevel, '.github', 'workflows')) : false
   }
 }

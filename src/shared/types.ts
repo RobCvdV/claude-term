@@ -68,11 +68,44 @@ export interface GitInfo {
   remoteUrl: string
   /** open PR for this branch, resolved in the background (null until known) */
   prUrl: string | null
+  /** review state of that PR (same lookup as prUrl) */
+  pr: BranchPr | null
+  /** without an open PR: the branch's last merged one, for ticket branches only */
+  mergedPr: { number: number; url: string } | null
+  /** Jira status of the branch's ticket, when Jira is connected */
+  ticket: TicketStatus | null
   /** repo has .github/workflows — drives the Actions link */
   hasWorkflows: boolean
 }
 
-export type CiState = 'success' | 'failed' | 'running' | 'unknown'
+/** blue = no verdict yet, green = approved, orange = changes requested */
+export type PrReview = 'pending' | 'approved' | 'changes'
+
+export interface BranchPr {
+  url: string
+  number: number
+  title: string
+  review: PrReview
+  approvals: number
+  draft: boolean
+  /** comments on the PR; null when the host doesn't tell */
+  comments: number | null
+}
+
+/** Jira's own three buckets: new / in progress / done. */
+export type TicketCategory = 'todo' | 'progress' | 'done'
+
+export interface TicketStatus {
+  key: string
+  /** the board's status name, e.g. "Peer review" */
+  status: string
+  category: TicketCategory
+  summary: string
+  assignee: string | null
+}
+
+/** `held`: waiting on a manual approval (CircleCI on_hold) */
+export type CiState = 'success' | 'failed' | 'running' | 'held' | 'unknown'
 export type CiProvider = 'jenkins' | 'circleci' | 'actions'
 
 /** Latest CI build state for a tab's repo+branch, from the background poller. */
@@ -81,6 +114,10 @@ export interface CiInfo {
   state: CiState
   /** the build/run this state came from (falls back to the branch overview) */
   url: string
+  /** 0–99 while running, when the provider gives enough to estimate it */
+  progress?: number
+  /** short extra, e.g. "#412" or "3/7 jobs" */
+  detail?: string
 }
 
 /** Projected time one rate-limit window hits 100% at the current pace. */
@@ -592,11 +629,73 @@ export interface WindowChoice {
 }
 
 /** App-wide preferences (app-settings.json). */
+/** One switch per kind of change notification. */
+export interface NotifyEvents {
+  prApproved: boolean
+  prChanges: boolean
+  prComments: boolean
+  ciFailed: boolean
+  ciFixed: boolean
+  ticketMoved: boolean
+  readyToMerge: boolean
+  reviewRequested: boolean
+  /** a session asks a question or permission while the app is in the background */
+  needsInput: boolean
+}
+
+export type NotifyEvent = keyof NotifyEvents
+
+export interface NotifySettings extends NotifyEvents {
+  enabled: boolean
+  /** hold notifications while one of the app's windows has focus */
+  onlyWhenUnfocused: boolean
+  sound: boolean
+}
+
 export interface AppSettings {
   /** ⌘1–9 and ⌘[ ⌘] only reach tabs of their own window */
   tabKeysPerWindow: boolean
   /** reopen windows where they were; off when a window manager places them */
   restoreWindowBounds: boolean
+  /** hold off system sleep while a session works */
+  keepAwake: boolean
+  /** poll Jenkins / CircleCI / Actions for build state */
+  ciPolling: boolean
+  /** a PR'd branch this many commits behind main gets flagged */
+  behindThreshold: number
+  /** list PRs waiting on my review in Mission Control */
+  reviewQueue: boolean
+  /** look up the branch ticket's Jira status in the background — reads the
+   *  token from the keychain, which can prompt endlessly on some macOS setups */
+  jiraTicketStatus: boolean
+  notify: NotifySettings
+}
+
+/** Which services the app can reach — tokens come from the login shell, Jira's
+ *  from the app's own connect form. */
+export interface IntegrationStatus {
+  jira: JiraStatus
+  bitbucket: boolean
+  /** the gh CLI's signed-in login, null when not signed in */
+  github: string | null
+  circleci: boolean
+  jenkins: boolean
+}
+
+/** Someone else's open PR that asks for my review. */
+export interface ReviewItem {
+  /** owner/repo */
+  repo: string
+  number: number
+  title: string
+  url: string
+  author: string
+  /** what I already said on it, if anything */
+  myVerdict: 'approved' | 'changes' | null
+}
+
+export type AppSettingsPatch = Partial<Omit<AppSettings, 'notify'>> & {
+  notify?: Partial<NotifySettings>
 }
 
 /** Engaged time on one ticket/project within a day or a whole range. */

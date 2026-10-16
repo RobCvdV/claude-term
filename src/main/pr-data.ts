@@ -1,4 +1,4 @@
-import type { PrInfo } from '../shared/types'
+import type { BranchPr, PrInfo, PrReview, ReviewItem } from '../shared/types'
 
 // Pure mapping from the gh CLI / Bitbucket API shapes to PrInfo — kept free of
 // electron imports so it's unit-testable (pr-list.ts owns the I/O).
@@ -69,4 +69,118 @@ export function accountIdFromCommits(body: unknown, email: string): string | nul
     (c) => c.author?.user?.account_id && c.author.raw?.toLowerCase().includes(needle)
   )
   return hit?.author?.user?.account_id ?? null
+}
+
+interface GhBranchPr {
+  url?: string
+  number?: number
+  title?: string
+  isDraft?: boolean
+  reviewDecision?: string | null
+  latestReviews?: { state?: string }[]
+  comments?: unknown[]
+}
+
+/** `gh pr list --head <branch> --json url,number,title,isDraft,reviewDecision,latestReviews,comments`.
+ *  reviewDecision is empty on repos without required reviews — then the
+ *  latest review per reviewer decides. */
+export function githubBranchPr(json: string): BranchPr | null {
+  const row = (JSON.parse(json) as GhBranchPr[])[0]
+  if (!row?.url || row.number == null) return null
+  const states = (row.latestReviews ?? []).map((r) => r.state)
+  const approvals = states.filter((s) => s === 'APPROVED').length
+  let review: PrReview = 'pending'
+  if (row.reviewDecision === 'APPROVED') review = 'approved'
+  else if (row.reviewDecision === 'CHANGES_REQUESTED') review = 'changes'
+  else if (!row.reviewDecision) {
+    if (states.includes('CHANGES_REQUESTED')) review = 'changes'
+    else if (approvals > 0) review = 'approved'
+  }
+  return {
+    url: row.url,
+    number: row.number,
+    title: row.title ?? '',
+    review,
+    approvals,
+    draft: !!row.isDraft,
+    comments: row.comments?.length ?? null
+  }
+}
+
+interface BbBranchPr {
+  id?: number
+  title?: string
+  draft?: boolean
+  comment_count?: number
+  links?: { html?: { href?: string } }
+  participants?: { approved?: boolean; state?: string | null }[]
+}
+
+/** Bitbucket pullrequests listing filtered on the source branch, with
+ *  participants. Any "changes requested" outweighs approvals. */
+export function bitbucketBranchPr(body: unknown): BranchPr | null {
+  const row = ((body as { values?: BbBranchPr[] }).values ?? [])[0]
+  const url = row?.links?.html?.href
+  if (!row || !url || row.id == null) return null
+  const people = row.participants ?? []
+  const approvals = people.filter((p) => p.approved || p.state === 'approved').length
+  const changes = people.some((p) => p.state === 'changes_requested')
+  return {
+    url,
+    number: row.id,
+    title: row.title ?? '',
+    review: changes ? 'changes' : approvals > 0 ? 'approved' : 'pending',
+    approvals,
+    draft: !!row.draft,
+    comments: row.comment_count ?? null
+  }
+}
+
+interface BbReviewPr {
+  id?: number
+  title?: string
+  links?: { html?: { href?: string } }
+  author?: { display_name?: string }
+  participants?: { user?: { account_id?: string }; approved?: boolean; state?: string | null }[]
+}
+
+/** Open PRs listing a reviewer, with what that reviewer already said. */
+export function mapBitbucketReviews(body: unknown, repo: string, viewerId: string): ReviewItem[] {
+  const rows = (body as { values?: BbReviewPr[] }).values ?? []
+  return rows
+    .filter((r) => r.id != null && r.title && r.links?.html?.href)
+    .map((r) => {
+      const me = r.participants?.find((p) => p.user?.account_id === viewerId)
+      return {
+        repo,
+        number: r.id!,
+        title: r.title!,
+        url: r.links!.html!.href!,
+        author: r.author?.display_name ?? '',
+        myVerdict: me?.state === 'changes_requested' ? 'changes' : me?.approved ? 'approved' : null
+      }
+    })
+}
+
+interface GhSearchPr {
+  number?: number
+  title?: string
+  url?: string
+  repository?: { nameWithOwner?: string }
+  author?: { login?: string }
+}
+
+/** `gh search prs --review-requested=@me --json number,title,url,repository,author`.
+ *  GitHub drops the request once you review, so no verdict is ever known here. */
+export function mapGithubReviews(json: string): ReviewItem[] {
+  return (JSON.parse(json) as GhSearchPr[])
+    .filter((r) => r.number != null && r.title && r.url)
+    .map((r) => ({
+      repo: r.repository?.nameWithOwner ?? '',
+      number: r.number!,
+      title: r.title!,
+      url: r.url!,
+      author: r.author?.login ?? '',
+      myVerdict: null
+    }))
 }

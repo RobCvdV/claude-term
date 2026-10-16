@@ -1,9 +1,8 @@
 import { app } from 'electron'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { AppSettings } from '../shared/types'
-
-const DEFAULTS: AppSettings = { tabKeysPerWindow: true, restoreWindowBounds: true }
+import type { AppSettings, AppSettingsPatch } from '../shared/types'
+import { mergeSettings, SETTINGS_DEFAULTS } from '../shared/app-settings-defaults'
 
 let current: AppSettings | null = null
 const listeners = new Set<(s: AppSettings) => void>()
@@ -13,19 +12,19 @@ const file = (): string => join(app.getPath('userData'), 'app-settings.json')
 export function appSettings(): AppSettings {
   if (!current) {
     try {
-      current = {
-        ...DEFAULTS,
-        ...(JSON.parse(readFileSync(file(), 'utf8')) as Partial<AppSettings>)
-      }
+      current = mergeSettings(
+        SETTINGS_DEFAULTS,
+        JSON.parse(readFileSync(file(), 'utf8')) as AppSettingsPatch
+      )
     } catch {
-      current = { ...DEFAULTS }
+      current = mergeSettings(SETTINGS_DEFAULTS, {})
     }
   }
   return current
 }
 
-export function setAppSettings(patch: Partial<AppSettings>): AppSettings {
-  current = { ...appSettings(), ...patch }
+export function setAppSettings(patch: AppSettingsPatch): AppSettings {
+  current = mergeSettings(appSettings(), patch)
   try {
     writeFileSync(file(), JSON.stringify(current, null, 2))
   } catch {

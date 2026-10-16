@@ -21,6 +21,7 @@ import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { CompanionPanel } from './components/CompanionPanel'
 import { HelpOverlay } from './components/HelpOverlay'
 import { MissionControl } from './components/MissionControl'
+import { SettingsPanel } from './components/SettingsPanel'
 import { autoTabTitle, composeWindowTitle } from './tab-title'
 import { WINDOW_KIND, windowTitle } from '../../shared/window-titles'
 import { insertIndexAt, moveItem, tabCenters } from './tab-reorder'
@@ -94,6 +95,7 @@ export default function App(): React.JSX.Element {
   // recent-branch history for the palette, refreshed each time it opens
   const [recentBranches, setRecentBranches] = useState<BranchHistoryEntry[]>([])
   const [showMission, setShowMission] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [showCompanion, setShowCompanion] = useState(false)
   // help overlay: which section to show, or null when closed (Help menu / ⌘/)
   const [helpSection, setHelpSection] = useState<HelpSection | null>(null)
@@ -215,6 +217,16 @@ export default function App(): React.JSX.Element {
     void window.claudeTerm.appSettings().then((s) => setTabKeysPerWindow(s.tabKeysPerWindow))
     return window.claudeTerm.onAppSettings((s) => setTabKeysPerWindow(s.tabKeysPerWindow))
   }, [])
+
+  // the menu's Settings… (⌘,); again while open closes it
+  useEffect(() => {
+    return window.claudeTerm.onShowSettings(() =>
+      setShowSettings((v) => {
+        if (v && activeIdRef.current) restoreFocus(activeIdRef.current)
+        return !v
+      })
+    )
+  }, [restoreFocus])
 
   // Help menu (or its ⌘/ accelerator) picked a section; the same section
   // again (⌘/ with the overlay open) toggles it closed, like Esc
@@ -831,6 +843,7 @@ export default function App(): React.JSX.Element {
       run: () => window.claudeTerm.nextWindow()
     },
     { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
+    { id: 'settings', label: 'Settings', shortcut: '⌘,', run: () => setShowSettings(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
     { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },
     { id: 'howto', label: 'Quick How-To', shortcut: '⌘/', run: () => setHelpSection('howto') },
@@ -923,6 +936,14 @@ export default function App(): React.JSX.Element {
         />
       )}
       {showCompanion && <CompanionPanel onClose={() => setShowCompanion(false)} />}
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => {
+            setShowSettings(false)
+            if (activeId) restoreFocus(activeId)
+          }}
+        />
+      )}
 
       {showMission && (
         <MissionControl

@@ -6,10 +6,13 @@ import type {
   BookedWorklog,
   JiraStatus,
   JiraTodo,
+  TicketStatus,
   WorklogPlanEntry
 } from '../shared/types'
 import { todoJql } from '../shared/jira-labels'
-import { adfToText, mapTodos } from './jira-todo-data'
+import { adfToText, mapTicketStatus, mapTodos, pickTransition } from './jira-todo-data'
+import type { TicketStage } from '../shared/work-rules'
+import { forgetTicket } from './ticket-status'
 import { basicAuth, buildWorklogBody, sinceDateFor, toBookedWorklogs } from './jira-helpers'
 import type { JiraWorklogRaw } from './jira-helpers'
 import { appendLoggedWorklogs } from './worklog-store'
@@ -93,9 +96,15 @@ async function errorText(res: Response): Promise<string> {
   return `Jira ${res.status}${detail ? `: ${detail}` : ''}`
 }
 
+/** Connected or not, from the stored file alone — no token decrypt, so no
+ *  keychain prompt just for asking. */
 export function jiraStatus(): JiraStatus {
-  const creds = readCreds()
-  return creds ? { connected: true, email: creds.email } : { connected: false }
+  try {
+    const s = JSON.parse(readFileSync(credsPath(), 'utf8')) as StoredCreds
+    return s.email && s.token ? { connected: true, email: s.email } : { connected: false }
+  } catch {
+    return { connected: false }
+  }
 }
 
 /** api.atlassian.com REST base for this site — the only base scoped tokens accept. */
@@ -142,6 +151,7 @@ export async function jiraConnect(
     }
     if (!attempt.me.accountId) return { ok: false, error: 'Jira did not return an account id' }
     writeCreds(email.trim(), token.trim(), attempt.me.accountId, base)
+    forgetTicket()
     bookedCache = null
     return { ok: true }
   } catch (e) {
@@ -156,6 +166,7 @@ export function jiraDisconnect(): void {
     /* already gone */
   }
   bookedCache = null
+  forgetTicket()
 }
 
 let bookedCache: { since: string; at: number; data: BookedWorklog[] } | null = null
@@ -307,6 +318,37 @@ export async function fetchTodos(labels: string[]): Promise<{ todos: JiraTodo[];
   } catch (e) {
     return { todos: hit?.todos ?? [], error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** Status of one ticket for the status bar; null when Jira doesn't know it. */
+export async function fetchTicketStatus(key: string): Promise<TicketStatus | null> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const res = await jiraFetch(
+    creds,
+    `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,status,assignee`
+  )
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(await errorText(res))
+  return mapTicketStatus(await res.json(), key)
+}
+
+/** Move a ticket to the board stage; resolves to the status name it landed on. */
+export async function moveTicket(key: string, stage: TicketStage): Promise<string> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const path = `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`
+  const res = await jiraFetch(creds, path)
+  if (!res.ok) throw new Error(await errorText(res))
+  const pick = pickTransition(await res.json(), stage)
+  if (!pick) throw new Error(`no transition to ${stage} from the ticket's current status`)
+  const done = await jiraFetch(creds, path, {
+    method: 'POST',
+    body: { transition: { id: pick.id } }
+  })
+  if (!done.ok) throw new Error(await errorText(done))
+  forgetTicket(key)
+  return pick.name
 }
 
 export interface TicketDetails {

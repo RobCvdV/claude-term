@@ -1,7 +1,11 @@
 import { execFile } from 'child_process'
+import type { BranchPr } from '../shared/types'
 import type { RepoRef } from '../shared/repo-links'
 import { isTrunkBranch } from '../shared/repo-links'
+import { bitbucketGet } from './bitbucket-api'
+import { bitbucketBranchPr, githubBranchPr } from './pr-data'
 import { loginShellEnv } from './shell-env'
+import { branchTicket } from './ticket-status'
 
 /** How long a resolved answer (PR or "no PR") stays good. */
 const TTL_MS = 120_000
@@ -9,8 +13,14 @@ const TTL_MS = 120_000
  *  doesn't turn into a request every git poll. */
 const TTL_ERROR_MS = 600_000
 
+export interface MergedPr {
+  number: number
+  url: string
+}
+
 interface Entry {
-  url: string | null
+  pr: BranchPr | null
+  merged: MergedPr | null
   expiresAt: number
   inflight: boolean
 }
@@ -18,77 +28,124 @@ interface Entry {
 const cache = new Map<string, Entry>()
 
 /**
- * Web URL of the open pull request for `branch`, or null when there is none
- * (yet). Answers from cache only — a stale entry triggers a background refresh
- * and the next git poll picks up the result, so status updates never wait on
- * the network.
+ * The open pull request for `branch` with its review state, or null when there
+ * is none (yet). Answers from cache only — a stale entry triggers a background
+ * refresh and the next git poll picks up the result, so status updates never
+ * wait on the network.
  */
-export function pullRequestUrl(cwd: string, repo: RepoRef, branch: string): string | null {
-  if (isTrunkBranch(branch)) return null
+export function branchPullRequest(
+  cwd: string,
+  repo: RepoRef,
+  branch: string
+): { pr: BranchPr | null; merged: MergedPr | null } {
+  if (isTrunkBranch(branch)) return { pr: null, merged: null }
   const key = `${repo.host}/${repo.owner}/${repo.repo}#${branch}`
   const entry = cache.get(key)
   if (!entry || (entry.expiresAt < Date.now() && !entry.inflight)) {
     void refresh(key, cwd, repo, branch)
   }
-  return entry?.url ?? null
+  return { pr: entry?.pr ?? null, merged: entry?.merged ?? null }
 }
 
 async function refresh(key: string, cwd: string, repo: RepoRef, branch: string): Promise<void> {
   const prev = cache.get(key)
-  cache.set(key, { url: prev?.url ?? null, expiresAt: prev?.expiresAt ?? 0, inflight: true })
-  let url: string | null = null
+  cache.set(key, {
+    pr: prev?.pr ?? null,
+    merged: prev?.merged ?? null,
+    expiresAt: prev?.expiresAt ?? 0,
+    inflight: true
+  })
+  let pr: BranchPr | null = null
+  let merged: MergedPr | null = null
   let ok = true
   try {
-    url =
-      repo.host === 'github' ? await githubPrUrl(cwd, branch) : await bitbucketPrUrl(repo, branch)
+    pr = repo.host === 'github' ? await githubPr(cwd, branch) : await bitbucketPr(repo, branch)
+    // only ticket branches have a board state a merge should have moved on
+    if (!pr && branchTicket(branch)) {
+      merged =
+        repo.host === 'github'
+          ? await githubMerged(cwd, branch)
+          : await bitbucketMerged(repo, branch)
+    }
   } catch {
     ok = false
   }
   cache.set(key, {
-    url: ok ? url : (prev?.url ?? null),
+    pr: ok ? pr : (prev?.pr ?? null),
+    merged: ok ? merged : (prev?.merged ?? null),
     expiresAt: Date.now() + (ok ? TTL_MS : TTL_ERROR_MS),
     inflight: false
   })
 }
 
 /** Uses the `gh` CLI so we ride on its existing auth (private repos included). */
-async function githubPrUrl(cwd: string, branch: string): Promise<string | null> {
+async function githubPr(cwd: string, branch: string): Promise<BranchPr | null> {
   const env = await loginShellEnv()
   const out = await new Promise<string | null>((resolve) => {
     execFile(
       'gh',
-      ['pr', 'list', '--head', branch, '--state', 'open', '--limit', '1', '--json', 'url'],
+      [
+        'pr',
+        'list',
+        '--head',
+        branch,
+        '--state',
+        'open',
+        '--limit',
+        '1',
+        '--json',
+        'url,number,title,isDraft,reviewDecision,latestReviews,comments'
+      ],
       { cwd, env, timeout: 10_000, encoding: 'utf8' },
       (err, stdout) => resolve(err ? null : stdout)
     )
   })
   if (out === null) throw new Error('gh pr list failed')
-  const rows = JSON.parse(out) as { url?: string }[]
-  return rows[0]?.url ?? null
+  return githubBranchPr(out)
 }
 
-async function bitbucketPrUrl(repo: RepoRef, branch: string): Promise<string | null> {
-  const env = await loginShellEnv()
-  const email = env.BITBUCKET_EMAIL
-  const token = env.BITBUCKET_API_TOKEN
-  if (!email || !token) throw new Error('no bitbucket credentials')
+async function bitbucketPr(repo: RepoRef, branch: string): Promise<BranchPr | null> {
   const params = new URLSearchParams({
     q: `source.branch.name="${branch}"`,
     state: 'OPEN',
     pagelen: '1',
-    fields: 'values.links.html.href'
+    fields:
+      'values.id,values.title,values.draft,values.comment_count,values.links.html.href,' +
+      'values.participants.approved,values.participants.state'
   })
-  const res = await fetch(
-    `https://api.bitbucket.org/2.0/repositories/${repo.owner}/${repo.repo}/pullrequests?${params}`,
-    {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`,
-        Accept: 'application/json'
-      },
-      signal: AbortSignal.timeout(10_000)
-    }
+  return bitbucketBranchPr(
+    await bitbucketGet(`/repositories/${repo.owner}/${repo.repo}/pullrequests`, params)
   )
-  if (!res.ok) throw new Error(`bitbucket ${res.status}`)
-  const body = (await res.json()) as { values?: { links?: { html?: { href?: string } } }[] }
-  return body.values?.[0]?.links?.html?.href ?? null
+}
+
+async function githubMerged(cwd: string, branch: string): Promise<MergedPr | null> {
+  const env = await loginShellEnv()
+  const out = await new Promise<string | null>((resolve) => {
+    execFile(
+      'gh',
+      ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '1', '--json', 'number,url'],
+      { cwd, env, timeout: 10_000, encoding: 'utf8' },
+      (err, stdout) => resolve(err ? null : stdout)
+    )
+  })
+  if (out === null) throw new Error('gh pr list failed')
+  const row = (JSON.parse(out) as { number?: number; url?: string }[])[0]
+  return row?.number != null && row.url ? { number: row.number, url: row.url } : null
+}
+
+async function bitbucketMerged(repo: RepoRef, branch: string): Promise<MergedPr | null> {
+  const params = new URLSearchParams({
+    q: `source.branch.name="${branch}"`,
+    state: 'MERGED',
+    sort: '-updated_on',
+    pagelen: '1',
+    fields: 'values.id,values.links.html.href'
+  })
+  const body = (await bitbucketGet(
+    `/repositories/${repo.owner}/${repo.repo}/pullrequests`,
+    params
+  )) as { values?: { id?: number; links?: { html?: { href?: string } } }[] }
+  const row = body.values?.[0]
+  const url = row?.links?.html?.href
+  return row?.id != null && url ? { number: row.id, url } : null
 }

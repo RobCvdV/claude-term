@@ -14,6 +14,7 @@ import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
+  AppSettingsPatch,
   CompanionInfo,
   PairingInfo,
   ConvoSearchResult,
@@ -32,7 +33,11 @@ import type {
 import type { TerminalWindows } from './terminal-windows'
 import { windowsOf } from './window-order'
 import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
-import { appSettings } from './app-settings'
+import { appSettings, onAppSettings, setAppSettings } from './app-settings'
+import { integrationStatus } from './integrations'
+import { DesktopNotifier } from './desktop-notifier'
+import { WorkWatch } from './work-watch'
+import { recentlyMovedByUs } from './ticket-status'
 import { PtyManager } from './pty-manager'
 import { descendantCommands, parsePs, shellTaskAlive } from './background-liveness'
 import { KeepAwake } from './keep-awake'
@@ -86,7 +91,15 @@ import { disposeAll, disposeTab, type TabResources } from './tab-lifecycle'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { recordCoverage } from './worklog-coverage'
-import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } from './jira-client'
+import {
+  bookWorklogs,
+  fetchBooked,
+  jiraConnect,
+  jiraDisconnect,
+  jiraStatus,
+  moveTicket
+} from './jira-client'
+import type { TicketStage } from '../shared/work-rules'
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
@@ -126,6 +139,8 @@ export interface AppServices {
   parked: ParkedPrompts
   queue: PromptQueue
   notifier: Notifier
+  /** macOS notifications for PR / CI / Jira changes */
+  desktop: DesktopNotifier
   companion: CompanionServer
   devices: DeviceRegistry
   pairing: Pairing
@@ -167,7 +182,9 @@ export function createServices(windows: TerminalWindows): AppServices {
     start: () => powerSaveBlocker.start('prevent-app-suspension'),
     stop: (id) => powerSaveBlocker.stop(id)
   })
-  const updateSleepBlocker = (): void => keepAwake.update(status.busyCount() > 0)
+  const updateSleepBlocker = (): void =>
+    appSettings().keepAwake ? keepAwake.update(status.busyCount() > 0) : keepAwake.release()
+  onAppSettings(() => updateSleepBlocker())
   const releaseSleepBlocker = (): void => keepAwake.release()
 
   // Only the renderer's xterm knows what is on a tab's screen, so asking is a
@@ -316,6 +333,18 @@ export function createServices(windows: TerminalWindows): AppServices {
     logUiBridge(tabId, 'key', { key, from, activity: status.snapshot(tabId)?.activity ?? null })
   )
 
+  const desktop = new DesktopNotifier(
+    () => windows.anyFocused(),
+    (tabId) => windows.activate(tabId),
+    (url) => {
+      if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    }
+  )
+  const work = new WorkWatch(
+    (e) => desktop.notify(e),
+    () => appSettings().behindThreshold,
+    recentlyMovedByUs
+  )
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
     // background-agent refusal can no longer be ahead of us (see
@@ -326,9 +355,22 @@ export function createServices(windows: TerminalWindows): AppServices {
     }
     windows.sendForTab(tabStatus.tabId, 'status:update', tabStatus)
     hub.publishStatus(tabStatus)
+    work.observe(tabStatus)
     updateSleepBlocker()
   }
-  status.onAttention = (tabId, hookEvent) => send('tab:attention', tabId, hookEvent)
+  status.onAttention = (tabId, hookEvent) => {
+    send('tab:attention', tabId, hookEvent)
+    if (hookEvent !== 'CiFailed' && !windows.anyFocused()) {
+      const snap = status.snapshot(tabId)
+      desktop.notify({
+        kind: 'needsInput',
+        key: tabId,
+        title: 'A session needs you',
+        body: [snap?.cwd.split('/').pop(), snap?.git?.branch].filter(Boolean).join(' · '),
+        tabId
+      })
+    }
+  }
   // The tab re-homed onto its session's launch folder — a shell respawned after
   // an exit/restart has to start there, not back in the folder the tab opened in.
   status.onHomeChanged = (tabId, cwd) => ptys.setCwd(tabId, cwd)
@@ -354,6 +396,7 @@ export function createServices(windows: TerminalWindows): AppServices {
   }
 
   return {
+    desktop,
     ptys,
     status,
     rate,
@@ -825,6 +868,37 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.on('tabs:selectGlobal', (_e, index: number) => windows.selectGlobal(index))
   ipcMain.on('tabs:stepGlobal', (e, delta: number) => windows.stepGlobal(e.sender, delta))
   ipcMain.handle('app:settings', () => appSettings())
+  ipcMain.handle('app:setSettings', (_e, patch: AppSettingsPatch) => setAppSettings(patch))
+  ipcMain.handle('app:integrations', () => integrationStatus())
+  ipcMain.on('notify:test', () => services.desktop.test())
+
+  // Mission control's drift / ready-to-merge fix: move the ticket on the board,
+  // after a confirmation — others watch that board too.
+  ipcMain.handle(
+    'jira:move',
+    async (e, key: string, stage: TicketStage): Promise<{ ok: boolean; error?: string }> => {
+      const win = BrowserWindow.fromWebContents(e.sender)
+      const label = stage === 'review' ? 'Peer review' : 'Deploy'
+      const opts = {
+        type: 'question' as const,
+        buttons: ['Cancel', `Move to ${label}`],
+        defaultId: 1,
+        cancelId: 0,
+        message: `Move ${key} to ${label}?`
+      }
+      const { response } = win
+        ? await dialog.showMessageBox(win, opts)
+        : await dialog.showMessageBox(opts)
+      if (response !== 1) return { ok: false }
+      try {
+        await moveTicket(key, stage)
+        status.refreshGitSoon()
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
   ipcMain.on('window:new', () => windows.createFresh())
   ipcMain.on('tabs:moveToMain', (e) => {
     const main = windows.mainWindowFor(BrowserWindow.fromWebContents(e.sender))

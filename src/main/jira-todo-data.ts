@@ -1,4 +1,5 @@
-import type { JiraTodo } from '../shared/types'
+import type { JiraTodo, TicketStatus } from '../shared/types'
+import { ticketStage, type TicketStage } from '../shared/work-rules'
 
 // Pure helpers for the Jira to-do dropdown and "Start branch" — no I/O, so
 // they're unit-testable (jira-client.ts and jira-start.ts own the I/O).
@@ -150,4 +151,55 @@ export function startPrompt(opts: {
         ? " If this project's CLAUDE.md asks for a setup step on new branches, point it out."
         : '')
   ].join('\n')
+}
+
+interface RawIssueStatus {
+  key?: string
+  fields?: {
+    summary?: string
+    status?: { name?: string; statusCategory?: { key?: string } }
+    assignee?: { displayName?: string } | null
+  }
+}
+
+/** `/rest/api/3/issue/<key>?fields=summary,status,assignee` → TicketStatus. */
+export function mapTicketStatus(body: unknown, key: string): TicketStatus | null {
+  const issue = body as RawIssueStatus
+  const name = issue.fields?.status?.name
+  if (!name) return null
+  const cat = issue.fields?.status?.statusCategory?.key
+  return {
+    key: issue.key ?? key,
+    status: name,
+    category: cat === 'done' ? 'done' : cat === 'new' ? 'todo' : 'progress',
+    summary: issue.fields?.summary ?? '',
+    assignee: issue.fields?.assignee?.displayName ?? null
+  }
+}
+
+interface RawTransition {
+  id?: string
+  to?: { name?: string; statusCategory?: { key?: string } }
+}
+
+/** The transition that lands a ticket on `stage` (board names, as ticketStage reads them). */
+export function pickTransition(
+  body: unknown,
+  stage: TicketStage
+): { id: string; name: string } | null {
+  const rows = (body as { transitions?: RawTransition[] }).transitions ?? []
+  for (const t of rows) {
+    const name = t.to?.name
+    if (!t.id || !name) continue
+    const cat = t.to?.statusCategory?.key
+    const status: TicketStatus = {
+      key: '',
+      status: name,
+      category: cat === 'done' ? 'done' : cat === 'new' ? 'todo' : 'progress',
+      summary: '',
+      assignee: null
+    }
+    if (ticketStage(status) === stage) return { id: t.id, name }
+  }
+  return null
 }

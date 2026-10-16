@@ -8,7 +8,15 @@ import {
   parseRemote,
   type RepoRef
 } from '../shared/repo-links'
-import { actionsCiState, circleCiCiState, jenkinsCiState } from './ci-data'
+import {
+  actionsCiState,
+  actionsJobDone,
+  circleCiCiState,
+  circleJobDone,
+  jenkinsCiState,
+  jenkinsProgress,
+  jobProgress
+} from './ci-data'
 import { loginShellEnv } from './shell-env'
 
 /**
@@ -18,19 +26,29 @@ import { loginShellEnv } from './shell-env'
  */
 
 const POLL_MS = 60_000
+/** a running build is re-asked sooner, so its progress moves */
+const RUNNING_POLL_MS = 20_000
 /** hold failures longer, so a missing token / offline CI isn't hammered */
 const ERROR_BACKOFF_MS = 10 * 60_000
 const FETCH_TIMEOUT_MS = 10_000
+
+/** What one fetch learns; `url` points at the build itself when known. */
+interface CiResult {
+  state: CiState
+  url?: string
+  progress?: number
+  detail?: string
+}
 
 interface Target {
   key: string
   provider: CiProvider
   url: string
-  fetch: () => Promise<CiState>
+  fetch: () => Promise<CiResult>
 }
 
 interface Cached {
-  state: CiState
+  result: CiResult
   fetchedAt: number
   failedFetch: boolean
 }
@@ -44,11 +62,12 @@ export class CiPoller {
     private readonly getSnapshots: () => TabStatus[],
     /** `root` is null for the tab's own repo, else the extra workspace folder */
     private readonly setCi: (tabId: TabId, root: string | null, ci: CiInfo | null) => void,
-    private readonly isActive: () => boolean
+    private readonly isActive: () => boolean,
+    private readonly isEnabled: () => boolean = () => true
   ) {}
 
   start(): void {
-    this.timer = setInterval(() => void this.sweep(), POLL_MS)
+    this.timer = setInterval(() => void this.sweep(), RUNNING_POLL_MS)
     setTimeout(() => void this.sweep(), 5_000)
   }
 
@@ -58,7 +77,17 @@ export class CiPoller {
   }
 
   private async sweep(): Promise<void> {
-    if (this.sweeping || !this.isActive()) return
+    if (this.sweeping) return
+    if (!this.isEnabled()) {
+      // switched off: drop the dots rather than leave a stale state up
+      for (const snap of this.getSnapshots()) {
+        this.setCi(snap.tabId, null, null)
+        for (const r of snap.extraRepos) this.setCi(snap.tabId, r.root, null)
+      }
+      this.cache.clear()
+      return
+    }
+    if (!this.isActive()) return
     this.sweeping = true
     try {
       // group (tab, workspace repo) pairs by distinct CI target so each is
@@ -86,25 +115,33 @@ export class CiPoller {
       // sequential fetches: natural stagger, and there are only a few keys
       for (const { target, tabs } of jobs.values()) {
         const cached = this.cache.get(target.key)
-        const ttl = cached?.failedFetch ? ERROR_BACKOFF_MS : POLL_MS - 5_000
+        const ttl = cached?.failedFetch
+          ? ERROR_BACKOFF_MS
+          : cached?.result.state === 'running'
+            ? RUNNING_POLL_MS - 2_000
+            : POLL_MS - 5_000
         if (!cached || Date.now() - cached.fetchedAt > ttl) {
-          let state: CiState = 'unknown'
+          let result: CiResult = { state: 'unknown' }
           let failedFetch = false
           try {
-            state = await target.fetch()
+            result = await target.fetch()
           } catch {
             failedFetch = true
           }
-          this.cache.set(target.key, { state, fetchedAt: Date.now(), failedFetch })
+          this.cache.set(target.key, { result, fetchedAt: Date.now(), failedFetch })
         }
-        const state = this.cache.get(target.key)!.state
-        for (const { tabId, root } of tabs) {
-          this.setCi(
-            tabId,
-            root,
-            state === 'unknown' ? null : { provider: target.provider, state, url: target.url }
-          )
-        }
+        const { state, url, progress, detail } = this.cache.get(target.key)!.result
+        const ci: CiInfo | null =
+          state === 'unknown'
+            ? null
+            : {
+                provider: target.provider,
+                state,
+                url: url ?? target.url,
+                ...(progress != null ? { progress } : {}),
+                ...(detail ? { detail } : {})
+              }
+        for (const { tabId, root } of tabs) this.setCi(tabId, root, ci)
       }
     } finally {
       this.sweeping = false
@@ -145,7 +182,7 @@ function targetFor(cwd: string, git: GitInfo | null): Target | null {
   return null
 }
 
-async function fetchJenkins(jobUrl: string): Promise<CiState> {
+async function fetchJenkins(jobUrl: string): Promise<CiResult> {
   const env = await loginShellEnv()
   const headers: Record<string, string> = { Accept: 'application/json' }
   const user = env['JENKINS_USER']
@@ -153,36 +190,80 @@ async function fetchJenkins(jobUrl: string): Promise<CiState> {
   if (user && token) {
     headers['Authorization'] = 'Basic ' + Buffer.from(`${user}:${token}`).toString('base64')
   }
-  const res = await fetch(`${jobUrl}lastBuild/api/json?tree=building,result`, {
-    headers,
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  })
+  const res = await fetch(
+    `${jobUrl}lastBuild/api/json?tree=building,result,timestamp,estimatedDuration,number,url`,
+    { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+  )
   // no such job (e.g. a branch Jenkins never built) — nothing to show, no error
-  if (res.status === 404) return 'unknown'
+  if (res.status === 404) return { state: 'unknown' }
   if (!res.ok) throw new Error(`jenkins ${res.status}`)
-  return jenkinsCiState((await res.json()) as { building?: boolean; result?: string | null })
+  const body = (await res.json()) as {
+    building?: boolean
+    result?: string | null
+    timestamp?: number
+    estimatedDuration?: number
+    number?: number
+    url?: string
+  }
+  return {
+    state: jenkinsCiState(body),
+    url: body.url,
+    progress: jenkinsProgress(body, Date.now()),
+    detail: body.number != null ? `#${body.number}` : undefined
+  }
 }
 
-/** Rides the `gh` CLI's existing auth, like the PR lookups. */
-async function fetchActions(cwd: string, branch: string): Promise<CiState> {
-  const env = await loginShellEnv()
-  const out = await new Promise<string | null>((resolve) => {
-    execFile(
-      'gh',
-      ['run', 'list', '--branch', branch, '--limit', '1', '--json', 'status,conclusion'],
-      { cwd, env, timeout: FETCH_TIMEOUT_MS, encoding: 'utf8' },
-      (err, stdout) => resolve(err ? null : stdout)
+function gh(cwd: string, env: NodeJS.ProcessEnv, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile('gh', args, { cwd, env, timeout: FETCH_TIMEOUT_MS, encoding: 'utf8' }, (err, stdout) =>
+      resolve(err ? null : stdout)
     )
   })
-  if (out === null) throw new Error('gh run list failed')
-  return actionsCiState(JSON.parse(out) as { status?: string; conclusion?: string | null }[])
 }
 
-async function fetchCircle(repo: RepoRef, branch: string): Promise<CiState> {
+/** Rides the `gh` CLI's existing auth, like the PR lookups. Job counts are
+ *  only asked while the run is going. */
+async function fetchActions(cwd: string, branch: string): Promise<CiResult> {
+  const env = await loginShellEnv()
+  const out = await gh(cwd, env, [
+    'run',
+    'list',
+    '--branch',
+    branch,
+    '--limit',
+    '1',
+    '--json',
+    'status,conclusion,url,databaseId'
+  ])
+  if (out === null) throw new Error('gh run list failed')
+  const runs = JSON.parse(out) as {
+    status?: string
+    conclusion?: string | null
+    url?: string
+    databaseId?: number
+  }[]
+  const state = actionsCiState(runs)
+  const run = runs[0]
+  const result: CiResult = { state, url: run?.url }
+  if (state === 'running' && run?.databaseId != null) {
+    const view = await gh(cwd, env, ['run', 'view', String(run.databaseId), '--json', 'jobs'])
+    const jobs = view ? ((JSON.parse(view) as { jobs?: { status?: string }[] }).jobs ?? []) : []
+    Object.assign(
+      result,
+      jobProgress(
+        jobs.map((j) => j.status),
+        actionsJobDone
+      )
+    )
+  }
+  return result
+}
+
+async function fetchCircle(repo: RepoRef, branch: string): Promise<CiResult> {
   const env = await loginShellEnv()
   const token = env['CIRCLECI_TOKEN'] ?? env['CIRCLE_TOKEN']
   // no token is a quiet skip, not an error — CircleCI v2 has no anonymous read
-  if (!token) return 'unknown'
+  if (!token) return { state: 'unknown' }
   const headers = { 'Circle-Token': token, Accept: 'application/json' }
   const slug = `bitbucket/${repo.owner}/${repo.repo}`
   const pipeRes = await fetch(
@@ -190,14 +271,39 @@ async function fetchCircle(repo: RepoRef, branch: string): Promise<CiState> {
     { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
   )
   if (!pipeRes.ok) throw new Error(`circleci ${pipeRes.status}`)
-  const pipelines = (await pipeRes.json()) as { items?: { id?: string }[] }
+  const pipelines = (await pipeRes.json()) as { items?: { id?: string; number?: number }[] }
   const id = pipelines.items?.[0]?.id
-  if (!id) return 'unknown'
+  if (!id) return { state: 'unknown' }
+  const number = pipelines.items?.[0]?.number
   const wfRes = await fetch(`https://circleci.com/api/v2/pipeline/${id}/workflow`, {
     headers,
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
   })
   if (!wfRes.ok) throw new Error(`circleci ${wfRes.status}`)
-  const workflows = (await wfRes.json()) as { items?: { status?: string }[] }
-  return circleCiCiState(workflows.items ?? [])
+  const workflows =
+    ((await wfRes.json()) as { items?: { id?: string; status?: string }[] }).items ?? []
+  const state = circleCiCiState(workflows)
+  const result: CiResult = {
+    state,
+    url: number != null ? `https://app.circleci.com/pipelines/${slug}/${number}` : undefined,
+    detail: number != null ? `#${number}` : undefined
+  }
+  const live = workflows.find((w) => w.status === 'running')
+  if (state === 'running' && live?.id) {
+    const jobRes = await fetch(`https://circleci.com/api/v2/workflow/${live.id}/job`, {
+      headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    })
+    if (jobRes.ok) {
+      const jobs = ((await jobRes.json()) as { items?: { status?: string }[] }).items ?? []
+      Object.assign(
+        result,
+        jobProgress(
+          jobs.map((j) => j.status),
+          circleJobDone
+        )
+      )
+    }
+  }
+  return result
 }
