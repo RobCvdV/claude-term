@@ -79,6 +79,7 @@ export interface WindowActions {
   newWindow: () => void
   nextWindow: () => void
   moveTabToNewWindow: () => void
+  moveTabToMainWindow: () => void
 }
 
 export function installAppMenu(
@@ -151,7 +152,16 @@ export function installAppMenu(
           registerAccelerator: false,
           click: win.nextWindow
         },
-        { label: 'Move Tab to New Window', click: win.moveTabToNewWindow },
+        {
+          label: 'Move Tab to New Window',
+          accelerator: 'Shift+CommandOrControl+N',
+          click: win.moveTabToNewWindow
+        },
+        {
+          label: 'Move Tab to Main Window',
+          accelerator: 'Shift+CommandOrControl+M',
+          click: win.moveTabToMainWindow
+        },
         { type: 'separator' },
         {
           label: 'Tab Shortcuts Stay in Their Window',

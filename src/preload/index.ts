@@ -203,16 +203,18 @@ export interface ClaudeTermApi {
   tabsAdopted(tabIds: TabId[]): void
   /** this window's last tab moved away */
   windowEmptied(): void
-  onAdoptTabs(cb: (handoffs: TabHandoff[]) => void): () => void
+  /** `atX`: where along the tab bar they were dropped, when they were */
+  onAdoptTabs(cb: (handoffs: TabHandoff[], atX?: number) => void): () => void
   /** a tab dragged out of the window: show (or with null, drop) its floating ghost */
   tabDragGhost(ghost: { title: string; color: string | null; width: number } | null): void
   tabDragMove(screenX: number, screenY: number): void
   /** a tab dragged from another window is over this window's tab bar */
-  onDropHover(cb: (over: boolean) => void): () => void
+  /** x in this window where a dragged tab would drop, or null once it isn't over the bar */
+  onDropHover(cb: (x: number | null) => void): () => void
   /** main (window close → Move to Main Window) asks for every tab to go there */
   onHandoffAll(cb: (windowId: number) => void): () => void
   /** Window menu: move the active tab to a new window */
-  onMoveActiveTab(cb: () => void): () => void
+  onMoveActiveTab(cb: (target: HandoffTarget) => void): () => void
   /** order + active tab of this window, for numbering and cycling across windows */
   reportTabs(tabIds: TabId[], activeId: TabId | null, title: string): void
   selectGlobalTab(index: number): void
@@ -223,6 +225,8 @@ export interface ClaudeTermApi {
   appSettings(): Promise<AppSettings>
   onAppSettings(cb: (settings: AppSettings) => void): () => void
   newWindow(): void
+  /** move this window's active tab to the main window (no-op in the main window) */
+  moveTabToMainWindow(): void
   /** ⌃`: focus the next terminal window */
   nextWindow(): void
   /** an update downloaded before this window opened */
@@ -353,6 +357,7 @@ const api: ClaudeTermApi = {
   onAppSettings: (cb) => subscribe('app:settingsChanged', cb),
   pendingUpdate: () => ipcRenderer.invoke('update:pending'),
   newWindow: () => ipcRenderer.send('window:new'),
+  moveTabToMainWindow: () => ipcRenderer.send('tabs:moveToMain'),
   nextWindow: () => ipcRenderer.send('window:next'),
   saveSession: (state) => ipcRenderer.invoke('session:save', state),
   saveSessionSync: (state) => ipcRenderer.sendSync('session:saveSync', state),
