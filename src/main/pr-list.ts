@@ -79,6 +79,11 @@ async function fetchGithub(cwd: string): Promise<PrInfo[]> {
   return mapGithubPrs(listOut, merge.canMerge, viewer)
 }
 
+/** The gh CLI's signed-in login (null when signed out), for the settings panel. */
+export async function githubLogin(): Promise<string | null> {
+  return githubViewer(process.cwd(), await loginShellEnv())
+}
+
 // Who the gh CLI is signed in as. One login per machine in practice, and it
 // never changes mid-session — asked once, then remembered (null = we could not
 // tell, which leaves every PR unmarked).
@@ -153,7 +158,7 @@ let viewerId: string | null | undefined
 let userAsked = false
 const viewerMisses = new Set<string>()
 
-async function bitbucketViewer(repo: RepoRef): Promise<string | null> {
+export async function bitbucketViewer(repo: RepoRef): Promise<string | null> {
   if (viewerId !== undefined) return viewerId
   if (!userAsked) {
     userAsked = true

@@ -34,6 +34,8 @@ describe('actionsCiState', () => {
 describe('circleCiCiState', () => {
   it('aggregates workflow statuses', () => {
     expect(circleCiCiState([{ status: 'running' }, { status: 'success' }])).toBe('running')
+    expect(circleCiCiState([{ status: 'on_hold' }, { status: 'success' }])).toBe('held')
+    expect(circleCiCiState([{ status: 'on_hold' }, { status: 'failed' }])).toBe('failed')
     expect(circleCiCiState([{ status: 'failed' }, { status: 'success' }])).toBe('failed')
     expect(circleCiCiState([{ status: 'success' }, { status: 'success' }])).toBe('success')
     expect(circleCiCiState([{ status: 'canceled' }])).toBe('unknown')

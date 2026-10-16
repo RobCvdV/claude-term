@@ -10,7 +10,8 @@ import type {
   WorklogPlanEntry
 } from '../shared/types'
 import { todoJql } from '../shared/jira-labels'
-import { adfToText, mapTicketStatus, mapTodos } from './jira-todo-data'
+import { adfToText, mapTicketStatus, mapTodos, pickTransition } from './jira-todo-data'
+import type { TicketStage } from '../shared/work-rules'
 import { forgetTicket } from './ticket-status'
 import { basicAuth, buildWorklogBody, sinceDateFor, toBookedWorklogs } from './jira-helpers'
 import type { JiraWorklogRaw } from './jira-helpers'
@@ -324,6 +325,24 @@ export async function fetchTicketStatus(key: string): Promise<TicketStatus | nul
   if (res.status === 404) return null
   if (!res.ok) throw new Error(await errorText(res))
   return mapTicketStatus(await res.json(), key)
+}
+
+/** Move a ticket to the board stage; resolves to the status name it landed on. */
+export async function moveTicket(key: string, stage: TicketStage): Promise<string> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const path = `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`
+  const res = await jiraFetch(creds, path)
+  if (!res.ok) throw new Error(await errorText(res))
+  const pick = pickTransition(await res.json(), stage)
+  if (!pick) throw new Error(`no transition to ${stage} from the ticket's current status`)
+  const done = await jiraFetch(creds, path, {
+    method: 'POST',
+    body: { transition: { id: pick.id } }
+  })
+  if (!done.ok) throw new Error(await errorText(done))
+  forgetTicket(key)
+  return pick.name
 }
 
 export interface TicketDetails {

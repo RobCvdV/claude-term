@@ -62,7 +62,8 @@ export class CiPoller {
     private readonly getSnapshots: () => TabStatus[],
     /** `root` is null for the tab's own repo, else the extra workspace folder */
     private readonly setCi: (tabId: TabId, root: string | null, ci: CiInfo | null) => void,
-    private readonly isActive: () => boolean
+    private readonly isActive: () => boolean,
+    private readonly isEnabled: () => boolean = () => true
   ) {}
 
   start(): void {
@@ -76,7 +77,17 @@ export class CiPoller {
   }
 
   private async sweep(): Promise<void> {
-    if (this.sweeping || !this.isActive()) return
+    if (this.sweeping) return
+    if (!this.isEnabled()) {
+      // switched off: drop the dots rather than leave a stale state up
+      for (const snap of this.getSnapshots()) {
+        this.setCi(snap.tabId, null, null)
+        for (const r of snap.extraRepos) this.setCi(snap.tabId, r.root, null)
+      }
+      this.cache.clear()
+      return
+    }
+    if (!this.isActive()) return
     this.sweeping = true
     try {
       // group (tab, workspace repo) pairs by distinct CI target so each is
@@ -277,7 +288,7 @@ async function fetchCircle(repo: RepoRef, branch: string): Promise<CiResult> {
     url: number != null ? `https://app.circleci.com/pipelines/${slug}/${number}` : undefined,
     detail: number != null ? `#${number}` : undefined
   }
-  const live = workflows.find((w) => w.status === 'running' || w.status === 'on_hold')
+  const live = workflows.find((w) => w.status === 'running')
   if (state === 'running' && live?.id) {
     const jobRes = await fetch(`https://circleci.com/api/v2/workflow/${live.id}/job`, {
       headers,

@@ -6,7 +6,7 @@ import {
   type WebContents
 } from 'electron'
 import type { HelpSection } from '../shared/types'
-import { appSettings, setAppSettings } from './app-settings'
+import { appSettings, onAppSettings, setAppSettings } from './app-settings'
 
 const ZOOM_STEP = 0.5
 /** Writes past what Chromium will render are kept, not clamped, so an unclamped
@@ -84,8 +84,14 @@ export interface WindowActions {
 export function installAppMenu(
   onCheckForUpdates: () => void,
   onShowHelp: (section: HelpSection) => void,
-  win: WindowActions
+  win: WindowActions,
+  onShowSettings: () => void
 ): void {
+  const settingsItem: MenuItemConstructorOptions = {
+    label: 'Settings…',
+    accelerator: 'CommandOrControl+,',
+    click: onShowSettings
+  }
   const isMac = process.platform === 'darwin'
   const checkForUpdates: MenuItemConstructorOptions = {
     label: 'Check for Updates…',
@@ -108,6 +114,8 @@ export function installAppMenu(
             submenu: [
               { role: 'about' },
               checkForUpdates,
+              { type: 'separator' },
+              settingsItem,
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -154,12 +162,14 @@ export function installAppMenu(
         { label: 'Move Tab to New Window', click: win.moveTabToNewWindow },
         { type: 'separator' },
         {
+          id: 'tabKeysPerWindow',
           label: 'Tab Shortcuts Stay in Their Window',
           type: 'checkbox',
           checked: appSettings().tabKeysPerWindow,
           click: (item) => setAppSettings({ tabKeysPerWindow: item.checked })
         },
         {
+          id: 'restoreWindowBounds',
           label: 'Restore Window Positions',
           type: 'checkbox',
           checked: appSettings().restoreWindowBounds,
@@ -171,9 +181,19 @@ export function installAppMenu(
     } as MenuItemConstructorOptions,
     {
       role: 'help',
-      submenu: isMac ? helpItems : [...helpItems, { type: 'separator' }, checkForUpdates]
+      submenu: isMac
+        ? helpItems
+        : [...helpItems, { type: 'separator' }, settingsItem, checkForUpdates]
     } as MenuItemConstructorOptions
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  // the settings panel flips these too — keep the checkmarks true
+  onAppSettings((s) => {
+    const menu = Menu.getApplicationMenu()
+    for (const id of ['tabKeysPerWindow', 'restoreWindowBounds'] as const) {
+      const item = menu?.getMenuItemById(id)
+      if (item) item.checked = s[id]
+    }
+  })
 }

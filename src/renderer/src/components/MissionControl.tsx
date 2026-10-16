@@ -3,6 +3,7 @@ import type {
   ActivityState,
   CiInfo,
   GitInfo,
+  ReviewItem,
   TabId,
   TabInfo,
   TabStatus
@@ -11,6 +12,8 @@ import { nameOf } from '../../../shared/status-folders'
 import { ticketUrl } from '../../../shared/jira-labels'
 import { useModalOverlay } from '../modal-overlay'
 import { ciLabel, ciTone, prReviewLabel, prTone, ticketTone } from '../work-status'
+import { readyToMerge, ticketDrift, ticketStage, tooFarBehind } from '../../../shared/work-rules'
+import { useAppSettings } from '../use-app-settings'
 
 interface Props {
   tabs: TabInfo[]
@@ -77,17 +80,65 @@ function LinkChip({
   )
 }
 
-/** One repo's line: branch (Jira status), PR review, CI, local git counts. */
+/** A small action inside a card: runs without selecting the card. */
+function ActionChip({
+  label,
+  title,
+  run
+}: {
+  label: string
+  title: string
+  run: () => Promise<{ ok: boolean; error?: string }>
+}): React.JSX.Element {
+  const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle')
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <span
+      role="button"
+      className={`mission-action ${phase === 'done' ? 'tone-green' : phase === 'failed' ? 'tone-red' : ''}`}
+      title={error ?? title}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (phase === 'busy' || phase === 'done') return
+        setPhase('busy')
+        void run().then((r) => {
+          // ok=false without an error is a cancelled confirmation
+          setPhase(r.ok ? 'done' : r.error ? 'failed' : 'idle')
+          setError(r.error ?? null)
+        })
+      }}
+    >
+      {phase === 'busy'
+        ? '…'
+        : phase === 'done'
+          ? '✓ moved'
+          : phase === 'failed'
+            ? `${label} failed`
+            : label}
+    </span>
+  )
+}
+
+const moveTo = (key: string, stage: 'review' | 'deploy') => () =>
+  window.claudeTerm.jiraMove(key, stage)
+
+/** One repo's line: branch (Jira status), PR review, CI, local git counts,
+ *  and what to do next — ready to merge, too far behind, a lagging ticket. */
 function RepoWork({
   label,
   git,
-  ci
+  ci,
+  behindThreshold
 }: {
   label?: string
   git: GitInfo
   ci: CiInfo | null
+  behindThreshold: number
 }): React.JSX.Element {
   const { pr, ticket } = git
+  const ready = readyToMerge(git, ci, behindThreshold)
+  const behindFlag = tooFarBehind(git, behindThreshold)
+  const drift = ticketDrift(git)
   return (
     <div className="mission-work">
       <div className="mission-row mission-branch-row">
@@ -106,10 +157,15 @@ function RepoWork({
         )}
       </div>
       <div className="mission-row mission-chips">
+        {ready && <span className="mission-chip mission-ready">✓ ready to merge</span>}
         {pr ? (
           <LinkChip url={pr.url} className={prTone(pr)} title={pr.title}>
             ● PR #{pr.number} {prReviewLabel(pr)}
             {pr.comments ? <span className="dim"> · {pr.comments} 💬</span> : null}
+          </LinkChip>
+        ) : git.mergedPr ? (
+          <LinkChip url={git.mergedPr.url} className="tone-magenta">
+            PR #{git.mergedPr.number} merged
           </LinkChip>
         ) : (
           git.unpushed === 0 &&
@@ -135,13 +191,40 @@ function RepoWork({
           </LinkChip>
         )}
         {(git.changed > 0 || git.unpushed > 0 || git.behind > 0) && (
-          <span className="mission-chip mission-git">
+          <span
+            className={`mission-chip mission-git ${behindFlag ? 'tone-orange' : ''}`}
+            title={
+              behindFlag ? `${git.behind} commits behind main — rebase before review` : undefined
+            }
+          >
             {git.changed > 0 && <span className="stat-changed">~{git.changed}</span>}
             {git.unpushed > 0 && <span className="stat-ahead">↑{git.unpushed}</span>}
-            {git.behind > 0 && <span className="stat-behind">↓{git.behind}</span>}
+            {git.behind > 0 && (
+              <span className={behindFlag ? undefined : 'stat-behind'}>↓{git.behind}</span>
+            )}
+            {behindFlag && <span>rebase?</span>}
           </span>
         )}
+        {ready && ticket && ticketStage(ticket) === 'review' && (
+          <ActionChip
+            label={`${ticket.key} → Deploy`}
+            title="move the ticket to Deploy"
+            run={moveTo(ticket.key, 'deploy')}
+          />
+        )}
       </div>
+      {drift && (
+        <div className="mission-row mission-drift">
+          <span>⚠ {drift.text}</span>
+          {drift.moveTo && ticket && (
+            <ActionChip
+              label={drift.moveTo === 'review' ? '→ Peer review' : '→ Deploy'}
+              title={`move ${ticket.key} on the board`}
+              run={moveTo(ticket.key, drift.moveTo)}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -158,7 +241,11 @@ function needsYou(st: TabStatus | null): boolean {
 }
 
 /** Counts across all tabs for the header, e.g. "1 needs input · 2 approved". */
-function summary(statuses: (TabStatus | null)[]): { text: string; tone: string }[] {
+function summary(
+  statuses: (TabStatus | null)[],
+  behindThreshold: number
+): { text: string; tone: string }[] {
+  let ready = 0
   let input = 0
   let failed = 0
   let building = 0
@@ -175,6 +262,7 @@ function summary(statuses: (TabStatus | null)[]): { text: string; tone: string }
       if (review === 'changes') changes++
       if (review === 'approved') approved++
       if (review === 'pending') waiting++
+      if (r.git && readyToMerge(r.git, r.ci, behindThreshold)) ready++
     }
   }
   return [
@@ -183,7 +271,8 @@ function summary(statuses: (TabStatus | null)[]): { text: string; tone: string }
     { n: changes, text: 'changes requested', tone: 'tone-orange' },
     { n: building, text: 'building', tone: 'tone-orange' },
     { n: waiting, text: 'awaiting review', tone: 'tone-blue' },
-    { n: approved, text: 'approved', tone: 'tone-green' }
+    { n: ready, text: 'ready to merge', tone: 'tone-green' },
+    { n: approved - ready, text: 'approved', tone: 'tone-green' }
   ]
     .filter((c) => c.n > 0)
     .map((c) => ({ text: `${c.n} ${c.text}`, tone: c.tone }))
@@ -208,6 +297,14 @@ export function MissionControl({
   }, [])
 
   const panelRef = useModalOverlay<HTMLDivElement>(onClose)
+  const settings = useAppSettings()
+  const [reviews, setReviews] = useState<ReviewItem[]>([])
+  useEffect(() => {
+    void window.claudeTerm.reviewQueue().then(setReviews)
+    return window.claudeTerm.onReviewQueue(setReviews)
+  }, [])
+  const waiting = settings.reviewQueue ? reviews : []
+  const todo = waiting.filter((r) => !r.myVerdict).length
 
   // "doing" snippets: fetched when a card first appears, refreshed when its
   // tab's turn ends (busy → not-busy) — the moment the transcript has news.
@@ -243,16 +340,53 @@ export function MissionControl({
         <div className="activity-head">
           <span className="activity-title">Mission control</span>
           <span className="mission-summary">
-            {summary(tabs.map((t) => statuses[t.tabId] ?? null)).map((c) => (
+            {summary(
+              tabs.map((t) => statuses[t.tabId] ?? null),
+              settings.behindThreshold
+            ).map((c) => (
               <span key={c.text} className={c.tone}>
                 {c.text}
               </span>
             ))}
+            {todo > 0 && <span className="tone-magenta">{todo} to review</span>}
           </span>
           <button className="help-close" onClick={onClose} title="Close (Esc)">
             ×
           </button>
         </div>
+        {waiting.length > 0 && (
+          <div className="mission-reviews">
+            <div className="mission-reviews-title">Waiting on your review</div>
+            {waiting.map((r) => (
+              <button
+                key={r.url}
+                className="mission-review"
+                title={r.url}
+                onClick={() => window.open(r.url)}
+              >
+                <span className="dim">{r.repo.split('/').pop()}</span>
+                <span className="pr-number">#{r.number}</span>
+                <span className="mission-review-title">{r.title}</span>
+                {r.author && <span className="dim">{r.author}</span>}
+                <span
+                  className={
+                    r.myVerdict === 'approved'
+                      ? 'tone-green'
+                      : r.myVerdict === 'changes'
+                        ? 'tone-orange'
+                        : 'tone-magenta'
+                  }
+                >
+                  {r.myVerdict === 'approved'
+                    ? 'you approved'
+                    : r.myVerdict === 'changes'
+                      ? 'you asked for changes'
+                      : 'to review'}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mission-grid">
           {tabs.map((tab) => {
             const st = statuses[tab.tabId] ?? null
@@ -284,12 +418,19 @@ export function MissionControl({
                     label={extras.length > 0 ? folder : undefined}
                     git={st.git}
                     ci={st.ci}
+                    behindThreshold={settings.behindThreshold}
                   />
                 )}
                 {extras
                   .filter((r) => r.git.branch)
                   .map((r) => (
-                    <RepoWork key={r.root} label={nameOf(r.root)} git={r.git} ci={r.ci} />
+                    <RepoWork
+                      key={r.root}
+                      label={nameOf(r.root)}
+                      git={r.git}
+                      ci={r.ci}
+                      behindThreshold={settings.behindThreshold}
+                    />
                   ))}
                 {doing[tab.tabId] && <div className="mission-doing">{doing[tab.tabId]}</div>}
               </button>

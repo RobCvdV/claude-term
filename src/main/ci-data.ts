@@ -39,8 +39,9 @@ export function actionsCiState(runs: { status?: string; conclusion?: string | nu
 export function circleCiCiState(workflows: { status?: string }[]): CiState {
   if (workflows.length === 0) return 'unknown'
   const statuses = workflows.map((w) => w.status)
-  if (statuses.some((s) => s === 'running' || s === 'on_hold')) return 'running'
+  if (statuses.some((s) => s === 'running')) return 'running'
   if (statuses.some((s) => s === 'failed' || s === 'error' || s === 'failing')) return 'failed'
+  if (statuses.some((s) => s === 'on_hold')) return 'held'
   if (statuses.every((s) => s === 'success')) return 'success'
   return 'unknown'
 }

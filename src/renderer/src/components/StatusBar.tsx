@@ -27,6 +27,8 @@ import {
 import { jiraLabelsFor, ticketUrl } from '../../../shared/jira-labels'
 import { VolumeControl } from './VolumeControl'
 import { ciLabel, prReviewLabel, prTone, ticketTone } from '../work-status'
+import { readyToMerge, tooFarBehind } from '../../../shared/work-rules'
+import { useAppSettings } from '../use-app-settings'
 import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
 
 interface Props {
@@ -348,12 +350,15 @@ function BranchMenu({
 function PrMenu({
   tabId,
   prUrlByRoot,
-  current
+  current,
+  ready
 }: {
   tabId: TabId
   prUrlByRoot: Map<string, string | null>
   /** the tab's own branch PR, for the review dot */
   current: BranchPr | null
+  /** approved, green and clean — the dot gets a check */
+  ready: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [groups, setGroups] = useState<PrGroup[] | null>(null)
@@ -375,7 +380,7 @@ function PrMenu({
         className="ext-link"
         title={
           current
-            ? `#${current.number} ${prReviewLabel(current)}${current.comments ? ` · ${current.comments} comments` : ''}`
+            ? `#${current.number} ${prReviewLabel(current)}${ready ? ' — ready to merge' : ''}${current.comments ? ` · ${current.comments} comments` : ''}`
             : undefined
         }
         onClick={() => (open ? setOpen(false) : show())}
@@ -384,7 +389,7 @@ function PrMenu({
           show()
         }}
       >
-        {current && <span className={`ci-dot ${prTone(current)}`}>●</span>}
+        {current && <span className={`ci-dot ${prTone(current)}`}>{ready ? '✓' : '●'}</span>}
         PRs
       </span>
       {open && (
@@ -642,6 +647,7 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
     return () => clearInterval(id)
   }, [])
 
+  const settings = useAppSettings()
   const payload = status?.payload
   const git = status?.git
   // The tab's folder is where it was created (status.cwd — never re-homed).
@@ -758,6 +764,8 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
     ...extraRepos.filter((r) => r.git.remoteUrl).map((r) => [r.root, r.git.remoteUrl] as const)
   ])
 
+  const behindFlag = !!git && tooFarBehind(git, settings.behindThreshold)
+
   const rl5 = payload?.rate_limits?.five_hour
   const rl7 = payload?.rate_limits?.seven_day
   // Colour the weekly window only in its last 2 days (before reset); stay dim
@@ -821,7 +829,14 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
             </button>
           )}
           {git.unpushed > 0 && <span className="stat-ahead">↑{git.unpushed}</span>}
-          {git.behind > 0 && <span className="stat-behind">↓{git.behind}</span>}
+          {git.behind > 0 && (
+            <span
+              className={behindFlag ? 'tone-orange' : 'stat-behind'}
+              title={behindFlag ? 'far behind main — rebase before review' : undefined}
+            >
+              ↓{git.behind}
+            </span>
+          )}
         </span>
       )}
       {payload?.cost &&
@@ -911,7 +926,12 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
         </ExternalLink>
       )}
       {(repo || extraRepos.length > 0) && tabId && (
-        <PrMenu tabId={tabId} prUrlByRoot={prUrlByRoot} current={git?.pr ?? null} />
+        <PrMenu
+          tabId={tabId}
+          prUrlByRoot={prUrlByRoot}
+          current={git?.pr ?? null}
+          ready={!!git && readyToMerge(git, status?.ci ?? null, settings.behindThreshold)}
+        />
       )}
       {actions && (
         <ExternalLink url={actions} className="ext-link" title={ciTitle(ci, 'actions', 'run')}>

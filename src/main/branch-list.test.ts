@@ -29,6 +29,7 @@ const gitInfo = {
   remoteUrl: '',
   prUrl: null,
   pr: null,
+  mergedPr: null,
   ticket: null,
   hasWorkflows: false
 }

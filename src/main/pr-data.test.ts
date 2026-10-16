@@ -3,6 +3,8 @@ import {
   accountIdFromCommits,
   bitbucketBranchPr,
   githubBranchPr,
+  mapBitbucketReviews,
+  mapGithubReviews,
   mapBitbucketPrs,
   mapGithubPrs,
   MAX_PRS
@@ -182,5 +184,50 @@ describe('bitbucketBranchPr', () => {
 
   it('is null without a PR', () => {
     expect(bitbucketBranchPr({ values: [] })).toBeNull()
+  })
+})
+
+describe('review queue mapping', () => {
+  it('reads my verdict from the Bitbucket participants', () => {
+    const body = {
+      values: [
+        {
+          id: 3,
+          title: 'Fix',
+          links: { html: { href: 'https://bb/3' } },
+          author: { display_name: 'Ann' },
+          participants: [{ user: { account_id: 'me' }, approved: true, state: 'approved' }]
+        },
+        {
+          id: 4,
+          title: 'Feat',
+          links: { html: { href: 'https://bb/4' } },
+          participants: [
+            { user: { account_id: 'me' }, approved: false, state: 'changes_requested' }
+          ]
+        },
+        { id: 5, title: 'New', links: { html: { href: 'https://bb/5' } } }
+      ]
+    }
+    expect(mapBitbucketReviews(body, 'ws/repo', 'me').map((r) => r.myVerdict)).toEqual([
+      'approved',
+      'changes',
+      null
+    ])
+  })
+
+  it('maps a gh search', () => {
+    const json = JSON.stringify([
+      {
+        number: 7,
+        title: 'T',
+        url: 'https://gh/7',
+        repository: { nameWithOwner: 'o/r' },
+        author: { login: 'x' }
+      }
+    ])
+    expect(mapGithubReviews(json)).toEqual([
+      { repo: 'o/r', number: 7, title: 'T', url: 'https://gh/7', author: 'x', myVerdict: null }
+    ])
   })
 })

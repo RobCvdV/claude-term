@@ -38,6 +38,9 @@ import type {
   WorklogPlan,
   WorklogPlanEntry,
   AppSettings,
+  AppSettingsPatch,
+  IntegrationStatus,
+  ReviewItem,
   HandoffTarget,
   TabHandoff,
   TabMenuChoice,
@@ -221,7 +224,18 @@ export interface ClaudeTermApi {
   onActivateTab(cb: (tabId: TabId) => void): () => void
   tabContextMenu(): Promise<TabMenuChoice | null>
   appSettings(): Promise<AppSettings>
+  setAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   onAppSettings(cb: (settings: AppSettings) => void): () => void
+  /** which services have credentials, for the settings panel */
+  integrations(): Promise<IntegrationStatus>
+  /** the menu's Settings… (⌘,) */
+  onShowSettings(cb: () => void): () => void
+  testNotification(): void
+  /** open PRs waiting on my review (Settings → review queue) */
+  reviewQueue(): Promise<ReviewItem[]>
+  onReviewQueue(cb: (items: ReviewItem[]) => void): () => void
+  /** move a ticket on the board after a native confirmation; ok=false + no error = cancelled */
+  jiraMove(key: string, stage: 'review' | 'deploy'): Promise<{ ok: boolean; error?: string }>
   newWindow(): void
   /** ⌃`: focus the next terminal window */
   nextWindow(): void
@@ -350,6 +364,13 @@ const api: ClaudeTermApi = {
   onActivateTab: (cb) => subscribe('tabs:activate', cb),
   tabContextMenu: () => ipcRenderer.invoke('tab:contextMenu'),
   appSettings: () => ipcRenderer.invoke('app:settings'),
+  setAppSettings: (patch) => ipcRenderer.invoke('app:setSettings', patch),
+  integrations: () => ipcRenderer.invoke('app:integrations'),
+  onShowSettings: (cb) => subscribe('settings:show', cb),
+  testNotification: () => ipcRenderer.send('notify:test'),
+  reviewQueue: () => ipcRenderer.invoke('reviews:list'),
+  onReviewQueue: (cb) => subscribe('reviews:update', cb),
+  jiraMove: (key, stage) => ipcRenderer.invoke('jira:move', key, stage),
   onAppSettings: (cb) => subscribe('app:settingsChanged', cb),
   pendingUpdate: () => ipcRenderer.invoke('update:pending'),
   newWindow: () => ipcRenderer.send('window:new'),

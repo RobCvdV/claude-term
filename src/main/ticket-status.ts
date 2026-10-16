@@ -41,8 +41,19 @@ export function ticketStatus(branch: string): TicketStatus | null {
 
 /** Drop cached statuses: one ticket after we moved it, all on (dis)connect. */
 export function forgetTicket(key?: string): void {
-  if (key) cache.delete(key)
-  else cache.clear()
+  if (key) {
+    cache.delete(key)
+    movedByUs.set(key, Date.now())
+  } else cache.clear()
+}
+
+const SELF_MOVE_MS = 15 * 60_000
+const movedByUs = new Map<string, number>()
+
+/** We moved this ticket a moment ago — its next status change is no news. */
+export function recentlyMovedByUs(key: string): boolean {
+  const at = movedByUs.get(key)
+  return at !== undefined && Date.now() - at < SELF_MOVE_MS
 }
 
 async function refresh(key: string, fetch: Fetcher): Promise<void> {

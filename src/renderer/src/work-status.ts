@@ -1,4 +1,5 @@
 import type { BranchPr, CiInfo, TicketStatus } from '../../shared/types'
+import { ticketStage, type TicketStage } from '../../shared/work-rules'
 
 /** Labels and colour classes for PR review, CI and Jira status — shared by the
  *  status bar and Mission Control. */
@@ -22,6 +23,7 @@ export function prTone(pr: BranchPr): string {
 
 export function ciLabel(ci: CiInfo): string {
   if (ci.state === 'running') return ci.progress != null ? `running ${ci.progress}%` : 'running'
+  if (ci.state === 'held') return 'on hold'
   return ci.state === 'success' ? 'passed' : ci.state
 }
 
@@ -30,19 +32,20 @@ export function ciTone(ci: CiInfo): string {
     ? 'tone-green'
     : ci.state === 'failed'
       ? 'tone-red'
-      : ci.state === 'running'
+      : ci.state === 'running' || ci.state === 'held'
         ? 'tone-orange'
         : 'tone-dim'
 }
 
-/** Board stages read by name first (MendriX: Active → Peer review → Deploy →
- *  Done), falling back on Jira's category for anything else. */
+const STAGE_TONES: Record<TicketStage, string> = {
+  todo: 'tone-dim',
+  active: 'tone-blue',
+  review: 'tone-magenta',
+  deploy: 'tone-cyan',
+  done: 'tone-green',
+  blocked: 'tone-red'
+}
+
 export function ticketTone(t: TicketStatus): string {
-  const name = t.status.toLowerCase()
-  if (t.category === 'done') return 'tone-green'
-  if (/block|hold|impediment/.test(name)) return 'tone-red'
-  if (/review/.test(name)) return 'tone-magenta'
-  if (/deplo|test|accept|release|merge/.test(name)) return 'tone-cyan'
-  if (t.category === 'todo') return 'tone-dim'
-  return 'tone-blue'
+  return STAGE_TONES[ticketStage(t)]
 }

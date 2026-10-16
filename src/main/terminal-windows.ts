@@ -364,7 +364,8 @@ export class TerminalWindows {
     if (tabId) this.activate(tabId)
   }
 
-  private activate(tabId: TabId): void {
+  /** bring the tab's window forward and switch it to the tab */
+  activate(tabId: TabId): void {
     const id = this.owner.get(tabId)
     const win = id !== undefined ? this.entries.get(id)?.win : undefined
     if (!win || win.isDestroyed()) return

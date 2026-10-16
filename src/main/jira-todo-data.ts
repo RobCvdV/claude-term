@@ -1,4 +1,5 @@
 import type { JiraTodo, TicketStatus } from '../shared/types'
+import { ticketStage, type TicketStage } from '../shared/work-rules'
 
 // Pure helpers for the Jira to-do dropdown and "Start branch" — no I/O, so
 // they're unit-testable (jira-client.ts and jira-start.ts own the I/O).
@@ -174,4 +175,31 @@ export function mapTicketStatus(body: unknown, key: string): TicketStatus | null
     summary: issue.fields?.summary ?? '',
     assignee: issue.fields?.assignee?.displayName ?? null
   }
+}
+
+interface RawTransition {
+  id?: string
+  to?: { name?: string; statusCategory?: { key?: string } }
+}
+
+/** The transition that lands a ticket on `stage` (board names, as ticketStage reads them). */
+export function pickTransition(
+  body: unknown,
+  stage: TicketStage
+): { id: string; name: string } | null {
+  const rows = (body as { transitions?: RawTransition[] }).transitions ?? []
+  for (const t of rows) {
+    const name = t.to?.name
+    if (!t.id || !name) continue
+    const cat = t.to?.statusCategory?.key
+    const status: TicketStatus = {
+      key: '',
+      status: name,
+      category: cat === 'done' ? 'done' : cat === 'new' ? 'todo' : 'progress',
+      summary: '',
+      assignee: null
+    }
+    if (ticketStage(status) === stage) return { id: t.id, name }
+  }
+  return null
 }

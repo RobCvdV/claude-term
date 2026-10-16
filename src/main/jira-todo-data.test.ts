@@ -4,6 +4,7 @@ import {
   branchNameFor,
   findTicketBranch,
   mapTicketStatus,
+  pickTransition,
   mapTodos,
   MAX_DESCRIPTION_CHARS,
   startPrompt
@@ -158,5 +159,22 @@ describe('mapTicketStatus', () => {
     expect(mapTicketStatus(issue('done'), 'MTX-1')?.category).toBe('done')
     expect(mapTicketStatus(issue('new'), 'MTX-1')?.category).toBe('todo')
     expect(mapTicketStatus({}, 'MTX-1')).toBeNull()
+  })
+})
+
+describe('pickTransition', () => {
+  const body = {
+    transitions: [
+      { id: '11', to: { name: 'Active', statusCategory: { key: 'indeterminate' } } },
+      { id: '21', to: { name: 'Peer review', statusCategory: { key: 'indeterminate' } } },
+      { id: '31', to: { name: 'Deploy', statusCategory: { key: 'indeterminate' } } },
+      { id: '41', to: { name: 'Done', statusCategory: { key: 'done' } } }
+    ]
+  }
+
+  it('finds the transition to a board stage', () => {
+    expect(pickTransition(body, 'review')).toEqual({ id: '21', name: 'Peer review' })
+    expect(pickTransition(body, 'deploy')).toEqual({ id: '31', name: 'Deploy' })
+    expect(pickTransition({ transitions: [] }, 'deploy')).toBeNull()
   })
 })

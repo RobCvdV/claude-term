@@ -1,4 +1,4 @@
-import type { BranchPr, PrInfo, PrReview } from '../shared/types'
+import type { BranchPr, PrInfo, PrReview, ReviewItem } from '../shared/types'
 
 // Pure mapping from the gh CLI / Bitbucket API shapes to PrInfo — kept free of
 // electron imports so it's unit-testable (pr-list.ts owns the I/O).
@@ -134,4 +134,53 @@ export function bitbucketBranchPr(body: unknown): BranchPr | null {
     draft: !!row.draft,
     comments: row.comment_count ?? null
   }
+}
+
+interface BbReviewPr {
+  id?: number
+  title?: string
+  links?: { html?: { href?: string } }
+  author?: { display_name?: string }
+  participants?: { user?: { account_id?: string }; approved?: boolean; state?: string | null }[]
+}
+
+/** Open PRs listing a reviewer, with what that reviewer already said. */
+export function mapBitbucketReviews(body: unknown, repo: string, viewerId: string): ReviewItem[] {
+  const rows = (body as { values?: BbReviewPr[] }).values ?? []
+  return rows
+    .filter((r) => r.id != null && r.title && r.links?.html?.href)
+    .map((r) => {
+      const me = r.participants?.find((p) => p.user?.account_id === viewerId)
+      return {
+        repo,
+        number: r.id!,
+        title: r.title!,
+        url: r.links!.html!.href!,
+        author: r.author?.display_name ?? '',
+        myVerdict: me?.state === 'changes_requested' ? 'changes' : me?.approved ? 'approved' : null
+      }
+    })
+}
+
+interface GhSearchPr {
+  number?: number
+  title?: string
+  url?: string
+  repository?: { nameWithOwner?: string }
+  author?: { login?: string }
+}
+
+/** `gh search prs --review-requested=@me --json number,title,url,repository,author`.
+ *  GitHub drops the request once you review, so no verdict is ever known here. */
+export function mapGithubReviews(json: string): ReviewItem[] {
+  return (JSON.parse(json) as GhSearchPr[])
+    .filter((r) => r.number != null && r.title && r.url)
+    .map((r) => ({
+      repo: r.repository?.nameWithOwner ?? '',
+      number: r.number!,
+      title: r.title!,
+      url: r.url!,
+      author: r.author?.login ?? '',
+      myVerdict: null
+    }))
 }

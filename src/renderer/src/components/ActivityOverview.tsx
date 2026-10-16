@@ -51,7 +51,7 @@ function fmtDate(iso: string): string {
 }
 
 /** Inline email+token form shown while no Jira token is stored. */
-function JiraConnectBar({
+export function JiraConnectBar({
   onConnected
 }: {
   onConnected: (s: JiraStatus) => void

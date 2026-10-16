@@ -51,6 +51,9 @@ function HowTo(): React.JSX.Element {
           run an action
         </Keys>
         <Keys k="⌘E">Mission control — every tab at a glance</Keys>
+        <Keys k="⌘,">
+          Settings — notifications, polling, integrations and the app&apos;s switches
+        </Keys>
         <Keys k="⌘⇧A">Jump to the next tab waiting for input</Keys>
         <Keys k="⌘F">
           Find — the session&apos;s whole conversation (or its terminal screen); Enter / ⇧Enter or ↑
@@ -219,6 +222,33 @@ function Guide(): React.JSX.Element {
           Bonsai model when one is running — plain truncation otherwise). The header counts what
           needs you across all tabs, and a card with a failed build, requested changes or a question
           gets a red edge. Click a card to jump there; click a chip to open the ticket, PR or build.
+        </p>
+        <p>
+          A PR that is approved, green (or only waiting on an approval step) and has nothing
+          uncommitted, unpushed or too far behind main reads <b>ready to merge</b> — with a button
+          to move its ticket from Peer review to Deploy. A branch with a PR that is many commits
+          behind main gets an orange <b>rebase?</b> (the threshold is in Settings). A yellow ⚠ line
+          flags a ticket lagging the branch: a PR open while the ticket is still Active, a merged PR
+          whose ticket did not move on, or a Done ticket whose branch is still checked out — with a
+          one-click move where there is an obvious next stage. Every move asks first. Above the
+          cards, <b>Waiting on your review</b> lists other people&apos;s open PRs that name you as
+          reviewer (Bitbucket repos you have open, plus a GitHub search), refreshed every 5 minutes.
+        </p>
+      </section>
+      <section>
+        <h3>Settings &amp; notifications</h3>
+        <p>
+          <b>⌘,</b> (also <b>claude-term → Settings…</b>) holds the app&apos;s switches. Changes
+          apply at once. <b>Notifications</b> are macOS notifications for a PR approved, changes
+          requested, new PR comments, a PR ready to merge, a review request, a failed build, a build
+          green again after a failure, a Jira ticket moved by someone else, and (off by default) a
+          session needing input while the app is in the background — each with its own switch, plus
+          one for all of them, &quot;only in the background&quot; and sound. The first look at a
+          branch only sets a baseline, and tabs sharing a branch raise one notification. Clicking
+          one jumps to its tab. Also here: CI polling, the review list, the behind-main threshold,
+          window and tab behaviour, keep-awake, spell check, volume, and which services have
+          credentials — Jira connects here; the rest read tokens from your login shell when the app
+          starts.
         </p>
       </section>
       <section>

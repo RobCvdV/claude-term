@@ -11,11 +11,12 @@ import { setupUpdater, installUpdate, checkForUpdatesInteractive, pendingUpdate 
 import { installAppMenu, installCycleKey, installZoomKeys } from './menu'
 import { TerminalWindows } from './terminal-windows'
 import { windowsOf } from './window-order'
-import { onAppSettings } from './app-settings'
+import { appSettings, onAppSettings } from './app-settings'
 import type { WindowBounds } from '../shared/types'
 import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
 import { setTicketFetcher } from './ticket-status'
+import { ReviewQueue } from './review-queue'
 import { fetchTicketStatus } from './jira-client'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
@@ -66,10 +67,30 @@ const ciPoller = new CiPoller(
   () => services.status.allSnapshots(),
   (tabId, root, ci) =>
     root === null ? services.status.setCi(tabId, ci) : services.status.setRepoCi(tabId, root, ci),
-  () => windows.anyVisible()
+  () => windows.anyVisible(),
+  () => appSettings().ciPolling
 )
 
 setTicketFetcher(fetchTicketStatus)
+
+// PRs waiting on my review, for Mission control (and a notification when one turns up)
+const reviews = new ReviewQueue(
+  () => services.status.allSnapshots(),
+  () => windows.anyVisible(),
+  () => appSettings().reviewQueue,
+  (items, added) => {
+    windows.broadcast('reviews:update', items)
+    for (const pr of added) {
+      services.desktop.notify({
+        kind: 'reviewRequested',
+        key: pr.url,
+        title: `Review requested: ${pr.repo.split('/').pop()} #${pr.number}`,
+        body: `${pr.title}${pr.author ? ` — ${pr.author}` : ''}`,
+        url: pr.url
+      })
+    }
+  }
+)
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
 // unless the env var is set, so normal runs are unaffected. Must be set before
@@ -156,8 +177,15 @@ app.whenReady().then(async () => {
   }
   onAppSettings((s) => windows.broadcast('app:settingsChanged', s))
   ipcMain.handle('update:pending', () => pendingUpdate())
+  ipcMain.handle('reviews:list', () => reviews.list())
+  let reviewsOn = appSettings().reviewQueue
+  onAppSettings((s) => {
+    if (s.reviewQueue !== reviewsOn) reviews.refresh()
+    reviewsOn = s.reviewQueue
+  })
   openStartupWindows(ipc.loadSession())
   ciPoller.start()
+  reviews.start()
 
   // Background auto-update: check on launch + daily, download silently, and let
   // the user install on their say-so (renderer pill → 'update:install'). The
@@ -175,7 +203,8 @@ app.whenReady().then(async () => {
       newWindow: () => windows.createFresh(),
       nextWindow: () => windows.cycle(),
       moveTabToNewWindow: () => frontWindow()?.webContents.send('tabs:moveActive')
-    }
+    },
+    () => frontWindow()?.webContents.send('settings:show')
   )
 
   // First-run: offer to install the global activity-logging hook (feeds the
