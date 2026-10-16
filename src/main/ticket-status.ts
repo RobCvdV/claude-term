@@ -5,7 +5,7 @@ import type { TicketStatus } from '../shared/types'
 
 const TTL_MS = 180_000
 /** not connected / offline: ask rarely */
-const TTL_ERROR_MS = 600_000
+const TTL_ERROR_MS = 120_000
 
 const TICKET_RE = /^(?:[^/]*\/)?([A-Z][A-Z0-9]+-\d+)(?:-.*)?$/
 

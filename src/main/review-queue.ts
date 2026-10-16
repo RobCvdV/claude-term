@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import type { ReviewItem, TabStatus } from '../shared/types'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
-import { bitbucketGet } from './bitbucket-api'
+import { openBitbucketPrs } from './bitbucket-prs'
 import { mapBitbucketReviews, mapGithubReviews } from './pr-data'
 import { bitbucketViewer } from './pr-list'
 import { loginShellEnv } from './shell-env'
@@ -94,18 +94,15 @@ export class ReviewQueue {
   }
 }
 
+/** Open PRs naming me as reviewer, from the repo's shared open listing. */
 async function bitbucketReviews(repo: RepoRef, name: string): Promise<ReviewItem[]> {
   const me = await bitbucketViewer(repo)
   if (!me) return []
-  const params = new URLSearchParams({
-    q: `state="OPEN" AND reviewers.account_id="${me}"`,
-    pagelen: '20',
-    fields:
-      'values.id,values.title,values.links.html.href,values.author.display_name,' +
-      'values.participants.user.account_id,values.participants.approved,values.participants.state'
-  })
-  const body = await bitbucketGet(`/repositories/${repo.owner}/${repo.repo}/pullrequests`, params)
-  return mapBitbucketReviews(body, name, me)
+  const listing = await openBitbucketPrs(repo)
+  const mine = listing.values.filter((v) =>
+    (v as { reviewers?: { account_id?: string }[] }).reviewers?.some((r) => r.account_id === me)
+  )
+  return mapBitbucketReviews({ values: mine }, name, me)
 }
 
 async function githubReviews(): Promise<ReviewItem[]> {

@@ -107,7 +107,8 @@ function HowTo(): React.JSX.Element {
         <Keys k="PRs">
           Click or right-click: open PRs of every workspace repo, grouped by folder, the ones you
           opened marked <b>mine</b> — click opens, right-click: Open / Merge. The dot before it is
-          this branch&apos;s PR: blue awaiting review, green approved, orange changes requested
+          this branch&apos;s PR: orange awaiting review, green approved, red changes requested, blue
+          merged, grey no PR (✓ when ready to merge)
         </Keys>
         <Keys k="branch">
           Right-click the branch chip: every workspace repo&apos;s branches, the ones whose newest
@@ -222,12 +223,13 @@ function Guide(): React.JSX.Element {
         <h3>Mission control</h3>
         <p>
           <b>⌘E</b> shows every tab at a glance: activity and elapsed time, context usage, and per
-          workspace repo the branch with its Jira status, the PR&apos;s review state and comment
-          count, the build (with progress while it runs) and unpushed / behind counts — plus a
-          one-line summary of what each session is doing (long turns are compressed by the local
-          Bonsai model when one is running — plain truncation otherwise). The header counts what
-          needs you across all tabs, and a card with a failed build, requested changes or a question
-          gets a red edge. Click a card to jump there; click a chip to open the ticket, PR or build.
+          workspace repo the branch with its Jira status and topic (the ticket summary, else the PR
+          title), the PR&apos;s review state and comment count, the build (with progress while it
+          runs) and unpushed / behind counts — plus your last prompt (<b>asked</b>) and a summary of
+          Claude&apos;s latest reply (<b>latest</b>; long turns are compressed by the local Bonsai
+          model when one is running — plain truncation otherwise). The header counts what needs you
+          across all tabs, and a card with a failed build, requested changes or a question gets a
+          red edge. Click a card to jump there; click a chip to open the ticket, PR or build.
         </p>
         <p>
           A PR that is approved, green (or only waiting on an approval step) and has nothing

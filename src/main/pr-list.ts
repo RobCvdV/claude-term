@@ -5,6 +5,7 @@ import type { RepoRef } from '../shared/repo-links'
 import { loginShellEnv } from './shell-env'
 import { accountIdFromCommits, mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
 import { bitbucketCreds, bitbucketGet } from './bitbucket-api'
+import { openBitbucketPrs } from './bitbucket-prs'
 
 /** How long a fetched PR list stays good. */
 const TTL_MS = 60_000
@@ -141,14 +142,8 @@ async function githubMergeInfo(cwd: string, env: NodeJS.ProcessEnv): Promise<Mer
 }
 
 async function fetchBitbucket(repo: RepoRef): Promise<PrInfo[]> {
-  const params = new URLSearchParams({
-    state: 'OPEN',
-    sort: '-created_on',
-    pagelen: String(MAX_PRS),
-    fields: 'values.id,values.title,values.links.html.href,values.author.account_id'
-  })
-  const body = await bitbucketGet(`/repositories/${repo.owner}/${repo.repo}/pullrequests`, params)
-  return mapBitbucketPrs(body, await bitbucketViewer(repo))
+  const listing = await openBitbucketPrs(repo)
+  return mapBitbucketPrs(listing, await bitbucketViewer(repo))
 }
 
 // Our own Bitbucket account id, for the same reason as githubViewer above.

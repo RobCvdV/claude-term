@@ -2204,16 +2204,14 @@ body {
 
 .mission-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
 
 .mission-title {
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .mission-activity {
@@ -2258,10 +2256,35 @@ body {
 }
 
 .mission-branch {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* what the work is about: the ticket summary, else the PR title */
+.mission-topic {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--fg);
+}
+
+.mission-label {
+  display: inline-block;
+  min-width: 42px;
+  margin-right: 6px;
+  color: var(--fg-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mission-asked {
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .mission-chips {
@@ -2387,7 +2410,7 @@ body {
   font-size: 11.5px;
   line-height: 1.4;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

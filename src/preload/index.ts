@@ -98,6 +98,8 @@ export interface ClaudeTermApi {
   statusSnapshot(tabId: TabId): Promise<TabStatus | null>
   /** one-line "doing" snippet for a tab's session (mission control) */
   missionDoing(tabId: TabId): Promise<string | null>
+  /** the session's last prompt, one line */
+  missionAsk(tabId: TabId): Promise<string | null>
   /** ⌘F over the tab session's own conversation; `includeTools` widens the
    *  search to tool calls, their output and thinking */
   searchConversation(
@@ -298,6 +300,7 @@ const api: ClaudeTermApi = {
   prContextMenu: (tabId, pr, root) => ipcRenderer.send('prs:contextMenu', tabId, pr, root),
   statusSnapshot: (tabId) => ipcRenderer.invoke('status:snapshot', tabId),
   missionDoing: (tabId) => ipcRenderer.invoke('mission:doing', tabId),
+  missionAsk: (tabId) => ipcRenderer.invoke('mission:ask', tabId),
   searchConversation: (tabId, query, includeTools) =>
     ipcRenderer.invoke('convo:search', tabId, query, includeTools),
   rateForecast: () => ipcRenderer.invoke('rate:forecast'),
