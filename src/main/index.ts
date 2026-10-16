@@ -71,7 +71,13 @@ const ciPoller = new CiPoller(
   () => appSettings().ciPolling
 )
 
-setTicketFetcher(fetchTicketStatus)
+// opt-in: decrypting the Jira token can raise a keychain prompt
+const applyTicketFetcher = (on: boolean): void => setTicketFetcher(on ? fetchTicketStatus : null)
+let ticketsOn = appSettings().jiraTicketStatus
+applyTicketFetcher(ticketsOn)
+onAppSettings((s) => {
+  if (s.jiraTicketStatus !== ticketsOn) applyTicketFetcher((ticketsOn = s.jiraTicketStatus))
+})
 
 // PRs waiting on my review, for Mission control (and a notification when one turns up)
 const reviews = new ReviewQueue(

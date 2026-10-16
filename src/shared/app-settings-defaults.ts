@@ -7,6 +7,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   ciPolling: true,
   behindThreshold: 20,
   reviewQueue: true,
+  jiraTicketStatus: false,
   notify: {
     enabled: true,
     onlyWhenUnfocused: false,

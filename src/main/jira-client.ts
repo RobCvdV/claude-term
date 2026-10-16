@@ -96,9 +96,15 @@ async function errorText(res: Response): Promise<string> {
   return `Jira ${res.status}${detail ? `: ${detail}` : ''}`
 }
 
+/** Connected or not, from the stored file alone — no token decrypt, so no
+ *  keychain prompt just for asking. */
 export function jiraStatus(): JiraStatus {
-  const creds = readCreds()
-  return creds ? { connected: true, email: creds.email } : { connected: false }
+  try {
+    const s = JSON.parse(readFileSync(credsPath(), 'utf8')) as StoredCreds
+    return s.email && s.token ? { connected: true, email: s.email } : { connected: false }
+  } catch {
+    return { connected: false }
+  }
 }
 
 /** api.atlassian.com REST base for this site — the only base scoped tokens accept. */

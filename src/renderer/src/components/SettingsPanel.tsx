@@ -160,6 +160,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): React.JSX.E
                 hint="Jenkins, CircleCI, GitHub Actions"
               />
               <Toggle
+                on={s.jiraTicketStatus}
+                onChange={(jiraTicketStatus) => set({ jiraTicketStatus })}
+                label="Show the branch ticket's Jira status"
+                hint="reads the Jira token from the keychain — may ask for your password"
+              />
+              <Toggle
                 on={s.reviewQueue}
                 onChange={(reviewQueue) => set({ reviewQueue })}
                 label="Show PRs waiting on my review"

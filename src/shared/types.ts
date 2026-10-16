@@ -665,6 +665,9 @@ export interface AppSettings {
   behindThreshold: number
   /** list PRs waiting on my review in Mission Control */
   reviewQueue: boolean
+  /** look up the branch ticket's Jira status in the background — reads the
+   *  token from the keychain, which can prompt endlessly on some macOS setups */
+  jiraTicketStatus: boolean
   notify: NotifySettings
 }
 

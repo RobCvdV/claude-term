@@ -251,7 +251,8 @@ function Guide(): React.JSX.Element {
           session needing input while the app is in the background — each with its own switch, plus
           one for all of them, &quot;only in the background&quot; and sound. The first look at a
           branch only sets a baseline, and tabs sharing a branch raise one notification. Clicking
-          one jumps to its tab. Also here: CI polling, the review list, the behind-main threshold,
+          one jumps to its tab. Also here: the Jira status lookup (off by default — it reads the
+          Jira token from the keychain), CI polling, the review list, the behind-main threshold,
           window and tab behaviour, keep-awake, spell check, volume, and which services have
           credentials — Jira connects here; the rest read tokens from your login shell when the app
           starts.
@@ -262,15 +263,15 @@ function Guide(): React.JSX.Element {
         <p>
           Left to right: activity dot (busy timer, needs-input, idle), the tab&apos;s folder plus
           every other folder the session works in, git branch (ticket linked to Jira, branch to the
-          repo) with a dot for the ticket&apos;s Jira status (hover it for the name) and
-          changed/ahead/behind counts, the model and its reasoning effort, context usage (orange
-          from 60%, red from 78%), and the 5-hour / 7-day rate-limit windows with time-to-reset —
-          hover them for a burn forecast, and they turn orange early when the current pace hits 100%
-          before the reset. On the right: plan / roadmap / docs / settings editor windows for the
-          project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions) with a live
-          build-state dot (and progress while building), the Jira to-do and open-PRs dropdowns (they
-          open on a right-click, never on hover), Releases (GitHub) or Downloads (a Bitbucket repo
-          with files there), notification volume, and the clock.
+          repo) with a dot for the ticket&apos;s Jira status (hover it for the name; switch it on in
+          Settings) and changed/ahead/behind counts, the model and its reasoning effort, context
+          usage (orange from 60%, red from 78%), and the 5-hour / 7-day rate-limit windows with
+          time-to-reset — hover them for a burn forecast, and they turn orange early when the
+          current pace hits 100% before the reset. On the right: plan / roadmap / docs / settings
+          editor windows for the project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions)
+          with a live build-state dot (and progress while building), the Jira to-do and open-PRs
+          dropdowns (they open on a right-click, never on hover), Releases (GitHub) or Downloads (a
+          Bitbucket repo with files there), notification volume, and the clock.
         </p>
       </section>
       <section>
