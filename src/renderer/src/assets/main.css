@@ -1021,6 +1021,32 @@ body {
   font-size: 0.9em;
 }
 
+.docs-preview table {
+  border-collapse: collapse;
+  margin: 0 0 14px;
+  font-size: 0.95em;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.docs-preview th,
+.docs-preview td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.docs-preview th {
+  background: var(--bg-input);
+  font-weight: 600;
+}
+
+.docs-preview tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--bg-input) 45%, transparent);
+}
+
 .docs-preview pre {
   background: var(--bg-input);
   padding: 12px 14px;
