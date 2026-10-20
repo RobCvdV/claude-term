@@ -121,6 +121,7 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     }
   })
   const { selected, content, shown, dirty, saving, save, hostRef } = editor
+  const { changedOnDisk, reloadFromDisk, keepMine } = editor
 
   useEffect(() => {
     onOpenFile?.(selected?.label ?? null)
@@ -366,6 +367,23 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
             onClick={() => setNewFileError(null)}
           >
             {newFileError}
+          </div>
+        )}
+        {changedOnDisk && (
+          <div className="docs-conflict">
+            <span>
+              {selected?.label ?? 'This file'} changed on disk while you have unsaved edits.
+            </span>
+            <button className="docs-btn" onClick={reloadFromDisk}>
+              Reload from disk
+            </button>
+            <button
+              className="docs-btn"
+              onClick={keepMine}
+              title="Saving will overwrite the disk version"
+            >
+              Keep mine
+            </button>
           </div>
         )}
 

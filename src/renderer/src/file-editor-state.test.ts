@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { contentOf, isDirty, keepsDraft, reselect, shownText } from './file-editor-state'
+import {
+  contentOf,
+  diskChange,
+  isDirty,
+  keepsDraft,
+  reselect,
+  shownText
+} from './file-editor-state'
 
 describe('contentOf', () => {
   it('gives the open file its own text', () => {
@@ -82,5 +89,23 @@ describe('reselect', () => {
   it('selects nothing when the listing is empty', () => {
     expect(reselect([], '/a.md')).toBeNull()
     expect(reselect([], undefined)).toBeNull()
+  })
+})
+
+describe('diskChange', () => {
+  it('ignores an unchanged or unreadable file', () => {
+    expect(diskChange('a', 'a', null)).toBe('none')
+    expect(diskChange('a', null, null)).toBe('none')
+    expect(diskChange(null, 'b', null)).toBe('none')
+  })
+
+  it('takes a changed file over when nothing would be lost', () => {
+    expect(diskChange('a', 'b', null)).toBe('reload')
+    expect(diskChange('a', 'b', 'a')).toBe('reload') // typed, then undone
+    expect(diskChange('a', 'b', 'b')).toBe('reload') // our edit already on disk
+  })
+
+  it('asks when an unsaved edit differs from the new disk text', () => {
+    expect(diskChange('a', 'b', 'c')).toBe('conflict')
   })
 })

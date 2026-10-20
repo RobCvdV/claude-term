@@ -357,9 +357,11 @@ function Guide(): React.JSX.Element {
           <code>*.md</code>, <code>plan*</code>). Markdown opens rendered, with spell/grammar
           checking when you edit it; anything else opens straight in the editor with highlighting
           for its type. <code>⌘S</code> saves, a dot marks unsaved changes, and closing the window
-          (or its tab) prompts first. <b>+ New file</b> creates one from here: the OS save dialog
-          picks the folder and the name (starting next to the open file), and the new file opens in
-          the editor ready to type in.
+          (or its tab) prompts first. A file changed outside the window (Claude editing it, a git
+          checkout) refreshes on its own within a couple of seconds, cursor and scroll kept; with
+          unsaved edits a bar asks instead — <b>Reload from disk</b> or <b>Keep mine</b>.{' '}
+          <b>+ New file</b> creates one from here: the OS save dialog picks the folder and the name
+          (starting next to the open file), and the new file opens in the editor ready to type in.
         </p>
       </section>
       <section>

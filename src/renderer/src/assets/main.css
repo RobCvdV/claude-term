@@ -963,6 +963,21 @@ body {
   padding: 1px 6px;
 }
 
+.docs-conflict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 10%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-conflict span {
+  flex: 1;
+}
+
 .docs-preview {
   flex: 1;
   overflow: auto;
