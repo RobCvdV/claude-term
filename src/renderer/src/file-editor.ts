@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import { setupMonaco } from './monaco-setup'
 import { languageForFile } from './config-lang'
-import { contentOf, isDirty, keepsDraft, reselect, shownText } from './file-editor-state'
+import {
+  contentOf,
+  diskChange,
+  isDirty,
+  keepsDraft,
+  reselect,
+  shownText
+} from './file-editor-state'
 import type { LoadedFile } from './file-editor-state'
 
 /**
@@ -63,7 +70,16 @@ export interface FileEditor<E> {
   confirmDiscard: () => boolean
   /** host element for Monaco; it mounts while `editing` and the text is in */
   hostRef: React.RefObject<HTMLDivElement | null>
+  /** the file changed on disk while there were unsaved edits */
+  changedOnDisk: boolean
+  /** take the disk version, dropping the unsaved edits */
+  reloadFromDisk: () => void
+  /** keep the edits; asked again only if the file changes once more */
+  keepMine: () => void
 }
+
+/** How often an open file is re-read while its window is visible. */
+const DISK_POLL_MS = 2_000
 
 export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E>): FileEditor<E> {
   const { io, scheme, editing } = spec
@@ -71,6 +87,11 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
   const [loaded, setLoaded] = useState<LoadedFile | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // disk text that differs from both the baseline and an unsaved draft
+  const [conflict, setConflict] = useState<string | null>(null)
+  // disk text the user chose to keep their edits over — not asked about again
+  const ignoredDisk = useRef<string | null>(null)
+  const editorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
 
   // The spec the effects below read. Held in a ref (synced after each render,
   // before any other effect runs) so a caller passing fresh closures every
@@ -100,12 +121,70 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
   }, [selected, canRead])
 
   const content = contentOf(loaded, selected?.path)
+  const contentReady = content != null
   const shown = shownText(draft, content)
   const dirty = isDirty(draft, content)
 
+  // the latest disk/draft text, for the poll below without re-arming it
+  const latest = useRef({ content, draft, saving })
+  useEffect(() => {
+    latest.current = { content, draft, saving }
+  })
+
+  /** Make `text` the disk baseline and, with no draft to protect, what shows —
+   *  pushed into the open editor as an edit, so cursor, scroll and undo stay. */
+  const adoptDisk = useCallback((path: string, text: string): void => {
+    setLoaded({ path, text })
+    setConflict(null)
+    ignoredDisk.current = null
+    const ed = editorRef.current
+    const model = ed?.getModel()
+    if (ed && model && model.getValue() !== text) {
+      const view = ed.saveViewState()
+      model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null)
+      if (view) ed.restoreViewState(view)
+    }
+    setDraft(null)
+  }, [])
+
+  // Pick up changes made outside the window (Claude editing the file, git):
+  // re-read on focus and every couple of seconds while the window is visible.
+  useEffect(() => {
+    if (!selected || !canRead || !contentReady) return
+    const path = selected.path
+    let live = true
+    let busy = false
+    const check = async (): Promise<void> => {
+      if (busy || document.visibilityState !== 'visible' || latest.current.saving) return
+      busy = true
+      try {
+        const fresh = await specRef.current.io.read(path)
+        if (!live || fresh == null || fresh === ignoredDisk.current) return
+        const { content: base, draft: edit } = latest.current
+        const what = diskChange(base, fresh, edit)
+        if (what === 'reload') adoptDisk(path, fresh)
+        else if (what === 'conflict') setConflict(fresh)
+      } finally {
+        busy = false
+      }
+    }
+    const timer = setInterval(() => void check(), DISK_POLL_MS)
+    const onFocus = (): void => void check()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      live = false
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [selected, canRead, contentReady, adoptDisk])
+
   const select = useCallback((entry: E | null): void => {
     // a draft belongs to the file it was typed in — never carry it to another
-    if (!keepsDraft(openPath.current, entry?.path)) setDraft(null)
+    if (!keepsDraft(openPath.current, entry?.path)) {
+      setDraft(null)
+      setConflict(null)
+      ignoredDisk.current = null
+    }
     openPath.current = entry?.path
     setSelected(entry)
   }, [])
@@ -123,6 +202,8 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
     if (!ok) return
     // reconcile the baseline so `dirty` clears; the editor is not recreated
     setLoaded({ path: selected.path, text: draft })
+    setConflict(null)
+    ignoredDisk.current = null
     specRef.current.onSaved?.(selected)
   }, [selected, draft])
 
@@ -149,7 +230,6 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
   }, [])
 
   const hostRef = useRef<HTMLDivElement | null>(null)
-  const contentReady = content != null
   useEffect(() => {
     if (!editing || !selected || content == null || !hostRef.current) return
     const monaco = setupMonaco()
@@ -172,7 +252,9 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
     ]
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
     editor.focus()
+    editorRef.current = editor
     return () => {
+      editorRef.current = null
       for (const s of subs.reverse()) s.dispose()
       editor.dispose()
       model.dispose()
@@ -188,7 +270,19 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
     return !dirty || window.confirm('Discard unsaved changes?')
   }, [dirty])
 
+  const reloadFromDisk = useCallback((): void => {
+    if (selected && conflict != null) adoptDisk(selected.path, conflict)
+  }, [selected, conflict, adoptDisk])
+
+  const keepMine = useCallback((): void => {
+    ignoredDisk.current = conflict
+    setConflict(null)
+  }, [conflict])
+
   return {
+    changedOnDisk: conflict != null,
+    reloadFromDisk,
+    keepMine,
     selected,
     select,
     reselect: reselectFrom,

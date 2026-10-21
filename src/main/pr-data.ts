@@ -109,6 +109,7 @@ export function githubBranchPr(json: string): BranchPr | null {
 
 interface BbBranchPr {
   id?: number
+  state?: string
   title?: string
   draft?: boolean
   comment_count?: number
@@ -119,7 +120,11 @@ interface BbBranchPr {
 /** Bitbucket pullrequests listing filtered on the source branch, with
  *  participants. Any "changes requested" outweighs approvals. */
 export function bitbucketBranchPr(body: unknown): BranchPr | null {
-  const row = ((body as { values?: BbBranchPr[] }).values ?? [])[0]
+  // Bitbucket drops a `state=` parameter once `q` is given — never trust the
+  // query alone to have kept merged PRs out
+  const row = ((body as { values?: BbBranchPr[] }).values ?? []).find(
+    (r) => !r.state || r.state === 'OPEN'
+  )
   const url = row?.links?.html?.href
   if (!row || !url || row.id == null) return null
   const people = row.participants ?? []
@@ -183,4 +188,18 @@ export function mapGithubReviews(json: string): ReviewItem[] {
       author: r.author?.login ?? '',
       myVerdict: null
     }))
+}
+
+/** The branch's newest PR in any state (`q` on the branch, sorted -updated_on):
+ *  open → its review state, merged → merged, declined or none → nothing. */
+export function bitbucketBranchState(body: unknown): {
+  pr: BranchPr | null
+  merged: { number: number; url: string } | null
+} {
+  const row = ((body as { values?: BbBranchPr[] }).values ?? [])[0]
+  const url = row?.links?.html?.href
+  if (!row || !url || row.id == null) return { pr: null, merged: null }
+  if (row.state === 'MERGED') return { pr: null, merged: { number: row.id, url } }
+  if (row.state === 'OPEN') return { pr: bitbucketBranchPr({ values: [row] }), merged: null }
+  return { pr: null, merged: null }
 }

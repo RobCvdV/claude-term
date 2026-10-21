@@ -45,3 +45,16 @@ export function reselect<E extends { path: string }>(
 ): E | null {
   return (open ? entries.find((e) => e.path === open) : undefined) ?? entries[0] ?? null
 }
+
+/** What to do when the open file reads differently from the last disk text:
+ *  take it over when there is no unsaved edit (or the edit already matches
+ *  it), ask when an edit would be lost. */
+export function diskChange(
+  content: string | null,
+  fresh: string | null,
+  draft: string | null
+): 'none' | 'reload' | 'conflict' {
+  if (fresh == null || content == null || fresh === content) return 'none'
+  if (draft == null || draft === content || draft === fresh) return 'reload'
+  return 'conflict'
+}

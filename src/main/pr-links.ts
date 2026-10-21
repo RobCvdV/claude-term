@@ -4,7 +4,7 @@ import type { RepoRef } from '../shared/repo-links'
 import { isTrunkBranch } from '../shared/repo-links'
 import { bitbucketGet } from './bitbucket-api'
 import { forBranch, mergedBitbucketPrs, openBitbucketPrs } from './bitbucket-prs'
-import { bitbucketBranchPr, githubBranchPr } from './pr-data'
+import { bitbucketBranchPr, bitbucketBranchState, githubBranchPr } from './pr-data'
 import { loginShellEnv } from './shell-env'
 
 /** How long a resolved answer (PR or "no PR") stays good. */
@@ -59,12 +59,11 @@ async function refresh(key: string, cwd: string, repo: RepoRef, branch: string):
   let merged: MergedPr | null = null
   let ok = true
   try {
-    pr = repo.host === 'github' ? await githubPr(cwd, branch) : await bitbucketPr(repo, branch)
-    if (!pr) {
-      merged =
-        repo.host === 'github'
-          ? await githubMerged(cwd, branch)
-          : await bitbucketMerged(repo, branch)
+    if (repo.host === 'github') {
+      pr = await githubPr(cwd, branch)
+      if (!pr) merged = await githubMerged(cwd, branch)
+    } else {
+      ;({ pr, merged } = await bitbucketBranch(repo, branch))
     }
   } catch {
     ok = false
@@ -103,21 +102,36 @@ async function githubPr(cwd: string, branch: string): Promise<BranchPr | null> {
   return githubBranchPr(out)
 }
 
-/** From the repo's shared open listing; only a branch missing from a full
- *  page costs a query of its own. */
-async function bitbucketPr(repo: RepoRef, branch: string): Promise<BranchPr | null> {
-  const listing = await openBitbucketPrs(repo)
-  const hit = bitbucketBranchPr(forBranch(listing, branch))
-  if (hit || !listing.truncated) return hit
+/**
+ * From the repo's shared open and merged listings. A busy repo's listings are
+ * one page each, so a branch missing from both asks Bitbucket directly for its
+ * newest PR in any state — `state` is filtered by hand, as Bitbucket ignores a
+ * `state=` parameter next to `q`.
+ */
+async function bitbucketBranch(
+  repo: RepoRef,
+  branch: string
+): Promise<{ pr: BranchPr | null; merged: MergedPr | null }> {
+  const open = await openBitbucketPrs(repo)
+  const pr = bitbucketBranchPr(forBranch(open, branch))
+  if (pr) return { pr, merged: null }
+  const mergedListing = await mergedBitbucketPrs(repo)
+  const rows = forBranch(mergedListing, branch).values as {
+    id?: number
+    links?: { html?: { href?: string } }
+  }[]
+  const url = rows[0]?.links?.html?.href
+  if (rows[0]?.id != null && url) return { pr: null, merged: { number: rows[0].id, url } }
+  if (!open.truncated && !mergedListing.truncated) return { pr: null, merged: null }
   const params = new URLSearchParams({
     q: `source.branch.name="${branch}"`,
-    state: 'OPEN',
+    sort: '-updated_on',
     pagelen: '1',
     fields:
-      'values.id,values.title,values.draft,values.comment_count,values.links.html.href,' +
-      'values.participants.approved,values.participants.state'
+      'values.id,values.state,values.title,values.draft,values.comment_count,' +
+      'values.links.html.href,values.participants.approved,values.participants.state'
   })
-  return bitbucketBranchPr(
+  return bitbucketBranchState(
     await bitbucketGet(`/repositories/${repo.owner}/${repo.repo}/pullrequests`, params)
   )
 }
@@ -135,15 +149,4 @@ async function githubMerged(cwd: string, branch: string): Promise<MergedPr | nul
   if (out === null) throw new Error('gh pr list failed')
   const row = (JSON.parse(out) as { number?: number; url?: string }[])[0]
   return row?.number != null && row.url ? { number: row.number, url: row.url } : null
-}
-
-/** Only branches merged recently (the listing's one page) are found — an old
- *  merge is no longer news anyway. */
-async function bitbucketMerged(repo: RepoRef, branch: string): Promise<MergedPr | null> {
-  const rows = forBranch(await mergedBitbucketPrs(repo), branch).values as {
-    id?: number
-    links?: { html?: { href?: string } }
-  }[]
-  const url = rows[0]?.links?.html?.href
-  return rows[0]?.id != null && url ? { number: rows[0].id, url } : null
 }
