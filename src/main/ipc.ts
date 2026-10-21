@@ -14,7 +14,9 @@ import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
+  ClaudeTask,
   CompletionRequest,
+  EditRequest,
   AppSettingsPatch,
   CompanionInfo,
   PairingInfo,
@@ -36,7 +38,7 @@ import { windowsOf } from './window-order'
 import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
 import { appSettings, onAppSettings, setAppSettings } from './app-settings'
 import { integrationStatus } from './integrations'
-import { completeWithClaude, warmUpCompletion } from './claude-complete'
+import { completeWithClaude, editWithClaude, warmUpClaude } from './claude-complete'
 import { DesktopNotifier } from './desktop-notifier'
 import { WorkWatch } from './work-watch'
 import { recentlyMovedByUs } from './ticket-status'
@@ -878,7 +880,8 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.handle('app:integrations', () => integrationStatus())
   ipcMain.on('notify:test', () => services.desktop.test())
   ipcMain.handle('claude:complete', (_e, req: CompletionRequest) => completeWithClaude(req))
-  ipcMain.on('claude:warm', (_e, path: string) => warmUpCompletion(path))
+  ipcMain.handle('claude:edit', (_e, req: EditRequest) => editWithClaude(req))
+  ipcMain.on('claude:warm', (_e, task: ClaudeTask, path: string) => warmUpClaude(task, path))
 
   // Mission control's drift / ready-to-merge fix: move the ticket on the board,
   // after a confirmation — others watch that board too.

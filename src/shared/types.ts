@@ -665,6 +665,8 @@ export interface AppSettings {
   behindThreshold: number
   /** list PRs waiting on my review in Mission Control */
   reviewQueue: boolean
+  /** model for "Edit selection with Claude" — Sonnet edits better, Haiku answers faster */
+  claudeEditModel: 'sonnet' | 'haiku'
   /** look up the branch ticket's Jira status in the background — reads the
    *  token from the keychain, which can prompt endlessly on some macOS setups */
   jiraTicketStatus: boolean
@@ -703,6 +705,18 @@ export interface CompletionRequest {
 }
 
 export type CompletionResult = { ok: true; text: string } | { ok: false; error: string }
+
+/** What a Claude request is for — each runs on its own warm process. */
+export type ClaudeTask = 'complete' | 'edit'
+
+/** "Edit selection with Claude": the selection, its surroundings and what to do. */
+export interface EditRequest {
+  path: string
+  before: string
+  selection: string
+  after: string
+  instruction: string
+}
 
 export type AppSettingsPatch = Partial<Omit<AppSettings, 'notify'>> & {
   notify?: Partial<NotifySettings>

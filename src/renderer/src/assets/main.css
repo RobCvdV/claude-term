@@ -975,6 +975,78 @@ body {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
+/* "Edit selection with Claude": the prompt above the selection, then the diff */
+.claude-edit-prompt {
+  width: min(560px, 70vw);
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.claude-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.claude-edit-note:empty {
+  display: none;
+}
+
+.claude-edit-note {
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.claude-edit-diff {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 55%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--accent);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.claude-edit-diff:focus {
+  outline: none;
+}
+
+.claude-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.claude-edit-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claude-edit-host {
+  flex: 1;
+  min-height: 0;
+}
+
 .claude-complete-error {
   color: var(--red);
 }
@@ -2546,6 +2618,10 @@ label.settings-row {
   border-radius: 4px;
   padding: 2px 6px;
   font: inherit;
+}
+
+.settings-select {
+  width: auto;
 }
 
 .settings-button {

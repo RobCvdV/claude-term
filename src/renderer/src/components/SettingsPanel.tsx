@@ -219,6 +219,27 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): React.JSX.E
             </section>
 
             <section>
+              <h3>Claude in the editor</h3>
+              <label className="settings-row">
+                <span>Edit selection with</span>
+                <select
+                  className="settings-number settings-select"
+                  value={s.claudeEditModel}
+                  onChange={(e) =>
+                    set({ claudeEditModel: e.target.value as AppSettings['claudeEditModel'] })
+                  }
+                >
+                  <option value="sonnet">Sonnet</option>
+                  <option value="haiku">Haiku</option>
+                </select>
+                <span className="settings-hint">
+                  Sonnet edits better (~2–3 s), Haiku answers faster (~1 s); completion always uses
+                  Haiku
+                </span>
+              </label>
+            </section>
+
+            <section>
               <h3>Integrations</h3>
               {svc && (
                 <>

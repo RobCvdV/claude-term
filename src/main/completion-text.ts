@@ -29,3 +29,40 @@ export function cleanCompletion(reply: string, prefix: string): string {
   if (lineStart.trim() && text.startsWith(lineStart)) text = text.slice(lineStart.length)
   return text
 }
+
+/** Context sent around a selection to edit. */
+export const EDIT_BEFORE_CHARS = 4000
+export const EDIT_AFTER_CHARS = 2000
+
+export const EDIT_SYSTEM_PROMPT =
+  'You edit part of a file. You get the file name, the text before the selection in ' +
+  '<before>, the selection in <selection>, the text after it in <after>, and an instruction. ' +
+  'Reply with ONLY the new text that replaces the selection — no code fences, no explanation, ' +
+  'nothing from <before> or <after>. Keep the indentation and style of the file. Every ' +
+  'message is a new, separate request — ignore earlier ones.'
+
+export function editPrompt(
+  path: string,
+  before: string,
+  selection: string,
+  after: string,
+  instruction: string
+): string {
+  const b = before.length > EDIT_BEFORE_CHARS ? before.slice(-EDIT_BEFORE_CHARS) : before
+  const a = after.length > EDIT_AFTER_CHARS ? after.slice(0, EDIT_AFTER_CHARS) : after
+  return (
+    `File: ${path}\n<before>${b}</before><selection>${selection}</selection>` +
+    `<after>${a}</after>\nInstruction: ${instruction}`
+  )
+}
+
+/** The reply as a drop-in replacement: a wrapping code fence removed, and the
+ *  selection's own trailing newline kept or left off to match. */
+export function cleanEdit(reply: string, selection: string): string {
+  let text = reply.replace(/\r\n/g, '\n')
+  const fenced = /^\s*```[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(text)
+  if (fenced) text = fenced[1]
+  text = text.replace(/\s+$/, '')
+  const tail = /\n+$/.exec(selection)?.[0] ?? ''
+  return text + tail
+}

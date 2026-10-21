@@ -1,5 +1,6 @@
 import type * as monacoNs from 'monaco-editor'
 import { setupMonaco } from './monaco-setup'
+import { attachClaudeEdit } from './claude-edit'
 
 /**
  * "✨ Complete with Claude" in a file window: the top entry of the ⌃Space
@@ -183,7 +184,8 @@ export function attachClaudeCompletion(
   const uri = editor.getModel()?.uri.toString()
   if (!uri) return { dispose: () => {} }
   attached.set(uri, { editor, path })
-  window.claudeTerm.claudeWarm(path)
+  window.claudeTerm.claudeWarm('complete', path)
+  attachClaudeEdit(editor, path)
   return {
     dispose: () => {
       attached.delete(uri)

@@ -39,7 +39,9 @@ import type {
   WorklogPlanEntry,
   AppSettings,
   AppSettingsPatch,
+  ClaudeTask,
   CompletionRequest,
+  EditRequest,
   CompletionResult,
   IntegrationStatus,
   ReviewItem,
@@ -239,8 +241,10 @@ export interface ClaudeTermApi {
   testNotification(): void
   /** one completion at a cursor from `claude -p` on the user's own login */
   claudeComplete(req: CompletionRequest): Promise<CompletionResult>
-  /** start Claude ahead of the first completion for this file's account */
-  claudeWarm(path: string): void
+  /** "Edit selection with Claude": the replacement text for the selection */
+  claudeEdit(req: EditRequest): Promise<CompletionResult>
+  /** start Claude for `task` ahead of the first request on this file's account */
+  claudeWarm(task: ClaudeTask, path: string): void
   /** open PRs waiting on my review (Settings → review queue) */
   reviewQueue(): Promise<ReviewItem[]>
   onReviewQueue(cb: (items: ReviewItem[]) => void): () => void
@@ -382,7 +386,8 @@ const api: ClaudeTermApi = {
   onShowSettings: (cb) => subscribe('settings:show', cb),
   testNotification: () => ipcRenderer.send('notify:test'),
   claudeComplete: (req) => ipcRenderer.invoke('claude:complete', req),
-  claudeWarm: (path) => ipcRenderer.send('claude:warm', path),
+  claudeEdit: (req) => ipcRenderer.invoke('claude:edit', req),
+  claudeWarm: (task, path) => ipcRenderer.send('claude:warm', task, path),
   reviewQueue: () => ipcRenderer.invoke('reviews:list'),
   onReviewQueue: (cb) => subscribe('reviews:update', cb),
   jiraMove: (key, stage) => ipcRenderer.invoke('jira:move', key, stage),
