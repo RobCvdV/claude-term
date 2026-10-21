@@ -8,7 +8,8 @@ export default defineConfig({
   renderer: {
     // off Vite's default 5173 — electron-vite doesn't detect a foreign server
     // there and would load its page; strictPort makes a collision fail loudly
-    server: { port: 5199, strictPort: true },
+    // a second dev instance (scripts/dev-instance.sh) runs beside the usual one
+    server: { port: Number(process.env['CLAUDE_TERM_RENDERER_PORT'] ?? 5199), strictPort: true },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),

@@ -51,10 +51,13 @@ function register(monaco: typeof monacoNs): void {
       ) {
         return { suggestions: [] }
       }
+      // Monaco ranks items by how well they match the word typed so far, so the
+      // entry covers that word and puts it back unchanged — an empty range would
+      // match nothing and sink below every word suggestion
       const word = model.getWordUntilPosition(position)
       const at = {
         startLineNumber: position.lineNumber,
-        startColumn: position.column,
+        startColumn: word.startColumn,
         endLineNumber: position.lineNumber,
         endColumn: position.column
       }
@@ -64,11 +67,10 @@ function register(monaco: typeof monacoNs): void {
             label: TITLE,
             kind: monaco.languages.CompletionItemKind.Event,
             detail: 'Haiku · Tab accepts',
-            // stays listed whatever word is half-typed, and always on top
             filterText: word.word,
             sortText: '\u0000',
             preselect: true,
-            insertText: '',
+            insertText: word.word,
             range: at,
             command: { id: COMMAND, title: TITLE, arguments: [uri] }
           }

@@ -985,6 +985,12 @@ body {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
+.claude-edit-label {
+  margin: 0 2px 5px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
 .claude-edit-input {
   width: 100%;
   box-sizing: border-box;

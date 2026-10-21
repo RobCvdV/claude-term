@@ -27,14 +27,19 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
+/** The open prompt per editor — a second ⌃Space replaces it, never stacks. */
+const openPrompts = new WeakMap<Editor, () => void>()
+
 /** The one-line instruction input, as a content widget above the selection. */
 function openPrompt(editor: Editor, path: string, session: EditSession): void {
+  openPrompts.get(editor)?.()
   const box = el('div', 'claude-edit-prompt')
+  const label = el('div', 'claude-edit-label', '✨ Edit selection with Claude')
   const input = el('input', 'claude-edit-input')
   input.placeholder = 'Describe the change — Enter to send, Esc to cancel'
   input.value = session.instruction
   const note = el('div', 'claude-edit-note')
-  box.append(input, note)
+  box.append(label, input, note)
   const widget: monacoNs.editor.IContentWidget = {
     getId: () => 'claude-edit-prompt',
     getDomNode: () => box,
@@ -44,10 +49,19 @@ function openPrompt(editor: Editor, path: string, session: EditSession): void {
     }),
     allowEditorOverflow: true
   }
+  let busy = false
   const close = (): void => {
+    if (openPrompts.get(editor) !== close) return
+    openPrompts.delete(editor)
+    moved.dispose()
     editor.removeContentWidget(widget)
     editor.focus()
   }
+  // clicking or moving elsewhere means the prompt is no longer wanted
+  const moved = editor.onDidChangeCursorSelection(() => {
+    if (!busy) close()
+  })
+  openPrompts.set(editor, close)
   input.addEventListener('keydown', (e) => {
     // keep Monaco's own keybindings out of the input
     e.stopPropagation()
@@ -57,7 +71,8 @@ function openPrompt(editor: Editor, path: string, session: EditSession): void {
     } else if (e.key === 'Enter' && input.value.trim()) {
       e.preventDefault()
       session.instruction = input.value.trim()
-      void send(editor, path, session, input, note, close)
+      busy = true
+      void send(editor, path, session, input, note, close).finally(() => (busy = false))
     }
   })
   editor.addContentWidget(widget)
@@ -159,9 +174,15 @@ function showDiff(editor: Editor, path: string, session: EditSession, text: stri
       message.textContent = 'The selection changed meanwhile — not applied'
       return
     }
+    const start = model.getOffsetAt({
+      lineNumber: session.range.startLineNumber,
+      column: session.range.startColumn
+    })
     editor.executeEdits('claude-edit', [{ range: session.range, text, forceMoveMarkers: true }])
     editor.pushUndoStop()
     done()
+    // a selection left over the new text would make the next ⌃Space an edit again
+    editor.setPosition(model.getPositionAt(start + text.length))
   }
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') {

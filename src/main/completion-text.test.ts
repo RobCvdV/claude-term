@@ -27,6 +27,14 @@ describe('cleanCompletion', () => {
     expect(cleanCompletion('const x = 42', 'foo\nconst x')).toBe(' = 42')
   })
 
+  it('puts back the space claude trimmed after a word', () => {
+    expect(cleanCompletion('% 2 === 0', '  return n')).toBe(' % 2 === 0')
+    expect(cleanCompletion('n * n', '  return')).toBe(' n * n')
+    expect(cleanCompletion('.length', 'items')).toBe('.length')
+    expect(cleanCompletion('(a, b)', 'add')).toBe('(a, b)')
+    expect(cleanCompletion('= 1', 'let x ')).toBe('= 1')
+  })
+
   it('keeps a leading newline only when the cursor is mid-line', () => {
     expect(cleanCompletion('\nnext()', 'a();')).toBe('\nnext()')
     expect(cleanCompletion('\nnext()', 'a();\n')).toBe('next()')

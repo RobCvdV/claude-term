@@ -4,6 +4,7 @@
 //   node scripts/cdp.mjs eval <title> <js> [port]          → prints the (awaited) result
 //   node scripts/cdp.mjs shot <title> <out.png> [js] [port] → optional js first, then a screenshot
 //   node scripts/cdp.mjs type <title> <text> [port]        → types into the focused terminal (+Enter)
+//   node scripts/cdp.mjs key <title> <combo> [port]        → one key press, e.g. ctrl+Space, meta+Enter
 // Env: WAIT_MS delays before acting (let lookups settle).
 import { writeFileSync } from 'fs'
 
@@ -79,6 +80,41 @@ sock.onopen = async () => {
         windowsVirtualKeyCode: 13
       })
       console.log('typed')
+    } else if (cmd === 'key') {
+      // e.g. "ctrl+Space", "meta+Enter", "Escape" — sent to whatever has focus
+      const parts = rest[1].split('+')
+      const key = parts.pop()
+      const mods = { alt: 1, ctrl: 2, meta: 4, shift: 8 }
+      const modifiers = parts.reduce((m, p) => m | (mods[p.toLowerCase()] ?? 0), 0)
+      const code =
+        key === ' ' || key === 'Space'
+          ? 'Space'
+          : key.length === 1
+            ? `Key${key.toUpperCase()}`
+            : key
+      const k = key === 'Space' ? ' ' : key
+      const vk =
+        {
+          Space: 32,
+          Enter: 13,
+          Escape: 27,
+          Tab: 9,
+          ArrowUp: 38,
+          ArrowDown: 40,
+          ArrowLeft: 37,
+          ArrowRight: 39
+        }[code] ?? k.toUpperCase().charCodeAt(0)
+      await send('Emulation.setFocusEmulationEnabled', { enabled: true })
+      for (const type of ['rawKeyDown', 'keyUp']) {
+        await send('Input.dispatchKeyEvent', {
+          type,
+          modifiers,
+          key: k,
+          code,
+          windowsVirtualKeyCode: vk
+        })
+      }
+      console.log('sent', rest[1])
     } else {
       throw new Error(`unknown command ${cmd}`)
     }

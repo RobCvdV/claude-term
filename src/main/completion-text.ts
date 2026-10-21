@@ -27,6 +27,9 @@ export function cleanCompletion(reply: string, prefix: string): string {
   text = text.replace(/^\n+/, (m) => (prefix.endsWith('\n') ? '' : m)).replace(/\s+$/, '')
   const lineStart = prefix.slice(prefix.lastIndexOf('\n') + 1)
   if (lineStart.trim() && text.startsWith(lineStart)) text = text.slice(lineStart.length)
+  // claude trims its answer, so `n` + ` % 2` arrives as `n%2`-glued: put the
+  // space back between a word and an operator or another word
+  if (/[\w)\]]$/.test(prefix) && /^[\w%+\-*/=<>!&|?^]/.test(text)) text = ' ' + text
   return text
 }
 
