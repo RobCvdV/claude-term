@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   accountIdFromCommits,
   bitbucketBranchPr,
+  bitbucketBranchState,
   githubBranchPr,
   mapBitbucketReviews,
   mapGithubReviews,
@@ -229,5 +230,30 @@ describe('review queue mapping', () => {
     expect(mapGithubReviews(json)).toEqual([
       { repo: 'o/r', number: 7, title: 'T', url: 'https://gh/7', author: 'x', myVerdict: null }
     ])
+  })
+})
+
+describe('merged PRs under a branch query', () => {
+  const row = (state: string): object => ({
+    id: 4058,
+    state,
+    title: 'T',
+    links: { html: { href: 'https://bb/4058' } },
+    participants: []
+  })
+
+  it('never reads a merged row as an open PR', () => {
+    expect(bitbucketBranchPr({ values: [row('MERGED')] })).toBeNull()
+    expect(bitbucketBranchPr({ values: [row('OPEN')] })?.number).toBe(4058)
+  })
+
+  it('takes the newest PR of any state as open or merged', () => {
+    expect(bitbucketBranchState({ values: [row('MERGED')] })).toEqual({
+      pr: null,
+      merged: { number: 4058, url: 'https://bb/4058' }
+    })
+    expect(bitbucketBranchState({ values: [row('OPEN')] }).pr?.review).toBe('pending')
+    expect(bitbucketBranchState({ values: [row('DECLINED')] })).toEqual({ pr: null, merged: null })
+    expect(bitbucketBranchState({ values: [] })).toEqual({ pr: null, merged: null })
   })
 })
