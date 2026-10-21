@@ -30,7 +30,7 @@ with the Read tool; send them to the user only when asked.
 - **Status bar**: hidden in a plain shell tab — `type "^Terminal" "claude"` first
   (starts a session; nothing is sent, so no usage), then `eval … ".status-bar"`.
 - **File window**: `eval "^Terminal" "(async()=>{const t=await window.claudeTerm.createTab('<dir>'); await new Promise(r=>setTimeout(r,1500)); window.claudeTerm.openDocsWindow(t.tabId,'docs','x',{path:'<abs file>',edit:true}); return 1})()"`,
-  then target it with `"File editor|docs=1"` (its title is the URL until it has loaded).
+  then target it with `"docs=1"` (matched on its address, which works while it is still loading).
 - **The file editor (Monaco)**: dev builds expose `window.__fileEditor` and
   `window.__monaco` in the file window. Place the cursor or selection with
   `__fileEditor.setPosition/setSelection`, `focus()` it, then press real keys

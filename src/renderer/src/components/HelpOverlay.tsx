@@ -92,8 +92,8 @@ function HowTo(): React.JSX.Element {
         <Keys k="←">Agents overview (on an empty box)</Keys>
         <Keys k="⌘.">Spelling fixes for the underlined word under the cursor</Keys>
         <Keys k="⌃Space">
-          In the file window&apos;s editor: suggestions with ✨ Complete with Claude on top (Tab
-          accepts); with text selected, ✨ Edit selection with Claude
+          In the file window&apos;s editor: suggestions with Claude&apos;s completion on top (Tab
+          inserts it); with text selected, ✨ Edit selection with Claude
         </Keys>
         <div className="help-note">
           Drop files anywhere: they become @-mentions; images attach as compact chips.
@@ -364,16 +364,17 @@ function Guide(): React.JSX.Element {
           (or its tab) prompts first. A file changed outside the window (Claude editing it, a git
           checkout) refreshes on its own within a couple of seconds, cursor and scroll kept; with
           unsaved edits a bar asks instead — <b>Reload from disk</b> or <b>Keep mine</b>. In the
-          editor, <code>⌃Space</code> lists suggestions with <b>✨ Complete with Claude</b> on top:
-          it asks Claude (Haiku, on your own login — it counts toward your plan&apos;s limits) for
-          the text at the cursor and shows it as a grey suggestion that Tab accepts and Esc or
-          typing drops. A Claude process is kept warm while you edit, so an answer takes about a
-          second. With text selected, <code>⌃Space</code> asks what to change instead: type the
-          instruction, Enter, and Claude&apos;s version opens as a diff over the editor —{' '}
-          <code>⌘↵</code> applies it, Esc discards it, <b>Change instruction</b> tries again. Edits
-          use Sonnet by default (Settings → Claude in the editor). <b>+ New file</b> creates one
-          from here: the OS save dialog picks the folder and the name (starting next to the open
-          file), and the new file opens in the editor ready to type in.
+          editor, <code>⌃Space</code> asks Claude (Haiku, on your own login — it counts toward your
+          plan&apos;s limits) for the text at the cursor: the top entry of the suggestion list reads
+          <b>✨ Claude is thinking…</b> and becomes Claude&apos;s answer within about a second (a
+          Claude process is kept warm while you edit). Tab or Enter inserts it; typing on drops it.
+          Nothing is asked until you press <code>⌃Space</code>. With text selected,{' '}
+          <code>⌃Space</code> asks what to change instead: type the instruction, Enter, and
+          Claude&apos;s version opens as a diff over the editor — <code>⌘↵</code> applies it, Esc
+          discards it, <b>Change instruction</b> tries again. Edits use Sonnet by default (Settings
+          → Claude in the editor). <b>+ New file</b> creates one from here: the OS save dialog picks
+          the folder and the name (starting next to the open file), and the new file opens in the
+          editor ready to type in.
         </p>
       </section>
       <section>

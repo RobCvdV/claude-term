@@ -245,7 +245,6 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
       minimap: { enabled: false },
       fontSize: 13,
       scrollBeyondLastLine: false,
-      inlineSuggest: { enabled: true },
       ...specRef.current.options
     })
     const subs = [

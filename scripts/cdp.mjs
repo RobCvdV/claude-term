@@ -1,5 +1,5 @@
 // Talk to a running claude-term over the Chrome DevTools Protocol (see
-// scripts/dev-instance.sh). Windows are picked by a regex on their title.
+// scripts/dev-instance.sh). Windows are picked by a regex on their title or address.
 //   node scripts/cdp.mjs list [port]
 //   node scripts/cdp.mjs eval <title> <js> [port]          → prints the (awaited) result
 //   node scripts/cdp.mjs shot <title> <out.png> [js] [port] → optional js first, then a screenshot
@@ -18,7 +18,10 @@ if (cmd === 'list') {
   process.exit(0)
 }
 
-const page = targets.find((t) => t.type === 'page' && new RegExp(rest[0]).test(t.title))
+// title or address: a window still loading has no title yet
+const page = targets.find(
+  (t) => t.type === 'page' && (new RegExp(rest[0]).test(t.title) || new RegExp(rest[0]).test(t.url))
+)
 if (!page) {
   console.error(`no window matches /${rest[0]}/ — open: ${targets.map((t) => t.title).join(' | ')}`)
   process.exit(1)

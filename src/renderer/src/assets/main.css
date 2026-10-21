@@ -963,18 +963,6 @@ body {
   padding: 1px 6px;
 }
 
-/* "Complete with Claude" note at the cursor */
-.claude-complete-note {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11.5px;
-  white-space: nowrap;
-  color: var(--fg);
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
 /* "Edit selection with Claude": the prompt above the selection, then the diff */
 .claude-edit-prompt {
   width: min(560px, 70vw);
@@ -1053,7 +1041,7 @@ body {
   min-height: 0;
 }
 
-.claude-complete-error {
+.claude-edit-error {
   color: var(--red);
 }
 
