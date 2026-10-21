@@ -2,13 +2,21 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import type { CompletionRequest, CompletionResult } from '../shared/types'
+import type { ClaudeTask, CompletionRequest, CompletionResult, EditRequest } from '../shared/types'
+import { appSettings } from './app-settings'
 import { claudeConfigDirIn } from './claude-dir'
-import { cleanCompletion, COMPLETION_SYSTEM_PROMPT, completionPrompt } from './completion-text'
+import {
+  cleanCompletion,
+  cleanEdit,
+  COMPLETION_SYSTEM_PROMPT,
+  completionPrompt,
+  EDIT_SYSTEM_PROMPT,
+  editPrompt
+} from './completion-text'
 import { loginShellEnv, resolveClaudePath } from './shell-env'
 
 /**
- * Completions from `claude` on the user's own login (subscription). Starting
+ * Completions and selection edits from `claude` on the user's own login (subscription). Starting
  * claude costs ~2 s of the ~3 s a one-off `claude -p` takes, so a warm
  * stream-json process per Claude account answers instead (~0.8 s): spawned
  * when a file editor opens, replaced every few completions so earlier answers
@@ -21,20 +29,30 @@ const TIMEOUT_MS = 45_000
 const USES_PER_PROCESS = 6
 const IDLE_MS = 10 * 60_000
 
-const BASE_ARGS = [
-  '-p',
-  '--model',
-  'haiku',
-  '--tools',
-  '',
-  '--strict-mcp-config',
-  '--no-session-persistence',
-  '--disable-slash-commands',
-  '--setting-sources',
-  '',
-  '--system-prompt',
-  COMPLETION_SYSTEM_PROMPT
-]
+/** What one kind of request runs as: its model and system prompt. */
+function taskSpec(task: ClaudeTask): { model: string; system: string } {
+  return task === 'edit'
+    ? { model: appSettings().claudeEditModel, system: EDIT_SYSTEM_PROMPT }
+    : { model: 'haiku', system: COMPLETION_SYSTEM_PROMPT }
+}
+
+function baseArgs(task: ClaudeTask): string[] {
+  const { model, system } = taskSpec(task)
+  return [
+    '-p',
+    '--model',
+    model,
+    '--tools',
+    '',
+    '--strict-mcp-config',
+    '--no-session-persistence',
+    '--disable-slash-commands',
+    '--setting-sources',
+    '',
+    '--system-prompt',
+    system
+  ]
+}
 
 function workDir(): string {
   const cwd = join(tmpdir(), 'claude-term-complete')
@@ -122,25 +140,37 @@ interface Slot {
 
 const slots = new Map<string, Slot>()
 
-async function spawnWarm(configDir: string): Promise<WarmClaude> {
+/** Warm processes are kept per task, model and Claude account. */
+const slotKey = (task: ClaudeTask, configDir: string): string =>
+  `${task}|${taskSpec(task).model}|${configDir}`
+
+async function spawnWarm(task: ClaudeTask, configDir: string): Promise<WarmClaude> {
   const [claude, env] = await Promise.all([resolveClaudePath(), claudeEnv(configDir)])
   const child = spawn(
     claude,
-    [...BASE_ARGS, '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
+    [
+      ...baseArgs(task),
+      '--input-format',
+      'stream-json',
+      '--output-format',
+      'stream-json',
+      '--verbose'
+    ],
     { cwd: workDir(), env }
   )
   return new WarmClaude(child)
 }
 
 /** The account's warm process, started if there is none (or it died). */
-async function warmFor(configDir: string): Promise<WarmClaude> {
-  const slot = slots.get(configDir) ?? { warm: null, next: null, idle: null }
-  slots.set(configDir, slot)
+async function warmFor(task: ClaudeTask, configDir: string): Promise<WarmClaude> {
+  const key = slotKey(task, configDir)
+  const slot = slots.get(key) ?? { warm: null, next: null, idle: null }
+  slots.set(key, slot)
   if (!slot.warm || slot.warm.dead) {
     const next = slot.next
     slot.next = null
-    slot.warm = (next && (await next.catch(() => null))) || (await spawnWarm(configDir))
-    if (slot.warm.dead) slot.warm = await spawnWarm(configDir)
+    slot.warm = (next && (await next.catch(() => null))) || (await spawnWarm(task, configDir))
+    if (slot.warm.dead) slot.warm = await spawnWarm(task, configDir)
   }
   if (slot.idle) clearTimeout(slot.idle)
   slot.idle = setTimeout(() => {
@@ -152,10 +182,10 @@ async function warmFor(configDir: string): Promise<WarmClaude> {
   return slot.warm
 }
 
-/** Start a warm process for the account of `path` ahead of the first request. */
-export function warmUpCompletion(path: string): void {
+/** Start a warm process for `task` on the account of `path`, ahead of the request. */
+export function warmUpClaude(task: ClaudeTask, path: string): void {
   void claudeConfigDirIn(dirname(path))
-    .then((configDir) => warmFor(configDir))
+    .then((configDir) => warmFor(task, configDir))
     .catch(() => undefined)
 }
 
@@ -168,15 +198,20 @@ function withTimeout<T>(p: Promise<T>): Promise<T> {
   ])
 }
 
-export async function completeWithClaude(req: CompletionRequest): Promise<CompletionResult> {
-  const configDir = await claudeConfigDirIn(dirname(req.path))
-  const prompt = completionPrompt(req.path, req.prefix, req.suffix)
+/** One answer from the warm process for `task`, falling back to a one-off run. */
+async function askClaude(
+  task: ClaudeTask,
+  path: string,
+  prompt: string
+): Promise<CompletionResult> {
+  const configDir = await claudeConfigDirIn(dirname(path))
+  const key = slotKey(task, configDir)
   try {
-    const warm = await warmFor(configDir)
-    const slot = slots.get(configDir)
-    // the replacement starts warming one completion ahead
+    const warm = await warmFor(task, configDir)
+    const slot = slots.get(key)
+    // the replacement starts warming one request ahead
     if (slot && !slot.next && warm.uses >= USES_PER_PROCESS - 2) {
-      slot.next = spawnWarm(configDir)
+      slot.next = spawnWarm(task, configDir)
       slot.next.catch(() => undefined)
     }
     const reply = await withTimeout(warm.ask(prompt))
@@ -184,22 +219,40 @@ export async function completeWithClaude(req: CompletionRequest): Promise<Comple
       warm.kill()
       slot.warm = null
     }
-    return { ok: true, text: cleanCompletion(reply, req.prefix) }
+    return { ok: true, text: reply }
   } catch {
-    slots.get(configDir)?.warm?.kill()
-    return oneShot(req, configDir, prompt)
+    slots.get(key)?.warm?.kill()
+    return oneShot(task, configDir, prompt)
   }
+}
+
+export async function completeWithClaude(req: CompletionRequest): Promise<CompletionResult> {
+  const res = await askClaude(
+    'complete',
+    req.path,
+    completionPrompt(req.path, req.prefix, req.suffix)
+  )
+  return res.ok ? { ok: true, text: cleanCompletion(res.text, req.prefix) } : res
+}
+
+export async function editWithClaude(req: EditRequest): Promise<CompletionResult> {
+  const res = await askClaude(
+    'edit',
+    req.path,
+    editPrompt(req.path, req.before, req.selection, req.after, req.instruction)
+  )
+  return res.ok ? { ok: true, text: cleanEdit(res.text, req.selection) } : res
 }
 
 /** Fallback: a plain `claude -p` for this one request. */
 async function oneShot(
-  req: CompletionRequest,
+  task: ClaudeTask,
   configDir: string,
   prompt: string
 ): Promise<CompletionResult> {
   const [claude, env] = await Promise.all([resolveClaudePath(), claudeEnv(configDir)])
   return new Promise((resolve) => {
-    const child = spawn(claude, BASE_ARGS, { cwd: workDir(), env })
+    const child = spawn(claude, baseArgs(task), { cwd: workDir(), env })
     let out = ''
     let err = ''
     const timer = setTimeout(() => {
@@ -221,7 +274,7 @@ async function oneShot(
         })
         return
       }
-      resolve({ ok: true, text: cleanCompletion(out, req.prefix) })
+      resolve({ ok: true, text: out })
     })
     child.stdin.end(prompt)
   })

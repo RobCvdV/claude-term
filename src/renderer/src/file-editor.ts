@@ -245,7 +245,6 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
       minimap: { enabled: false },
       fontSize: 13,
       scrollBeyondLastLine: false,
-      inlineSuggest: { enabled: true },
       ...specRef.current.options
     })
     const subs = [
@@ -256,6 +255,8 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())
     editor.focus()
     editorRef.current = editor
+    // dev builds only: lets scripts/cdp.mjs drive the editor (see the check-in-app skill)
+    if (import.meta.env.DEV) Object.assign(window, { __fileEditor: editor, __monaco: monaco })
     return () => {
       editorRef.current = null
       for (const s of subs.reverse()) s.dispose()
