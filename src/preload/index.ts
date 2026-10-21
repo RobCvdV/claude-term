@@ -39,6 +39,8 @@ import type {
   WorklogPlanEntry,
   AppSettings,
   AppSettingsPatch,
+  CompletionRequest,
+  CompletionResult,
   IntegrationStatus,
   ReviewItem,
   HandoffTarget,
@@ -235,6 +237,10 @@ export interface ClaudeTermApi {
   /** the menu's Settings… (⌘,) */
   onShowSettings(cb: () => void): () => void
   testNotification(): void
+  /** one completion at a cursor from `claude -p` on the user's own login */
+  claudeComplete(req: CompletionRequest): Promise<CompletionResult>
+  /** start Claude ahead of the first completion for this file's account */
+  claudeWarm(path: string): void
   /** open PRs waiting on my review (Settings → review queue) */
   reviewQueue(): Promise<ReviewItem[]>
   onReviewQueue(cb: (items: ReviewItem[]) => void): () => void
@@ -375,6 +381,8 @@ const api: ClaudeTermApi = {
   integrations: () => ipcRenderer.invoke('app:integrations'),
   onShowSettings: (cb) => subscribe('settings:show', cb),
   testNotification: () => ipcRenderer.send('notify:test'),
+  claudeComplete: (req) => ipcRenderer.invoke('claude:complete', req),
+  claudeWarm: (path) => ipcRenderer.send('claude:warm', path),
   reviewQueue: () => ipcRenderer.invoke('reviews:list'),
   onReviewQueue: (cb) => subscribe('reviews:update', cb),
   jiraMove: (key, stage) => ipcRenderer.invoke('jira:move', key, stage),

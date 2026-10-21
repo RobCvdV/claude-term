@@ -694,6 +694,16 @@ export interface ReviewItem {
   myVerdict: 'approved' | 'changes' | null
 }
 
+/** "Complete with Claude" in a file window: the text around the cursor. */
+export interface CompletionRequest {
+  /** absolute path of the open file — picks the Claude account and names the language */
+  path: string
+  prefix: string
+  suffix: string
+}
+
+export type CompletionResult = { ok: true; text: string } | { ok: false; error: string }
+
 export type AppSettingsPatch = Partial<Omit<AppSettings, 'notify'>> & {
   notify?: Partial<NotifySettings>
 }

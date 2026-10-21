@@ -17,6 +17,7 @@ import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
 import { setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
+import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
@@ -242,6 +243,9 @@ async function prepareUpdateQuit(): Promise<void> {
 }
 
 let quitConfirmed = false
+// a quit can still be cancelled at before-quit; by will-quit it is final
+app.on('will-quit', () => stopCompletionWorkers())
+
 app.on('before-quit', (e) => {
   if (quitConfirmed || updateQuit) return
   // No window (closed before quit) or no Claude session ever ran → nothing to
