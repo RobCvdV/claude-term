@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
 import { setupMonaco } from './monaco-setup'
+import { attachClaudeCompletion } from './claude-complete'
 import { languageForFile } from './config-lang'
 import {
   contentOf,
@@ -244,10 +245,12 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
       minimap: { enabled: false },
       fontSize: 13,
       scrollBeyondLastLine: false,
+      inlineSuggest: { enabled: true },
       ...specRef.current.options
     })
     const subs = [
       editor.onDidChangeModelContent(() => setDraft(editor.getValue())),
+      attachClaudeCompletion(editor, selected.path),
       ...(specRef.current.attach?.(editor, language) ?? [])
     ]
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveRef.current())

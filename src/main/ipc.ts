@@ -14,6 +14,7 @@ import { homedir, hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
+  CompletionRequest,
   AppSettingsPatch,
   CompanionInfo,
   PairingInfo,
@@ -35,6 +36,7 @@ import { windowsOf } from './window-order'
 import { hideDragGhost, moveDragGhost, showDragGhost } from './drag-ghost'
 import { appSettings, onAppSettings, setAppSettings } from './app-settings'
 import { integrationStatus } from './integrations'
+import { completeWithClaude } from './claude-complete'
 import { DesktopNotifier } from './desktop-notifier'
 import { WorkWatch } from './work-watch'
 import { recentlyMovedByUs } from './ticket-status'
@@ -875,6 +877,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.handle('app:setSettings', (_e, patch: AppSettingsPatch) => setAppSettings(patch))
   ipcMain.handle('app:integrations', () => integrationStatus())
   ipcMain.on('notify:test', () => services.desktop.test())
+  ipcMain.handle('claude:complete', (_e, req: CompletionRequest) => completeWithClaude(req))
 
   // Mission control's drift / ready-to-merge fix: move the ticket on the board,
   // after a confirmation — others watch that board too.
