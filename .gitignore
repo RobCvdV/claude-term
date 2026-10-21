@@ -14,8 +14,9 @@ resources/harper-grammar.wasm
 
 .idea
 
-# per-machine Claude Code settings
-.claude/
+# per-machine Claude Code settings; project skills are shared
+.claude/*
+!.claude/skills/
 
 # written by Claude Code when it loads the term-bridge mod
 resources/term-bridge/.claude-plugin/types/
