@@ -2,10 +2,11 @@ import type * as monacoNs from 'monaco-editor'
 import { setupMonaco } from './monaco-setup'
 
 /**
- * "✨ Complete with Claude" in a file window: an entry in the ⌘. menu that asks
- * Claude (on the user's own login) for the text at the cursor and shows it as
- * an inline suggestion — Tab takes it, Esc or typing drops it. Only editors
- * attached here get the entry; the prompt box shares Monaco but not this.
+ * "✨ Complete with Claude" in a file window: the top entry of the ⌃Space
+ * suggestion list. Picking it asks Claude (on the user's own login) for the
+ * text at the cursor and shows that as an inline suggestion — Tab takes it,
+ * Esc or typing drops it. Only editors attached here get the entry; the
+ * prompt box shares Monaco but not this.
  */
 
 const COMMAND = 'claude-term.completeWithClaude'
@@ -39,18 +40,38 @@ function register(monaco: typeof monacoNs): void {
       if (target) void request(target)
     }
   })
-  monaco.languages.registerCodeActionProvider('*', {
-    provideCodeActions: (model, _range, context) => {
+  monaco.languages.registerCompletionItemProvider('*', {
+    provideCompletionItems: (model, position, context) => {
       const uri = model.uri.toString()
-      // only when asked (⌘.), never as a lightbulb on every line
-      if (!attached.has(uri) || context.trigger !== monaco.languages.CodeActionTriggerType.Invoke) {
-        return { actions: [], dispose: () => {} }
+      // only on ⌃Space, not while typing triggers the list
+      if (
+        !attached.has(uri) ||
+        context.triggerKind !== monaco.languages.CompletionTriggerKind.Invoke
+      ) {
+        return { suggestions: [] }
+      }
+      const word = model.getWordUntilPosition(position)
+      const at = {
+        startLineNumber: position.lineNumber,
+        startColumn: position.column,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column
       }
       return {
-        actions: [
-          { title: TITLE, kind: 'claude', command: { id: COMMAND, title: TITLE, arguments: [uri] } }
-        ],
-        dispose: () => {}
+        suggestions: [
+          {
+            label: TITLE,
+            kind: monaco.languages.CompletionItemKind.Event,
+            detail: 'Haiku · Tab accepts',
+            // stays listed whatever word is half-typed, and always on top
+            filterText: word.word,
+            sortText: '\u0000',
+            preselect: true,
+            insertText: '',
+            range: at,
+            command: { id: COMMAND, title: TITLE, arguments: [uri] }
+          }
+        ]
       }
     }
   })
@@ -152,7 +173,7 @@ async function request({ editor, path }: Attached): Promise<void> {
   editor.trigger('claude-term', 'editor.action.inlineSuggest.trigger', {})
 }
 
-/** Give a file-window editor the ⌘. "Complete with Claude" entry. */
+/** Give a file-window editor the ⌃Space "Complete with Claude" entry. */
 export function attachClaudeCompletion(
   editor: monacoNs.editor.IStandaloneCodeEditor,
   path: string
@@ -162,6 +183,7 @@ export function attachClaudeCompletion(
   const uri = editor.getModel()?.uri.toString()
   if (!uri) return { dispose: () => {} }
   attached.set(uri, { editor, path })
+  window.claudeTerm.claudeWarm(path)
   return {
     dispose: () => {
       attached.delete(uri)

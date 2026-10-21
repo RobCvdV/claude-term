@@ -90,9 +90,10 @@ function HowTo(): React.JSX.Element {
         </Keys>
         <Keys k="⌥Tab">Hand focus to the terminal (and back again)</Keys>
         <Keys k="←">Agents overview (on an empty box)</Keys>
-        <Keys k="⌘.">
-          Spelling fixes for the underlined word under the cursor; in the file window also ✨
-          Complete with Claude
+        <Keys k="⌘.">Spelling fixes for the underlined word under the cursor</Keys>
+        <Keys k="⌃Space">
+          In the file window&apos;s editor: suggestions, with ✨ Complete with Claude on top — Tab
+          accepts its answer
         </Keys>
         <div className="help-note">
           Drop files anywhere: they become @-mentions; images attach as compact chips.
@@ -363,11 +364,13 @@ function Guide(): React.JSX.Element {
           (or its tab) prompts first. A file changed outside the window (Claude editing it, a git
           checkout) refreshes on its own within a couple of seconds, cursor and scroll kept; with
           unsaved edits a bar asks instead — <b>Reload from disk</b> or <b>Keep mine</b>. In the
-          editor, <code>⌘.</code> → <b>✨ Complete with Claude</b> asks Claude (Haiku, on your own
-          login — it counts toward your plan&apos;s limits) for the text at the cursor; it shows as
-          a grey suggestion that Tab accepts and Esc or typing drops. It takes a few seconds.{' '}
-          <b>+ New file</b> creates one from here: the OS save dialog picks the folder and the name
-          (starting next to the open file), and the new file opens in the editor ready to type in.
+          editor, <code>⌃Space</code> lists suggestions with <b>✨ Complete with Claude</b> on top:
+          it asks Claude (Haiku, on your own login — it counts toward your plan&apos;s limits) for
+          the text at the cursor and shows it as a grey suggestion that Tab accepts and Esc or
+          typing drops. A Claude process is kept warm while you edit, so an answer takes about a
+          second. <b>+ New file</b> creates one from here: the OS save dialog picks the folder and
+          the name (starting next to the open file), and the new file opens in the editor ready to
+          type in.
         </p>
       </section>
       <section>

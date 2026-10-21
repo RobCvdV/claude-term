@@ -9,7 +9,8 @@ export const COMPLETION_SYSTEM_PROMPT =
   'cursor in <prefix> and the text after it in <suffix>. Reply with ONLY the text to insert ' +
   'at the cursor — no code fences, no explanation, no repeat of the prefix or suffix. Finish ' +
   'the current statement, block or paragraph; stop where the suffix takes over. If nothing ' +
-  'sensible fits, reply with nothing.'
+  'sensible fits, reply with nothing. Every message is a new, separate request — ignore ' +
+  'earlier ones.'
 
 export function completionPrompt(path: string, prefix: string, suffix: string): string {
   const before = prefix.length > PREFIX_CHARS ? prefix.slice(-PREFIX_CHARS) : prefix
