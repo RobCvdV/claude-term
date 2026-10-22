@@ -32,6 +32,9 @@ export const SKIP_DIRS = new Set([
   '__recovery'
 ])
 
+/** Never shown in the tree at all: git's own store and Finder's droppings. */
+const HIDDEN = new Set(['.git', '.DS_Store'])
+
 /** Is `path` inside one of `roots` (or one of them itself)? */
 export function insideAny(roots: string[], path: string): boolean {
   const p = resolve(path)
@@ -65,9 +68,10 @@ export function treeRoots(cwd: string, addedDirs: string[]): TreeRoot[] {
   return roots
 }
 
-/** One level of `dir`: folders first, then files, each alphabetical. Dot-folders
- *  are kept — `.claude` and `.github` are worth reaching — and only the skip
- *  list is left out. Refuses any directory outside `roots`.
+/** One level of `dir`: folders first, then files, each alphabetical ignoring
+ *  case. Dot-folders are kept — `.claude` and `.github` are worth reaching — and
+ *  skip-list folders are listed as `excluded`. Refuses any directory outside
+ *  `roots`.
  *
  *  Symlinks are left out too: one pointing outside the roots would be a folder
  *  the window then refuses to open, and one pointing at an ancestor makes a
@@ -83,7 +87,7 @@ export function listTree(roots: string[], dir: string): TreeNode[] {
   const nodes: TreeNode[] = []
   for (const item of items) {
     const isDir = item.isDirectory()
-    if (isDir && SKIP_DIRS.has(item.name)) continue
+    if (HIDDEN.has(item.name)) continue
     if (!isDir && !item.isFile()) continue
     const path = resolve(dir, item.name)
     let size = 0
@@ -94,12 +98,17 @@ export function listTree(roots: string[], dir: string): TreeNode[] {
         continue // vanished between readdir and stat
       }
     }
-    nodes.push({ path, name: item.name, isDir, size })
+    const excluded = isDir && SKIP_DIRS.has(item.name)
+    nodes.push(
+      excluded
+        ? { path, name: item.name, isDir, size, excluded }
+        : { path, name: item.name, isDir, size }
+    )
   }
   nodes.sort(
     (a, b) =>
       Number(b.isDir) - Number(a.isDir) ||
-      a.name.localeCompare(b.name, undefined, { numeric: true })
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
   )
   return nodes
 }

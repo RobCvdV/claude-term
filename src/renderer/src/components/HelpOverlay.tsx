@@ -100,6 +100,24 @@ function HowTo(): React.JSX.Element {
         </div>
       </section>
       <section>
+        <h3>File window</h3>
+        <Keys k="⇧⌘F">Find a file (⌘F too, outside the editor) — ↓ walks the results</Keys>
+        <Keys k="↑ ↓ → ←">
+          Walk the rail — → opens a folder or steps in, ← closes it or steps out
+        </Keys>
+        <Keys k="a–z">Jump to the next name starting with what you type</Keys>
+        <Keys k="↵">Open in the editor (and give it the keys)</Keys>
+        <Keys k="Space">Quick Look the file — Space again or Esc closes it</Keys>
+        <Keys k="⌘O">Open with the default app</Keys>
+        <Keys k="⌘C ⌘V">Copy and paste files, Finder-style (paste only into project folders)</Keys>
+        <Keys k="⌥⌘C">Copy the path</Keys>
+        <Keys k="⌃Space">Context menu (right-click too) — includes Show in Finder</Keys>
+        <Keys k="⌘L">Back to the file tree, where you left it</Keys>
+        <Keys k="⌘E">To the editor (or the page, in View) without opening anything</Keys>
+        <Keys k="⌘P">Switch between View and Edit (markdown, images, HTML)</Keys>
+        <Keys k="⌥⌘L">Select the open file in the tree</Keys>
+      </section>
+      <section>
         <h3>Status bar</h3>
         <Keys k="click">
           Folder chip opens Finder — (+N) lists the session&apos;s other folders
@@ -350,22 +368,37 @@ function Guide(): React.JSX.Element {
         <h3>The file window</h3>
         <p>
           One detached window per tab holds everything the project has to read and edit. Its rail
-          lists the plan-mode plans Claude wrote, a <code>ROADMAP.md</code>, the project&apos;s
-          other markdown, and every Claude/config file that applies to it (global, project and local
-          settings, MCP config …) — then a tree of the project itself, so any file is reachable,
-          with added directories as sibling roots. The <b>plan</b>, <b>roadmap</b>, <b>docs</b> and{' '}
-          <b>settings</b> chips in the status bar all open that one window, each landing on its own
-          group. The filter box narrows those groups and searches the whole project with them, so a
-          file the rail doesn&apos;t list (a <code>notes</code> with no extension, a script) still
-          turns up by name — <code>*</code> and <code>?</code> make the query a pattern (
-          <code>*.md</code>, <code>plan*</code>). Markdown opens rendered, with spell/grammar
-          checking when you edit it; anything else opens straight in the editor with highlighting
-          for its type. <code>⌘S</code> saves, a dot marks unsaved changes, and closing the window
-          (or its tab) prompts first. A file changed outside the window (Claude editing it, a git
-          checkout) refreshes on its own within a couple of seconds, cursor and scroll kept; with
-          unsaved edits a bar asks instead — <b>Reload from disk</b> or <b>Keep mine</b>. In the
-          editor, <code>⌃Space</code> asks Claude (Haiku, on your own login — it counts toward your
-          plan&apos;s limits) for the text at the cursor: the top entry of the suggestion list reads
+          has one <b>Quick Access</b> header — the plan-mode plans Claude wrote, a{' '}
+          <code>ROADMAP.md</code>, the project&apos;s other markdown and every Claude/config file
+          that applies to it (global, project and local settings, MCP config …), each group
+          collapsed until you open it — and below it a header per project folder (the tab&apos;s
+          own, then each added directory; hover for the full path) with that folder&apos;s tree.
+          Names are coloured the way WebStorm does: blue modified, green added, red not in git yet,
+          olive ignored, brown excluded (<code>node_modules</code>, build output — listed, never
+          searched); a folder holding a change is blue too. Drag the rail&apos;s edge to resize it.
+          The <b>plan</b>, <b>roadmap</b>, <b>docs</b> and <b>settings</b> chips in the status bar
+          all open that one window, each landing on its own group. The window opens on the search
+          box: it narrows Quick Access and searches the whole project with it, so a file the rail
+          doesn&apos;t list (a <code>notes</code> with no extension, a script) still turns up by
+          name — <code>*</code> and <code>?</code> make the query a pattern (<code>*.md</code>,{' '}
+          <code>plan*</code>). The rail works from the keyboard like Finder: arrows walk it (→ and ←
+          open and close a level), typing jumps to a name, ↵ opens the file here, Space Quick Looks
+          it, <code>⌘O</code> opens it in its default app, <code>⌘C</code>/<code>⌘V</code> copy and
+          paste files to and from Finder (a clash gets Finder&apos;s &quot;copy&quot; name), and{' '}
+          <code>⌃Space</code> or a right-click opens the same actions as a menu with{' '}
+          <b>Show in Finder</b>. <code>⌥⌘L</code> or the ◎ button selects the open file in its tree.
+          <code>⌘L</code> jumps back to the tree and <code>⌘E</code> to the editor. Markdown opens
+          rendered, with spell/grammar checking when you edit it; images open as images (SVG shows
+          your unsaved edits too) and HTML can be viewed as a page — scripts never run.{' '}
+          <code>⌘P</code> or the View/Edit button switches; a file with nothing to show beyond its
+          text opens straight in the editor, highlighted for its type (XML-like files such as SVG
+          and project files read as XML). <code>⌘S</code> saves, a dot marks unsaved changes, and
+          closing the window (or its tab) prompts first. A file changed outside the window (Claude
+          editing it, a git checkout) refreshes on its own within a couple of seconds, cursor and
+          scroll kept; with unsaved edits a bar asks instead — <b>Reload from disk</b> or{' '}
+          <b>Keep mine</b>. In the editor, <code>⌃Space</code> asks Claude (Haiku, on your own login
+          — it counts toward your plan&apos;s limits) for the text at the cursor: the top entry of
+          the suggestion list reads
           <b>✨ Claude is thinking…</b> and becomes Claude&apos;s answer within about a second (a
           Claude process is kept warm while you edit). Tab or Enter inserts it; typing on drops it.
           Nothing is asked until you press <code>⌃Space</code>. With text selected,{' '}

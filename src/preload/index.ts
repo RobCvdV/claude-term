@@ -12,11 +12,13 @@ import type {
   CreateDocResult,
   DocGroup,
   DocTarget,
+  GitMarks,
   HelpSection,
   JiraStatus,
   JiraTodoGroup,
   LoggedWorklog,
   NpmScript,
+  PasteResult,
   PersistedSession,
   PrGroup,
   PrInfo,
@@ -24,6 +26,8 @@ import type {
   ProjectDocs,
   ProjectSettings,
   ProjectSettingsPatch,
+  RailAction,
+  RailMenuRequest,
   RateForecast,
   RepoDownloads,
   RevertResult,
@@ -159,11 +163,23 @@ export interface ClaudeTermApi {
   listDocs(tabId: TabId): Promise<ProjectDocs>
   /** one level of a folder in the docs window's file tree */
   listDocTree(tabId: TabId, dir: string): Promise<TreeNode[]>
+  /** git status of the window's roots, for the tree's colours */
+  docsGitMarks(tabId: TabId): Promise<GitMarks>
+  /** put a file on the clipboard the way Finder does */
+  docsCopyFile(tabId: TabId, path: string): Promise<boolean>
+  /** paste the clipboard's files into `dir` (Finder-style, never overwriting) */
+  docsPaste(tabId: TabId, dir: string): Promise<PasteResult>
+  /** Quick Look `path`, or close the preview when null */
+  docsQuickLook(tabId: TabId, path: string | null): Promise<void>
+  /** the file rail's context menu; resolves to the picked action, null if dismissed */
+  docsRailMenu(req: RailMenuRequest): Promise<RailAction | null>
   /** files anywhere under the window's roots matching the filter box (plain
    *  text matches anywhere; `*` and `?` make it a pattern) */
   findDocFiles(tabId: TabId, query: string): Promise<TreeNode[]>
   /** a file's text; `allowOversize` answers the size warning ("Open anyway") */
   readDoc(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
+  /** an image file as a data URL for the View, or null */
+  readDocImage(tabId: TabId, path: string): Promise<string | null>
   openDoc(tabId: TabId, path: string): Promise<boolean>
   /** show the file in Finder / Explorer, selected in its folder */
   revealDoc(tabId: TabId, path: string): Promise<boolean>
@@ -345,9 +361,15 @@ const api: ClaudeTermApi = {
   listWorkspaceBranches: (tabId) => ipcRenderer.invoke('branches:workspace', tabId),
   listDocs: (tabId) => ipcRenderer.invoke('docs:list', tabId),
   listDocTree: (tabId, dir) => ipcRenderer.invoke('docs:tree', tabId, dir),
+  docsGitMarks: (tabId) => ipcRenderer.invoke('docs:gitMarks', tabId),
+  docsCopyFile: (tabId, path) => ipcRenderer.invoke('docs:copyFile', tabId, path),
+  docsPaste: (tabId, dir) => ipcRenderer.invoke('docs:paste', tabId, dir),
+  docsQuickLook: (tabId, path) => ipcRenderer.invoke('docs:quickLook', tabId, path),
+  docsRailMenu: (req) => ipcRenderer.invoke('docs:railMenu', req),
   findDocFiles: (tabId, query) => ipcRenderer.invoke('docs:find', tabId, query),
   readDoc: (tabId, path, allowOversize) =>
     ipcRenderer.invoke('docs:read', tabId, path, allowOversize),
+  readDocImage: (tabId, path) => ipcRenderer.invoke('docs:readImage', tabId, path),
   openDoc: (tabId, path) => ipcRenderer.invoke('docs:open', tabId, path),
   revealDoc: (tabId, path) => ipcRenderer.invoke('docs:reveal', tabId, path),
   writeDoc: (tabId, path, content) => ipcRenderer.invoke('docs:write', tabId, path, content),

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, join, relative, resolve, sep } from 'path'
 import { claudeConfigDir } from './claude-dir'
 import { MAX_EDIT_BYTES } from '../shared/types'
+import { imageMime } from '../shared/preview-kind'
 import type { CreateDocResult, DocEntry, DocSection, ProjectDocs } from '../shared/types'
 import { expandHome } from './completions'
 import { insideAny, SKIP_DIRS, treeRoots } from './file-tree'
@@ -208,7 +209,7 @@ export function listProjectDocs(
 
 /** The window may only reach files inside the plans dir or one of its roots
  *  (the tab's cwd and its added directories). */
-function allowed(roots: string[], path: string): boolean {
+export function allowed(roots: string[], path: string): boolean {
   return insideAny([plansDir(), ...roots], path)
 }
 
@@ -237,6 +238,22 @@ export function revealDoc(roots: string[], path: string): boolean {
   if (!allowed(roots, path) || !existsSync(path)) return false
   shell.showItemInFolder(path)
   return true
+}
+
+/** Images the window shows inline; anything bigger is left to Quick Look. */
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+/** An image file as a data URL, for the window's View. Null when it is out of
+ *  reach, not an image, or too big. */
+export function readImage(roots: string[], path: string): string | null {
+  const mime = imageMime(path)
+  if (!mime || !allowed(roots, path) || !existsSync(path)) return null
+  try {
+    if (statSync(path).size > MAX_IMAGE_BYTES) return null
+    return `data:${mime};base64,${readFileSync(path).toString('base64')}`
+  } catch {
+    return null
+  }
 }
 
 /** Overwrite an existing doc from the in-app editor. Only existing files inside

@@ -2,7 +2,7 @@
  *  renders these; keeping the choice here is what makes it testable. */
 
 import type { DocEntry, DocGroup, DocTarget, ProjectDocs } from '../../shared/types'
-import { languageForFile, MARKDOWN_LANG } from './config-lang'
+import { previewKind } from '../../shared/preview-kind'
 
 /** One selectable file in the rail, whatever listing it came from: a plan, a
  *  doc, a configuration file, or a file picked out of the tree. */
@@ -72,10 +72,11 @@ export function targetEntry(d: ProjectDocs, target?: DocTarget | null): FileItem
   return { path: target.path, label: name.replace(/\.md$/i, ''), size: 0 }
 }
 
-/** Markdown opens in its rendered preview; anything else has nothing to render,
- *  so it opens in the editor — which is what the settings window always did. */
+/** Markdown and images open as what they show; anything else opens in the
+ *  editor — HTML too, whose page is a ⌘P away. */
 export function modeFor(path: string): 'view' | 'edit' {
-  return languageForFile(path) === MARKDOWN_LANG ? 'view' : 'edit'
+  const kind = previewKind(path)
+  return kind === 'markdown' || kind === 'image' ? 'view' : 'edit'
 }
 
 /** What the window shows after (re-)listing a project. */
