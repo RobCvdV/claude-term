@@ -10,7 +10,7 @@ const TIMEOUT_MS = 10_000
 /** A diff editor is for reading, not for a 40 MB minified bundle. */
 const MAX_DIFF_BYTES = 2_000_000
 
-function git(cwd: string, args: string[]): Promise<string | null> {
+export function git(cwd: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
       'git',

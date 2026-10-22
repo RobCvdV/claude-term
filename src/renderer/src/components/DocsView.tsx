@@ -1,24 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as monacoNs from 'monaco-editor'
-import type { DocGroup, DocTarget, ProjectDocs, TreeNode } from '../../../shared/types'
+import type { DocGroup, DocTarget, ProjectDocs } from '../../../shared/types'
 import { MAX_EDIT_BYTES } from '../../../shared/types'
 import { MARKDOWN_LANG } from '../monaco-setup'
-import { languageForFile } from '../config-lang'
-import { landingFor, modeFor, railGroups, type FileItem, type RailGroup } from '../docs-rail'
+import { landingFor, modeFor, railGroups, type FileItem } from '../docs-rail'
+import { isBinaryImage, previewKind } from '../../../shared/preview-kind'
 import { attachSpellcheck } from '../spell'
 import { attachGrammar } from '../grammar'
 import { useFileEditor } from '../file-editor'
 import { formatBytes } from '../format'
-import { FileTree } from './FileTree'
-import { matchesFilter } from '../../../shared/glob-match'
+import { FileRail, type RevealRequest } from './FileRail'
 import { revealLabel } from '../../../shared/reveal-label'
 import { renderMarkdown } from '../markdown'
-
-/** The filter box searches the project on a pause in typing — the rail's own
- *  items filter as you type, since they are already here. */
-const FIND_DEBOUNCE_MS = 160
-
-const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
 
 /** Where a terminal file link wants the cursor. */
 interface CursorAt {
@@ -35,6 +28,13 @@ function revealAt(ed: monacoNs.editor.IStandaloneCodeEditor, at: CursorAt): void
   ed.setPosition({ lineNumber, column: at.column ?? 1 })
   ed.revealLineInCenter(lineNumber)
   ed.focus()
+}
+
+/** The mode a file can actually be shown in: a raster image has no text to
+ *  edit, and a file with nothing to preview has only the editor. */
+function modeAllowed(path: string, wanted: 'view' | 'edit'): 'view' | 'edit' {
+  if (isBinaryImage(path)) return 'view'
+  return previewKind(path) ? wanted : 'edit'
 }
 
 interface Props {
@@ -61,21 +61,20 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
   // second link into the open file must still move the cursor.
   const openAtLine = useRef<CursorAt | null>(null)
   const edRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
-  // expanded folders and the children read for them, for the file tree
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [treeEntries, setTreeEntries] = useState<Map<string, TreeNode[]>>(new Map())
+  // Enter on a rail row: the editor takes the keyboard once it is up
+  const focusOnAttach = useRef(false)
+  const previewRef = useRef<HTMLDivElement>(null)
+  // bumped when files may have changed on disk, so the rail re-reads them
+  const [railRefresh, setRailRefresh] = useState(0)
+  const [reveal, setReveal] = useState<RevealRequest | null>(null)
   // files the user answered the size warning for ("Open anyway")
   const [oversizeOk, setOversizeOk] = useState<Set<string>>(new Set())
-  const [filter, setFilter] = useState('')
   // bumped after saving the pattern list, which changes what settings lists
   const [rescan, setRescan] = useState(0)
   // a file this window just created: it wins the selection on the re-list that
   // follows, instead of the group's usual landing
   const justCreated = useRef<string | null>(null)
   const [newFileError, setNewFileError] = useState<string | null>(null)
-  // files the filter box found in the project, tagged with the query they
-  // answer so a stale result is never shown next to a newer one
-  const [found, setFound] = useState<{ query: string; hits: TreeNode[] } | null>(null)
   const patternsFile = docs?.patternsFile
 
   const editor = useFileEditor<FileItem>({
@@ -90,10 +89,11 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     editing: mode === 'edit',
     // a generated file shouldn't be able to hang the editor; the warning below
     // offers to open it anyway, which is what puts it in `oversizeOk`
-    readable: (e) => e.size <= MAX_EDIT_BYTES || oversizeOk.has(e.path),
+    readable: (e) => !isBinaryImage(e.path) && (e.size <= MAX_EDIT_BYTES || oversizeOk.has(e.path)),
     options: { wordWrap: 'on', renderWhitespace: 'none' },
     // the pattern list decides what the settings groups hold — re-list once saved
     onSaved: (e) => {
+      setRailRefresh((n) => n + 1)
       if (e.path === patternsFile) setRescan((n) => n + 1)
     },
     attach: (ed, language) => {
@@ -103,6 +103,10 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
         if (model) ed.setPosition(model.getFullModelRange().getEndPosition())
       }
       edRef.current = ed
+      if (focusOnAttach.current) {
+        focusOnAttach.current = false
+        ed.focus()
+      }
       if (openAtLine.current) {
         revealAt(ed, openAtLine.current)
         openAtLine.current = null
@@ -136,7 +140,12 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
       justCreated.current = null
       const landing = landingFor(d, { created, target, group })
       editor.select(landing.item)
-      setMode(landing.mode)
+      setMode(landing.item ? modeAllowed(landing.item.path, landing.mode) : landing.mode)
+      if (landing.item) {
+        const { path } = landing.item
+        const prefer = target || created ? 'tree' : 'quick'
+        setReveal((r) => ({ path, prefer, n: (r?.n ?? 0) + 1 }))
+      }
       openAtEnd.current = landing.atEnd
       const at = landing.line ? { line: landing.line, column: landing.column } : null
       openAtLine.current = at
@@ -153,30 +162,6 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     // a re-target is only ever a new path/mode, so depend on those, not identity
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, group, target?.path, target?.edit, target?.line, target?.column, rescan])
-
-  // Expanding a folder reads it once; collapsing keeps what was read, so
-  // re-opening a branch is instant.
-  const toggleFolder = (dir: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(dir)) next.delete(dir)
-      else next.add(dir)
-      return next
-    })
-    if (treeEntries.has(dir)) return
-    void window.claudeTerm.listDocTree(tabId, dir).then((nodes) => {
-      setTreeEntries((prev) => new Map(prev).set(dir, nodes))
-    })
-  }
-
-  /** Open a file picked from the tree. It isn't in the rail's own listings, so
-   *  it becomes an entry of its own, labelled by file name. */
-  const openFromTree = (node: TreeNode): void => {
-    if (node.path === selected?.path || !editor.confirmDiscard()) return
-    setNewFileError(null)
-    editor.select({ path: node.path, label: node.name, size: node.size })
-    setMode(modeFor(node.path))
-  }
 
   /**
    * "New file": the OS save dialog picks the folder and the name (starting next
@@ -195,30 +180,76 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
       return
     }
     justCreated.current = made.path
-    // the folder it landed in was read before the file existed
-    const dir = made.path.replace(/\/[^/]*$/, '')
-    setTreeEntries((prev) => {
-      const next = new Map(prev)
-      next.delete(dir)
-      return next
-    })
-    if (expanded.has(dir)) {
-      void window.claudeTerm
-        .listDocTree(tabId, dir)
-        .then((nodes) => setTreeEntries((prev) => new Map(prev).set(dir, nodes)))
-    }
+    setRailRefresh((n) => n + 1)
     setRescan((n) => n + 1)
   }
 
-  const tooLarge = !!selected && selected.size > MAX_EDIT_BYTES && !oversizeOk.has(selected.path)
+  const binary = !!selected && isBinaryImage(selected.path)
+  const tooLarge =
+    !!selected && !binary && selected.size > MAX_EDIT_BYTES && !oversizeOk.has(selected.path)
   const openAnyway = (): void => {
     if (selected) setOversizeOk((prev) => new Set(prev).add(selected.path))
   }
 
-  // only markdown gets rendered; any other file (a .gitignore, a script) is
-  // shown as-is, since the markdown renderer would mangle it
-  const isMarkdown = !selected || languageForFile(selected.path) === MARKDOWN_LANG
-  const rendered = useMemo(() => (shown ? renderMarkdown(shown) : ''), [shown])
+  // what View shows depends on the type; a file with no kind only has the editor
+  const kind = selected ? previewKind(selected.path) : 'markdown'
+  const rendered = useMemo(
+    () => (shown && kind === 'markdown' ? renderMarkdown(shown) : ''),
+    [shown, kind]
+  )
+  const [image, setImage] = useState<{ path: string; url: string | null } | null>(null)
+  useEffect(() => {
+    if (!selected || !binary) return
+    let live = true
+    const { path } = selected
+    void window.claudeTerm.readDocImage(tabId, path).then((url) => {
+      if (live) setImage({ path, url })
+    })
+    return () => {
+      live = false
+    }
+  }, [tabId, selected, binary])
+  const imageSrc =
+    kind !== 'image'
+      ? null
+      : binary
+        ? image?.path === selected?.path
+          ? image?.url
+          : undefined
+        : shown != null
+          ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shown)}`
+          : undefined
+
+  const togglePreview = (): void => {
+    if (!selected || !kind || binary || content == null) return
+    const toEdit = mode === 'view'
+    focusOnAttach.current = toEdit
+    setMode(toEdit ? 'edit' : 'view')
+    if (!toEdit) requestAnimationFrame(() => previewRef.current?.focus())
+  }
+  const focusContent = (): void => {
+    if (mode === 'edit') edRef.current?.focus()
+    else previewRef.current?.focus()
+  }
+
+  // ⌘E to the editor (or the page in View) and ⌘P between the two, from anywhere
+  // in the window — ahead of Monaco, whose ⌘E is "use selection for find"
+  const keysRef = useRef({ togglePreview, focusContent })
+  useEffect(() => {
+    keysRef.current = { togglePreview, focusContent }
+  })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      if (e.code === 'KeyE') keysRef.current.focusContent()
+      else if (e.code === 'KeyP') keysRef.current.togglePreview()
+      else return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
 
   const onPreviewClick = (e: React.MouseEvent): void => {
     const a = (e.target as HTMLElement).closest('a')
@@ -228,74 +259,25 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     if (/^https?:\/\//.test(href)) window.open(href)
   }
 
-  const groups = useMemo(() => {
-    if (!docs) return []
-    if (!filter.trim()) return railGroups(docs)
-    return railGroups(docs)
-      .map((g) => ({
-        ...g,
-        // a doc is listed under its heading ("Fixture"), so match its file name
-        // too — `*.md` is about the file, not the title above it
-        items: g.items.filter(
-          (i) => matchesFilter(filter, i.label) || matchesFilter(filter, fileName(i.path))
-        )
-      }))
-      .filter((g) => g.items.length)
-  }, [docs, filter])
-
-  // …and searches the project for anything the rail doesn't list (a file with
-  // no extension, a script, a lock file): those live only in the tree.
-  useEffect(() => {
-    if (!filter.trim()) return
-    let live = true
-    const timer = setTimeout(() => {
-      void window.claudeTerm.findDocFiles(tabId, filter).then((hits) => {
-        if (live) setFound({ query: filter, hits })
-      })
-    }, FIND_DEBOUNCE_MS)
-    return () => {
-      live = false
-      clearTimeout(timer)
-    }
-  }, [tabId, filter, rescan])
-
-  // what the rail already shows doesn't need showing twice
-  const listedPaths = useMemo(
-    () => new Set(groups.flatMap((g) => g.items.map((i) => i.path))),
-    [groups]
-  )
-  const elsewhere =
-    found && found.query === filter ? found.hits.filter((f) => !listedPaths.has(f.path)) : []
-
   const listed = docs ? railGroups(docs).reduce((n, g) => n + g.items.length, 0) : 0
   const empty = !docs || (!listed && !docs.roots.length)
 
-  const selectFile = (e: FileItem): void => {
-    if (e.path === selected?.path || !editor.confirmDiscard()) return
+  const selectFile = (e: FileItem, focusEditor = false): void => {
+    if (e.path === selected?.path) {
+      if (focusEditor) edRef.current?.focus()
+      return
+    }
+    if (!editor.confirmDiscard()) return
     setNewFileError(null)
+    focusOnAttach.current = focusEditor
     // switching files drops any draft — the hook's job
     editor.select(e)
     setMode(modeFor(e.path))
+    // the editor gets the keys when it mounts; a page has nothing to wait for
+    if (focusEditor && modeFor(e.path) === 'view') {
+      requestAnimationFrame(() => previewRef.current?.focus())
+    }
   }
-
-  const section = (g: RailGroup): React.JSX.Element => (
-    <div className="docs-section" key={g.name}>
-      <div className="docs-section-title" title={g.subtitle}>
-        {g.name}
-        {g.subtitle && <span className="config-section-sub">{g.subtitle}</span>}
-      </div>
-      {g.items.map((e) => (
-        <button
-          key={e.path}
-          className={`docs-item ${selected?.path === e.path ? 'active' : ''}`}
-          onClick={() => selectFile(e)}
-          title={e.path}
-        >
-          {e.label}
-        </button>
-      ))}
-    </div>
-  )
 
   return (
     <div className="docs-window">
@@ -334,14 +316,16 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
                     {saving ? 'Saving…' : 'Save'}
                   </button>
                 )}
-                <button
-                  className="docs-btn"
-                  onClick={() => setMode((m) => (m === 'edit' ? 'view' : 'edit'))}
-                  disabled={content == null}
-                  title={mode === 'edit' ? 'Preview this file' : 'Edit this file'}
-                >
-                  {mode === 'edit' ? 'View' : 'Edit'}
-                </button>
+                {kind && !binary && (
+                  <button
+                    className="docs-btn"
+                    onClick={togglePreview}
+                    disabled={content == null}
+                    title={mode === 'edit' ? 'Preview this file (⌘P)' : 'Edit this file (⌘P)'}
+                  >
+                    {mode === 'edit' ? 'View' : 'Edit'}
+                  </button>
+                )}
                 <button
                   className="docs-btn"
                   onClick={() => window.claudeTerm.revealDoc(tabId, selected.path)}
@@ -394,36 +378,14 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
             <p className="activity-empty">Nothing to show for this project.</p>
           ) : (
             <>
-              <div className="docs-rail">
-                {(listed > 0 || !!docs!.roots.length) && (
-                  <input
-                    className="config-filter"
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                    placeholder="Find a file — * allowed"
-                    spellCheck={false}
-                  />
-                )}
-                {groups.map(section)}
-                {!!elsewhere.length &&
-                  section({
-                    name: 'Elsewhere in the project',
-                    items: elsewhere.map((f) => ({ path: f.path, label: f.name, size: f.size }))
-                  })}
-                {!!filter.trim() && !groups.length && !elsewhere.length && (
-                  <p className="activity-empty">No file matches.</p>
-                )}
-                {!!docs!.roots.length && (
-                  <FileTree
-                    roots={docs!.roots}
-                    entries={treeEntries}
-                    expanded={expanded}
-                    selectedPath={selected?.path}
-                    onToggle={toggleFolder}
-                    onOpen={openFromTree}
-                  />
-                )}
-              </div>
+              <FileRail
+                tabId={tabId}
+                docs={docs!}
+                selectedPath={selected?.path}
+                onOpen={selectFile}
+                refresh={railRefresh}
+                reveal={reveal}
+              />
               {tooLarge ? (
                 <div className="docs-preview">
                   <p className="activity-empty">
@@ -436,15 +398,29 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
               ) : mode === 'edit' ? (
                 <div className="docs-editor" ref={hostRef} />
               ) : (
-                <div className="docs-preview" onClick={onPreviewClick}>
-                  {shown == null ? (
+                <div
+                  className={`docs-preview ${kind ? `preview-${kind}` : ''}`}
+                  onClick={onPreviewClick}
+                  ref={previewRef}
+                  tabIndex={-1}
+                >
+                  {kind === 'image' ? (
+                    imageSrc === undefined ? (
+                      <p className="activity-empty">Loading…</p>
+                    ) : imageSrc === null ? (
+                      <p className="activity-empty">
+                        Can&apos;t show this image here — Space in the rail Quick Looks it.
+                      </p>
+                    ) : (
+                      <img src={imageSrc} alt={selected?.label} />
+                    )
+                  ) : shown == null ? (
                     <p className="activity-empty">Loading…</p>
-                  ) : isMarkdown ? (
-                    <div dangerouslySetInnerHTML={{ __html: rendered }} />
+                  ) : kind === 'html' ? (
+                    // no scripts, no same-origin: the page is shown, never run
+                    <iframe sandbox="" srcDoc={shown} title={selected?.label} />
                   ) : (
-                    <pre>
-                      <code>{shown}</code>
-                    </pre>
+                    <div dangerouslySetInnerHTML={{ __html: rendered }} />
                   )}
                 </div>
               )}

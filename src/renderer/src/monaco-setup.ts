@@ -6,8 +6,8 @@
 import * as monaco from 'monaco-editor/editor/editor.api'
 import 'monaco-editor/features/register.all.js'
 // The languages we opt into, each self-registering on import. Markdown is for
-// the docs editor; the rest cover the config files the settings window edits
-// (see config-lang.ts for the file → language mapping). These are tokenizers
+// the docs editor; the rest cover config files and the common source types the
+// file window opens (see config-lang.ts for the file → language mapping). These are tokenizers
 // only — no language service, no extra worker.
 import 'monaco-editor/languages/definitions/markdown/register.js'
 import 'monaco-editor/languages/definitions/yaml/register.js'
@@ -20,6 +20,18 @@ import 'monaco-editor/languages/definitions/java/register.js'
 import 'monaco-editor/languages/definitions/pascal/register.js'
 import 'monaco-editor/languages/definitions/typescript/register.js'
 import 'monaco-editor/languages/definitions/javascript/register.js'
+import 'monaco-editor/languages/definitions/html/register.js'
+import 'monaco-editor/languages/definitions/css/register.js'
+import 'monaco-editor/languages/definitions/scss/register.js'
+import 'monaco-editor/languages/definitions/less/register.js'
+import 'monaco-editor/languages/definitions/python/register.js'
+import 'monaco-editor/languages/definitions/sql/register.js'
+import 'monaco-editor/languages/definitions/csharp/register.js'
+import 'monaco-editor/languages/definitions/kotlin/register.js'
+import 'monaco-editor/languages/definitions/swift/register.js'
+import 'monaco-editor/languages/definitions/go/register.js'
+import 'monaco-editor/languages/definitions/bat/register.js'
+import 'monaco-editor/languages/definitions/powershell/register.js'
 // JSON is the exception: it gets the full language service (its own worker), so
 // a trailing comma or duplicate key in a settings file is flagged before saving
 // rather than silently breaking whatever reads it.

@@ -38,6 +38,19 @@ describe('languageForFile', () => {
     expect(languageForFile('build.gradle')).toBe('java')
   })
 
+  it('maps XML in all but name to xml', () => {
+    for (const name of ['logo.svg', 'App.xaml', 'Lib.csproj', 'Main.storyboard', 'web.config']) {
+      expect(languageForFile(name), name).toBe('xml')
+    }
+  })
+
+  it('maps common source types to their tokenizer', () => {
+    expect(languageForFile('index.html')).toBe('html')
+    expect(languageForFile('main.scss')).toBe('scss')
+    expect(languageForFile('tool.py')).toBe('python')
+    expect(languageForFile('Program.cs')).toBe('csharp')
+  })
+
   it('maps plists to xml', () => {
     expect(languageForFile('Info.plist')).toBe('xml')
   })

@@ -340,7 +340,37 @@ export interface TreeNode {
   isDir: boolean
   /** bytes; 0 for folders */
   size: number
+  /** a dependency or build folder (node_modules, dist…): listed, never searched */
+  excluded?: boolean
 }
+
+/** How git sees a file in the tree, for its colour. */
+export type GitMark = 'modified' | 'added' | 'untracked' | 'ignored' | 'conflict'
+
+/** Git status of a window's roots, keyed by absolute path. */
+export interface GitMarks {
+  /** files (and whole folders git reports as one entry) */
+  exact: Record<string, GitMark>
+  /** folders holding a change somewhere below them */
+  dirty: string[]
+}
+
+/** What a right-click on a file-rail row may offer. */
+export interface RailMenuRequest {
+  path: string
+  isDir: boolean
+  /** a row of a project tree (not Quick Access): paste goes there */
+  inTree: boolean
+  x: number
+  y: number
+}
+
+/** An action picked from the file rail's context menu. */
+export type RailAction =
+  'open' | 'openDefault' | 'quickLook' | 'reveal' | 'copy' | 'copyPath' | 'paste'
+
+/** Result of pasting files from the clipboard into a folder. */
+export type PasteResult = { ok: true; paths: string[] } | { ok: false; error: string }
 
 /** Which status-bar label opened the file window / which group to land on. */
 export type DocGroup = 'plan' | 'roadmap' | 'docs' | 'settings' | 'diff'

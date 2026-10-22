@@ -1,5 +1,5 @@
 /**
- * Which Monaco language to highlight a config file with.
+ * Which Monaco language to highlight a file with.
  *
  * Only the languages imported by monaco-setup.ts may be returned — anything
  * else falls back to `plaintext`. Where no exact tokenizer exists we pick the
@@ -46,6 +46,39 @@ const BY_EXTENSION: Record<string, string> = {
   yaml: 'yaml',
   xml: 'xml',
   plist: 'xml',
+  // XML in all but name
+  svg: 'xml',
+  xsd: 'xml',
+  xsl: 'xml',
+  xslt: 'xml',
+  xaml: 'xml',
+  csproj: 'xml',
+  fsproj: 'xml',
+  vbproj: 'xml',
+  props: 'xml',
+  targets: 'xml',
+  resx: 'xml',
+  nuspec: 'xml',
+  storyboard: 'xml',
+  xib: 'xml',
+  wsdl: 'xml',
+  config: 'xml',
+  html: 'html',
+  htm: 'html',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  py: 'python',
+  sql: 'sql',
+  cs: 'csharp',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  swift: 'swift',
+  go: 'go',
+  bat: 'bat',
+  cmd: 'bat',
+  ps1: 'powershell',
+  psm1: 'powershell',
   // Delphi project files are XML; the sources are Pascal
   dproj: 'xml',
   groupproj: 'xml',
