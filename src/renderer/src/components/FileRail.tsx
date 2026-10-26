@@ -578,7 +578,8 @@ export function FileRail({
   const startResize = (e: React.MouseEvent): void => {
     e.preventDefault()
     const startX = e.clientX
-    const startW = width
+    // the shown width, which max-width may have capped below `width`
+    const startW = e.currentTarget.parentElement!.getBoundingClientRect().width
     let last = startW
     const onMove = (m: MouseEvent): void => {
       const max = Math.max(MIN_WIDTH, window.innerWidth * 0.6)

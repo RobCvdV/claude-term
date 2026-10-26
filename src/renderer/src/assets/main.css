@@ -919,6 +919,8 @@ body {
 .file-rail {
   position: relative;
   flex-shrink: 0;
+  /* a width remembered from a wider window must not push the editor out */
+  max-width: 60vw;
   display: flex;
   flex-direction: column;
   min-height: 0;
