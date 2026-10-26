@@ -37,8 +37,10 @@ describe('listTree', () => {
     // .claude and docs are folders; the dotfile sorts with the files
     expect(names(dir)).toEqual([
       '.claude',
+      'dist',
       'docs',
       'empty',
+      'node_modules',
       'src',
       '.gitignore',
       'package.json',
@@ -51,9 +53,18 @@ describe('listTree', () => {
     expect(listTree([dir], join(dir, '.claude')).map((n) => n.name)).toEqual(['settings.json'])
   })
 
-  it('leaves out dependency and build folders', () => {
-    expect(names(dir)).not.toContain('node_modules')
-    expect(names(dir)).not.toContain('dist')
+  it('hides .git and .DS_Store', () => {
+    mkdirSync(join(dir, '.git'), { recursive: true })
+    writeFileSync(join(dir, '.DS_Store'), '')
+    expect(names(dir)).not.toContain('.git')
+    expect(names(dir)).not.toContain('.DS_Store')
+  })
+
+  it('lists dependency and build folders as excluded', () => {
+    const excluded = listTree([dir], dir)
+      .filter((n) => n.excluded)
+      .map((n) => n.name)
+    expect(excluded).toEqual(['dist', 'node_modules'])
   })
 
   it('reads one level only — nothing recursive', () => {

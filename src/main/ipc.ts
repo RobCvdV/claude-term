@@ -31,6 +31,9 @@ import type {
   TabId,
   TabInfo,
   TabMenuChoice,
+  GitMarks,
+  PasteResult,
+  RailMenuRequest,
   WindowBoot
 } from '../shared/types'
 import type { TerminalWindows } from './terminal-windows'
@@ -68,6 +71,7 @@ import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
 import { claudeConfigDirIn, prefetchConfigDirs } from './claude-dir'
 import { buildActivityReport, workSpansForDates } from './activity-log'
 import {
+  allowed,
   createDoc,
   listProjectDocs,
   newFileStartPath,
@@ -75,12 +79,16 @@ import {
   planNewFile,
   revealDoc,
   readDoc,
+  readImage,
   writeDoc
 } from './docs'
 import { insideAny, listTree } from './file-tree'
 import { findFiles } from './file-find'
 import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
+import { gitMarks } from './git-marks'
+import { copyFile, pasteFromClipboard } from './file-clipboard'
+import { showRailMenu } from './file-rail-menu'
 import { projectChanges } from './turn-changes'
 import { readProjectSettings, writeProjectSettings } from './project-settings'
 import { dropCheckpoint, revertFiles, takeCheckpoint, type Checkpoint } from './checkpoints'
@@ -981,6 +989,29 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.handle('docs:tree', (_e, tabId: TabId, dir: string) => {
     return listTree(docRoots(tabId), dir)
   })
+  // the file rail's colours, and what its keys and context menu do to files
+  ipcMain.handle('docs:gitMarks', (_e, tabId: TabId): Promise<GitMarks> => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    return cwd ? gitMarks([cwd, ...addedDirs]) : Promise.resolve({ exact: {}, dirty: [] })
+  })
+  ipcMain.handle('docs:copyFile', (_e, tabId: TabId, path: string) => {
+    return allowed(docRoots(tabId), path) ? copyFile(path) : false
+  })
+  ipcMain.handle('docs:paste', (_e, tabId: TabId, dir: string): Promise<PasteResult> => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    if (!cwd) return Promise.resolve({ ok: false, error: 'No working directory for this tab' })
+    return pasteFromClipboard([cwd, ...addedDirs], dir)
+  })
+  ipcMain.handle('docs:quickLook', (e, tabId: TabId, path: string | null) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) return
+    if (path && allowed(docRoots(tabId), path)) win.previewFile(path)
+    else win.closeFilePreview()
+  })
+  ipcMain.handle('docs:railMenu', (e, req: RailMenuRequest) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    return win ? showRailMenu(win, req) : null
+  })
   // the filter box searches the whole project, not just what the rail lists —
   // a file with no extension is in neither markdown nor settings group
   ipcMain.handle('docs:find', (_e, tabId: TabId, query: string) => {
@@ -1059,6 +1090,9 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   ipcMain.handle('docs:read', (_e, tabId: TabId, path: string, allowOversize?: boolean) => {
     return readDoc(docRoots(tabId), path, allowOversize)
+  })
+  ipcMain.handle('docs:readImage', (_e, tabId: TabId, path: string) => {
+    return readImage(docRoots(tabId), path)
   })
   ipcMain.handle('docs:open', (_e, tabId: TabId, path: string) => {
     return openDoc(docRoots(tabId), path)

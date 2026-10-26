@@ -245,6 +245,8 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
       minimap: { enabled: false },
       fontSize: 13,
       scrollBeyondLastLine: false,
+      // ⌘F starts from the selection when there is one, not the word at the cursor
+      find: { seedSearchStringFromSelection: 'selection' },
       ...specRef.current.options
     })
     const subs = [
