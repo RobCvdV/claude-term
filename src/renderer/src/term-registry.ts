@@ -1,4 +1,4 @@
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IBufferLine } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -9,7 +9,7 @@ import {
   agentsOverviewInRows,
   dialogOpenInRows,
   hasPromptInputRow,
-  PROMPT_MARKERS
+  suggestionInLines
 } from './terminal-scan'
 import { fileLinkProvider, fileLinksInLine } from './terminal-links'
 import { isFocusToggle } from './focus-policy'
@@ -184,9 +184,6 @@ export function getTerm(tabId: TabId): TermEntry | undefined {
   return entries.get(tabId)
 }
 
-// Prompt-marker glyphs Claude Code uses at the start of its input line.
-const PROMPT_MARKER_SET = new Set<string>(PROMPT_MARKERS)
-
 /** How many rows up from the bottom the TUI scrapers look. */
 const SCAN_ROWS = 15
 
@@ -225,74 +222,6 @@ export function visibleScreen(tabId: TabId): string[] {
 }
 
 /**
- * A cell belongs to Claude Code's grayed-out suggestion (not typed text) when
- * it's rendered dim/faint, or in a low-brightness gray — the styles a TUI uses
- * for placeholder/ghost text. Kept as one predicate so it's the single knob to
- * tune if a Claude Code version changes how it dims the suggestion.
- */
-function isDimCell(cell: import('@xterm/xterm').IBufferCell): boolean {
-  if (cell.isDim()) return true
-  // xterm exposes the resolved color; treat a dark-gray foreground as dim.
-  if (cell.isFgPalette()) {
-    const c = cell.getFgColor()
-    // 8 = bright black (typical "dim gray"); 235-245 = dark grays in the 256 cube
-    return c === 8 || (c >= 235 && c <= 245)
-  }
-  if (cell.isFgRGB()) {
-    const rgb = cell.getFgColor()
-    const r = (rgb >> 16) & 0xff
-    const g = (rgb >> 8) & 0xff
-    const b = rgb & 0xff
-    const max = Math.max(r, g, b)
-    return max > 0 && max < 150 // darkish, not near-white — a gray/ghost tone
-  }
-  return false
-}
-
-interface SuggestionScan {
-  /** full text after the marker (spaces preserved), trimmed at the ends */
-  raw: string
-  /** a non-space, dim (suggestion-colored) char was seen after the marker */
-  hasDim: boolean
-  /** a non-space, normally-colored (user-typed) char was seen after the marker */
-  hasTyped: boolean
-}
-
-// Walk the input line from just after the prompt marker to the box's right
-// border, keeping the full text and flagging whether the printed (non-space)
-// chars are dim (a suggestion) or normally colored (text the user has typed).
-function scanRow(line: import('@xterm/xterm').IBufferLine, cols: number): SuggestionScan | null {
-  const cell = line.getCell(0)
-  if (!cell) return null
-  // find the prompt marker, allowing a leading box border "│" and padding
-  let markerCol = -1
-  for (let x = 0; x < Math.min(cols, 8); x++) {
-    const c = line.getCell(x, cell)
-    if (!c) continue
-    if (PROMPT_MARKER_SET.has(c.getChars())) {
-      markerCol = x
-      break
-    }
-  }
-  if (markerCol < 0) return null
-  let raw = ''
-  let hasDim = false
-  let hasTyped = false
-  for (let x = markerCol + 1; x < cols; x++) {
-    const c = line.getCell(x, cell)
-    if (!c) continue
-    const ch = c.getChars()
-    if (ch === '│' || ch === '┃') break // right border of the input box
-    raw += ch
-    if (ch.trim()) {
-      if (isDimCell(c)) hasDim = true
-      else hasTyped = true
-    }
-  }
-  return { raw: raw.trim(), hasDim, hasTyped }
-}
-
-/**
  * Scrape Claude Code's suggested next prompt (its grayed ghost text) out of the
  * terminal's input box. Returns null when nothing suggestion-like is present.
  * Read-only: reuses what Claude Code already rendered — no extra API call.
@@ -301,20 +230,10 @@ export function readInputSuggestion(tabId: TabId): string | null {
   const term = entries.get(tabId)?.term
   if (!term) return null
   const buf = term.buffer.active
-  // the input box sits at the bottom of the viewport; scan the last rows up for
-  // the bottom-most prompt-marker line — that's the live input line
   const bottom = buf.baseY + term.rows - 1
-  for (let y = bottom; y >= Math.max(0, bottom - 14); y--) {
-    const line = buf.getLine(y)
-    if (!line) continue
-    const scan = scanRow(line, term.cols)
-    if (!scan) continue
-    // the user is typing (or has text) → no suggestion to mirror
-    if (scan.hasTyped) return null
-    // an all-dim (or empty-but-dim) input line is a pure suggestion
-    return scan.hasDim && scan.raw ? scan.raw : null
-  }
-  return null
+  const lines: (IBufferLine | undefined)[] = []
+  for (let y = bottom; y >= Math.max(0, bottom - (SCAN_ROWS - 1)); y--) lines.push(buf.getLine(y))
+  return suggestionInLines(lines, term.cols)
 }
 
 // test hook (CDP/DevTools): what the scraper extracts for a tab right now.
