@@ -1,87 +1,344 @@
 # claude-term
 
-A macOS/cross-platform Electron app: each tab is a **plain terminal** (your login shell in a PTY, via xterm.js + node-pty) that you use normally — `cd` into a project, run whatever. When you run **`claude`** in it, the app detects the session and reveals a Claude-specific UI (Monaco prompt box + live status bar); when claude exits, that UI disappears and you're back at the shell. New tabs (`⌘T`) open as plain terminals.
+A desktop terminal built around the [Claude Code](https://claude.com/claude-code) CLI.
 
-How the detection works without touching your config: the tab's shell gets a private `ZDOTDIR` whose `.zshrc` sources your real `~/.zshrc` and then defines a `claude` function that transparently adds our `--settings` overlay (a shell function beats PATH lookup, so it's robust). That overlay routes Claude Code's hooks + statusLine to the app, so `SessionStart`/`SessionEnd` become the exact show/hide signal. Nothing in `~/` is modified. (Non-zsh shells fall back to a PATH shim.)
+Every tab is a **plain terminal**: your own login shell, used as normal. Run `claude` in it and
+the tab grows a Claude UI — a multiline prompt box, a live status bar and side windows for files
+and diffs. Quit `claude` and the UI disappears again. Your `~/.claude` config is never touched.
 
-The Claude UI (shown only while a session runs):
+Built with Electron, xterm.js, node-pty and Monaco. Personal tool; the Jira, Bitbucket and Jenkins
+integrations are tuned for MendriX work (MTX tickets).
 
-- **Multiline prompt box** below the terminal (Monaco editor) — Enter sends (injected into the running session via bracketed paste), Shift+Enter for a newline, Shift+Tab cycles permission modes, Ctrl keys go to Claude Code (⌃R history search, ⌃O transcript, ⌃T todos, ⌃B background) except the box's own editing keys (⌃A ⌃E ⌃K ⌃H ⌃D ⌃F ⌃N ⌃P) and ⌃Z, Esc focuses the terminal, ⌘L focuses the box. Misspelled words get a muted underline; `⌘.` on one lists suggested fixes and **Add to dictionary**. Typing directly in the terminal keeps working as normal.
-- **Autocomplete in the prompt box** — typing `/` pops VS Code-style suggestions for slash commands (built-ins + `~/.claude/commands` + `~/.claude/skills` + project `.claude/` + enabled plugins, with frontmatter descriptions); typing `@` suggests project files (`git ls-files` incl. untracked, bounded walk for non-git folders). `@../`, `@/` and `@~/` switch to shell-tab-style navigation: one directory level per popup (never recursive, so climbing parents or browsing from root/home stays cheap), accept a folder to descend — `~` completions materialize as absolute paths, the form Claude Code reliably parses. Suggestions re-query the backend on every keystroke (`incomplete: true`), including backspace — deleting characters widens the results and re-opens a closed popup. Enter accepts a suggestion while the popup is open, sends otherwise. `@path` mentions are expanded by Claude Code on submit (verified: attaches the file).
-- **Always-fresh statusline bar** (HTML, refreshes every second) fed by Claude Code's `statusLine` hook and http hooks: activity (busy/idle/needs input + elapsed), folder, git branch with MTX-ticket highlight, Bitbucket link and a dot for the ticket's Jira status (name on hover; opt-in in Settings), git `~/↑/↓` stats, model + effort, context % (orange ≥60, red ≥78), session cost, rate-limit windows with reset countdown, Jira/Jenkins links, a review dot on **PRs** for the branch's PR (orange awaiting review, green approved, red changes requested, blue merged, grey no PR), CI dots with build progress, clock. **Mission control** (⌘E) shows the same per tab and repo — the ticket summary or PR title as topic, your last prompt and Claude's latest reply, Jira status, PR review and comments, build state with a progress bar, unpushed/behind — with a header count of what needs you, a **ready to merge** mark, an orange **rebase?** when a PR'd branch is far behind main, ⚠ hints when the Jira ticket lags the branch (one-click move to Peer review / Deploy, confirmed first), and a **Waiting on your review** list. The in-TUI statusline is suppressed for app sessions.
-- **Settings** (⌘,) — notification switches (PR approved / changes / comments / ready to merge / review requested, build failed / fixed, ticket moved, needs input), Jira ticket status (opt-in: it reads the token from the keychain), CI polling, review list, behind-main threshold, window and tab behaviour, keep-awake, spell check, volume, and which integrations have credentials (Jira connects there). Notifications are macOS ones; click to jump to the tab.
-- **Auto-focus the terminal when it needs the keyboard** — sending a `/command` from the box hands focus to the terminal (so `/model`, `/config` etc. menus are immediately arrow/Enter-drivable); and when Claude Code shows a permission prompt or question picker (`PermissionRequest`/`Elicitation` hooks) in the **active** tab, focus moves to the terminal automatically. Deliberately not wired to the generic `Notification` hook (that also fires on 60s-idle and would yank focus mid-typing).
-- **Focus follows the tab** — App owns focus on tab switch: switch to a tab with a pending dialog (`needs-attention`) and you land in its terminal (this covers a background tab that raised a dialog while unfocused — its attention dot lights, focus isn't stolen, and you drop into the terminal the moment you switch to it); switch to any other tab and you land in its prompt box, ready to type.
-- **Focus returns to the box when the terminal is done** — when the active tab settles back to `idle` (the `Stop` hook: a response, permission dialog, or other TUI interaction just finished), focus snaps back to the prompt box — no ⌘K needed. Fires only on the transition _into_ idle (git/statusline updates carry the same activity and are ignored). Note: Claude Code's `Notification` hook is deliberately not tracked as an activity state — it also fires as a post-`Stop` "waiting for input" ping, which would leave tabs stuck `needs-attention` and block this refocus. Real dialogs come through `PermissionRequest`/`Elicitation`, which precede `Stop`.
-- **Esc out of an overlay returns to the box** — overlays like `/usage`, `/config`, `/help`, `/model` show inline TUI and close on Esc _without_ firing any hook, so the idle-refocus above can't see them. Instead, Esc pressed in the terminal is forwarded to the PTY (Claude Code closes the overlay) and then, if the tab is idle, focus returns to the prompt box. It's gated to idle on purpose: Esc used to interrupt a running response (`busy`) or cancel a permission dialog (`needs-attention`) is left to those flows. Implemented via xterm `attachCustomKeyEventHandler` returning `true` (so the key still reaches the PTY) plus a deferred focus hop.
-- **Tabs** — each tab is an independent plain terminal. `⌘T` new terminal (home dir), `⌘O` new terminal in a chosen folder, `⌘W` close, `⌘1..9` switch. Drag a tab sideways to reorder it — `⌘1..9` follow the new left-to-right order, and it survives a restart. Right-click a tab for its menu (rename, move to a new or another window, close); otherwise a tab is named after its folder — the shell's current one (follows `cd`, zsh only), or the session's home while `claude` runs. Per-tab dot: hollow = plain terminal, green/orange/yellow = a claude session's idle/busy/needs-input, pulsing cyan = something still running outside a turn — a command in the tab's shell (zsh), or background tasks a session left running — shown as `▶ command` under the tab title and on a paired phone. A tab's folder is only where its shell starts: `cd` anywhere and run `claude`, and that folder becomes the tab's home (statusline, git/branch chips, file tree, `@file` completion, restore) for as long as the session lives — a later `/cd` inside the session never moves it, and a restored conversation stays in its own home. Focus-follows-tab respects the plain-vs-session distinction (a plain terminal focuses the terminal; a session focuses its box unless a dialog is pending).
-- **Several windows** — `⌘N` opens another terminal window, and `⌃\`` steps through the terminal windows only (file windows are skipped; macOS's own `⌘\``is untouched). A tab moves between windows with its PTY and Claude session still running — its screen and scrollback travel with it — via `⇧⌘N`(to a new window) or`⇧⌘M` (back to the main window — the oldest open one), its right-click menu, the ⌘K palette, the Window menu, or by dragging it off the tab bar: over another window's tab bar a marker shows the gap it will land in, and it is placed there; anywhere else it opens a new window there. Closing a window that still has tabs offers **Cancel / Close Tabs / Move to Main Window** (the oldest open window); a window whose last tab leaves closes itself. Every window is restored on launch, in place unless **Window ▸ Restore Window Positions** is off (for when a window manager places them). **Window ▸ Tab Shortcuts Stay in Their Window** (on by default) keeps`⌘1..9`/`⌘[ ⌘]` per window; off, they number every window's tabs — windows left to right, then top to bottom.
-- **Keeps the Mac awake while working** — system sleep is held off while any Claude session is busy and for 10 minutes after the last one finishes, so a long turn isn't cut short by an idle sleep. The display can still sleep, and closing the lid still sleeps the Mac.
-- **`/add-file` — new files from the prompt box** — completes folders one level at a time (the `/add-dir` picker) and takes the file name you type at the end: `/add-file docs/plan-how-to-do-this.md` creates the file and opens the file window on it in edit mode, cursor ready. The name is taken exactly as typed — any extension or none at all (`.gitignore`, `Makefile`, `notes`) — and the editor picks its highlighting from the name (falling back to plaintext); markdown additionally gets an `# H1` seeded from the file name plus spell/grammar checking, while anything else starts empty and skips both, and its View tab shows the raw text instead of rendered markdown. Folders in the path that don't exist yet are created, but only after a native confirmation naming them (`Create the folder “research/2026”?`) — declining leaves the line in the box to correct. Refused: an existing file (never overwritten) and any path outside the tab's cwd or `~/.claude/plans` — the error shows on the prompt box's error line with the text left editable. The same creation path (folder confirmation included) backs the file window's **+ New file** button, which picks the folder and name in the OS save dialog.
-- **File window** (`plan` / `roadmap` / `docs` / `settings` in the status bar) — one detached window per tab for everything the project has to read and edit, each chip landing on its own group. Its rail has one **Quick Access** header — the plan-mode plans Claude wrote, `ROADMAP.md`, the project's other markdown, and the configuration files that apply to it, each group collapsed until opened, all A–Z — then a header per **project folder** (the tab's own, then each added directory; the full path on hover) with its tree, folders first, read one level per expansion. Names carry WebStorm's git colours — blue modified, green added, red not in git yet, olive ignored, brown excluded (`node_modules`, build output, `Pods`…: listed but never searched) — a folder holding a change is blue too, and source files get a type badge (TS, TSX, JS, PAS, `{}`, MD, a gear for config; the rules are one table in `file-icons.ts`). The rail's width is draggable and remembered. It works from the keyboard the way Finder does: the window opens on the search box (`⇧⌘F` from anywhere, `⌘F` outside the editor), `↓` walks into the list, `↑ ↓` move, `→` opens a folder or steps into it, `←` closes it or steps out, typing jumps to the next name starting with what you typed (letters add up for a second), `↵` opens the file in the editor, `Space` Quick Looks it (`Space` again or `Esc` closes it), `⌘O` opens it in its default app, `⌘C`/`⌘V` copy and paste files to and from Finder (never overwriting — a clash becomes `name copy.ext`; paste only lands in project folders, not Quick Access), `⌥⌘C` copies the path, and `⌃Space` or a right-click opens the same actions as a menu, **Show in Finder** included. `⌥⌘L` (or the ◎ button) selects the open file in its tree, opening the folders above it. The search box does double duty: it narrows Quick Access **and** searches every file under the window's roots, so anything the rail doesn't curate — a `notes` with no extension, a script, a source file — is reachable by name under an **Elsewhere in the project** group. Plain text matches anywhere; `*` and `?` turn the query into a pattern (`*.md`, `plan*`, `v?.md`), matched against both the path and the file name. `⌘L` jumps from the editor back to the tree (where you left it) and `⌘E` from the tree to the editor, opening nothing. **View** depends on the file's type: markdown renders (spell + grammar checking when you edit it), images show as images on a checkerboard (SVG from your unsaved text, so edits show on `⌘P`), and HTML renders in a sandboxed frame with scripts off; `⌘P` or the View/Edit button switches. Markdown and images open in View, everything else straight in Monaco with highlighting for its type — JSON validated, XML-like files (SVG, XAML, `.csproj`, storyboards…) as XML, plus HTML, CSS/SCSS/Less, Python, SQL, C#, Kotlin, Swift, Go and shell scripts — and a file with nothing to preview has no View button at all. `⌘S` saves; a dot marks unsaved changes and closing the window (or its tab) prompts first. A file changed outside the window (Claude, git) refreshes within ~2 s, keeping cursor and scroll; with unsaved edits a bar offers **Reload from disk** / **Keep mine** instead. `⌃Space` in the editor asks Claude (Haiku, no tools, nothing saved, on your own login) for the text at the cursor: the top entry of the suggestion list reads **✨ Claude is thinking…** and turns into the answer itself, so you see what you'd insert — Tab or Enter inserts it. Only on ⌃Space, counted against your plan's limits; a warm `claude` process (started when an editor opens, replaced every 6 completions, stopped after 10 idle minutes) answers in about a second instead of three. With text selected, `⌃Space` opens **✨ Edit selection with Claude** instead: a one-line instruction above the selection, then Claude's replacement as an inline diff over the editor — `⌘↵` applies it (only if the selection is unchanged), Esc discards it, **Change instruction** retries. Edits run on Sonnet by default, Haiku is a setting. **Show in Finder** (Explorer on Windows) reveals the open file in the OS file manager, and **Open ↗** hands it to its default app. Files over 2 MB are held back with a size warning and an **Open anyway** button rather than hanging the editor. The config listing covers node/web, mobile (`.env*`, `Podfile`, `*.gradle`), Delphi (`*.dproj`, `*.cfg`, `*.inc`) and CI, excludes lock files as noise, and is tunable via the `config-file-patterns.json` entry in the rail (an `include`/`exclude` list in the app's userData, edited in the same window — `exclude` wins, and saving it re-lists immediately).
-- **Undo a turn (`~N` in the status bar)** — every prompt you send snapshots the repo first: `git stash create` writes a commit object holding the working tree without touching the index or the stash list (`git stash list` stays empty), pinned by a ref under `refs/claude-term/` so `git gc` can't drop it; a clean tree needs no commit at all, since HEAD _is_ the restore point. The diff window shows the working tree against HEAD with two scopes — **This turn**, the files the turn's `Edit`/`Write`/`MultiEdit`/`NotebookEdit` calls touched (read from the session transcript), and **All**, everything that differs from HEAD — plus a dropdown that steps further back, one turn at a time, up to the ten restore points kept per tab. **Revert** puts exactly those files back to how they were when that turn started: files the turns created are deleted, files that were already untracked are left alone (their old text was never in git), and your own edits to other files are untouched — it confirms with the file list first, then reports what it did (`Reverted: 3 restored, 1 deleted`). A turn is matched to its restore point by time rather than by counting back, since app-injected prompts (a `/rename`, a branch-switch FYI) take a checkpoint without leaving a user message behind; a turn with no match says so and its Revert button stays disabled. Restore points are per app run — every ref is deleted on quit, because a session's undo history is not something to leave behind in a repo.
+- [Highlights](#highlights)
+- [Install](#install)
+- [Features](#features)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [How it works](#how-it-works)
+- [Develop](#develop)
+- [Where things are stored](#where-things-are-stored)
 
-- **Branch menu** — right-clicking the status bar's branch chip drops down every workspace repo's local branches (most-recently-committed first, grouped by folder, ticket numbers highlighted), each marked **mine** when its newest commit carries the repo's configured `user.email`. Click switches that repo to the branch — the session gets the same "branch switched, re-read before editing" FYI as `/switch` — and right-click opens the branch on Bitbucket/GitHub. Errors (dirty tree etc.) show inline in the dropdown.
-- **Jira to-do menu** — in the driver repos (`mendrix-mobile-next` → `DriverNext`/`DriverNextFeedback`, `mendrix-tms*` → `DriverAPI`/`Chat`, `mendrix-mobile-cordova` → `Cordova`, `mendrix-mobile-crossdock` → `CrossDock`) the status bar's **Jira** link drops down, on a right-click, the MTX tickets in **To Do** with those labels that are unassigned or yours (**mine**), in board order. Click opens a ticket; right-click → **Start Branch** switches the repo to the ticket's branch — or creates `bugfix/`/`feature/`/`chore/MTX-…-summary` (from the issue type) off `origin`'s default branch — assigns it to you, moves it to **Active**, and hands the session the ticket's description asking for a first look and one or two ways to approach it. Uses the Jira token connected in the activity overview. All status-bar dropdowns (folders, branches, PRs, Jira) open on a click or right-click, never on hover, and close on a click outside or Escape.
-- **Command palette** (`⌘K`) — fuzzy-jump to a tab (by title, folder or branch), run an app action, or **recall a recently worked-on branch**: every branch seen checked out in any tab's workspace is remembered (in userData, across restarts), and the first time a repo shows up its `git reflog` is mined for past checkouts too — so typing a ticket number like `MTX-10302` finds the branch weeks later, even from before the app was installed. Enter copies its name. With no query the five most recent show up; branches currently open in a tab are left to their tab row.
-- **Find (`⌘F`) searches the conversation, not the terminal** — Claude Code's TUI draws on the terminal's _alternate screen buffer_, which keeps no scrollback: everything that scrolled past is simply not in the terminal any more, so a terminal search can only ever see the visible rows. With a live session, `⌘F` searches the session's own transcript (`~/.claude/projects/<project>/<session>.jsonl`) instead — every turn back to the first, newest hit first, with who said it and how long ago. Enter / ⇧Enter (or ↑ ↓) walk the hits; the selected one opens in full, with a **copy** button. `+ tools` widens the search to tool calls, their output and thinking (off by default, so file dumps don't drown out what was actually said). A **screen** chip switches back to the plain xterm search — the only option in a tab with no session, and still the right one for a plain shell's scrollback. The transcript is read incrementally per search (only what was appended since the last one), so searching a 60 MB conversation stays cheap.
-- Shell exit: if the shell itself exits (you type `exit`), the tab shows a "terminal exited" overlay with **New shell** / **Close tab**.
+## Highlights
+
+- **Prompt box** — a real editor under the terminal: multiline, spell + grammar check,
+  `/` command and `@` file completion, history.
+- **Live status bar** — activity, branch and ticket, PR review, CI, context use and rate limits.
+- **Mission control** (`⌘E`) — every tab and repo at a glance, with what needs you.
+- **Focus follows the conversation** — dialogs take the keyboard, finished turns hand it back.
+- **Undo a turn** — every prompt snapshots the repo; revert exactly what a turn wrote.
+- **File window** — plans, docs, config and the project tree, with Finder-style keys and a
+  Monaco editor that can ask Claude to complete or rewrite text.
+- **Sessions survive** — tabs, windows and Claude sessions come back after a restart.
+- **Phone companion** — answer prompts and follow sessions from your phone, over Tailscale.
+
+## Install
+
+Download the latest build from
+[Releases](https://github.com/RobCvdV/claude-term/releases/latest): `.dmg` (macOS), `.exe`
+(Windows) or `.AppImage` (Linux). Packaged builds check for updates in the background and offer
+to install them.
+
+You need the `claude` CLI on your `PATH`.
+
+## Features
+
+### Tabs and windows
+
+- `⌘T` opens a terminal in your home folder, `⌘O` in a folder you pick.
+- A tab is named after its folder: the shell's current one (follows `cd`, zsh only), or the
+  session's folder while `claude` runs. Rename it from its right-click menu, tint it with `/color`.
+- The dot on a tab shows its state:
+
+  | Dot          | Meaning                                                       |
+  | ------------ | ------------------------------------------------------------- |
+  | hollow       | plain terminal                                                |
+  | green        | Claude session, idle                                          |
+  | orange       | Claude session, busy                                          |
+  | yellow       | Claude session, needs input                                   |
+  | pulsing cyan | something still running outside a turn (shown as `▶ command`) |
+
+- Drag a tab to reorder it; `⌘1 …9` follow the new order.
+- `⌘N` opens another window. Move a tab — with its session still running — with `⇧⌘N` (new
+  window), `⇧⌘M` (back to the main window), its menu, or by dragging it to another window's tab
+  bar. `` ⌃` `` steps through terminal windows.
+- **Window ▸ Tab Shortcuts Stay in Their Window** (on by default) keeps `⌘1 …9` and `⌘[ ⌘]`
+  per window. **Window ▸ Restore Window Positions** can be turned off if a window manager places
+  windows for you.
+- Wherever `claude` is started becomes the tab's home for that session (status bar, file tree,
+  `@` completion, resume). A `/cd` inside the session never moves it.
+
+### The prompt box
+
+- `Enter` sends, `⇧Enter` adds a newline. Typing straight into the terminal still works.
+- `/` completes slash commands: Claude Code's own, your commands, skills and plugins, and the
+  app's own commands:
+
+  | Command       | What it does                                                              |
+  | ------------- | ------------------------------------------------------------------------- |
+  | `/color`      | tint the tab (`/color orange`)                                            |
+  | `/switch`     | switch to a local branch and rename the session to match                  |
+  | `/npm`        | list the project's npm scripts; `Enter` runs one, `Tab` lets you add args |
+  | `/add-file`   | create a file (`/add-file docs/plan.md`) and open it in the file window   |
+  | `/add-dir`    | add a folder to the session, completed one level at a time                |
+  | `/remove-dir` | take an added folder back out of the tab                                  |
+
+- `@` completes project files (git files, untracked included). `@../`, `@/` and `@~/` browse
+  one folder level at a time.
+- `↑ ↓` walk your prompt history; `←` on an empty box opens Claude Code's agents overview.
+- `Tab` on an empty box runs Claude's grayed-out suggested next prompt.
+- Misspelled words get a muted underline; `⌘.` lists fixes and **Add to dictionary**.
+- `⌃R ⌃O ⌃T ⌃B` go to Claude Code. The box keeps its own editing keys (`⌃A ⌃E ⌃K ⌃H ⌃D ⌃F ⌃N ⌃P`
+  and `⌃Z`).
+
+### Status bar
+
+Left to right:
+
+- **Activity** — busy (with a timer), needs input, or idle.
+- **Folders** — the tab's folder plus every other folder the session works in.
+- **Git** — branch (linked to the repo; the MTX ticket linked to Jira), a dot for the ticket's
+  Jira status (opt-in in Settings), and changed / ahead / behind counts. Click `~N` to
+  [undo a turn](#undo-a-turn).
+- **Model** and reasoning effort.
+- **Context** use — orange from 60%, red from 78%.
+- **Rate limits** — 5-hour and 7-day windows with time to reset. Hover for a burn forecast;
+  they turn orange early when the current pace runs out before the reset.
+- **Editor windows** — `plan`, `roadmap`, `docs` and `settings` open the [file window](#file-window).
+- **CI links** — Jenkins (TMS repos), CircleCI or GitHub Actions, with a live build dot and
+  progress while building.
+- **PRs**, with a dot for the branch's review state: orange awaiting review, green approved,
+  red changes requested, blue merged, grey no PR.
+- **Jira**, **Releases** or **Downloads**, notification volume and the clock.
+
+The PR, Jira, branch and folder chips open a dropdown on a click or right-click (never on hover):
+
+- **Branch** — every workspace repo's local branches, newest first, with yours marked **mine**.
+  Click to switch (the session is told to re-read files); right-click opens it on
+  Bitbucket/GitHub.
+- **Jira** — in the driver repos, the To Do tickets for that repo's labels that are unassigned or
+  yours. Right-click → **Start Branch** creates or switches to the ticket's branch, assigns the
+  ticket to you, moves it to Active and asks the session for a first look.
+
+### Mission control
+
+`⌘E` shows every tab: activity, elapsed time and context use, and per repo the branch, Jira
+status, topic (ticket summary or PR title), PR review and comments, build state and unpushed /
+behind counts — plus your last prompt and a summary of Claude's latest reply.
+
+- The header counts what needs you; a card with a failed build, requested changes or a question
+  gets a red edge. Click a card to jump to its tab.
+- **ready to merge** marks an approved, green PR with nothing unpushed, with a button to move its
+  ticket from Peer review to Deploy.
+- **rebase?** (orange) marks a PR'd branch far behind main; the threshold is in Settings.
+- **⚠** flags a ticket lagging its branch, with a one-click move where the next stage is obvious.
+  Every move asks first.
+- **Waiting on your review** lists other people's open PRs that name you.
+
+### Focus follows the conversation
+
+- A permission prompt or question picker gives the terminal the keyboard, so arrows and `Enter`
+  work at once. A `/command` sent from the box does the same, for menus like `/model`.
+- When the turn finishes, focus returns to the prompt box. So does `Esc` out of an overlay like
+  `/usage` or `/config`.
+- Switching tabs lands you in the box, or in the terminal if that tab has a dialog open.
+- `⌥Tab` hops between box and terminal by hand. `⌘⇧A` (and the **N waiting** pill) walks
+  through every tab that's waiting on you.
+
+### Find in the conversation
+
+`⌘F` searches the session's whole transcript — not just the visible screen, which is all the
+terminal has, since Claude Code's TUI keeps no scrollback. Newest hit first, with who said it
+and when. `+ tools` widens the search to tool calls, their output and thinking. The **screen**
+chip switches back to a plain terminal search.
+
+### Undo a turn
+
+Every prompt you send snapshots the repo first (`git stash create`; your index and stash list are
+untouched). Click `~N` in the status bar to open the diff window:
+
+- **This turn** shows the files the turn's edit tools wrote; **All** shows everything that
+  differs from HEAD. A dropdown steps back up to ten turns.
+- **Revert** restores exactly those files: files the turn created are deleted, files that were
+  already untracked are left alone, your own edits elsewhere are untouched. It confirms first.
+- Restore points last as long as the app runs. Files changed by a command Claude ran (an install,
+  codegen) show only under **All** — undo those with git.
+
+### File window
+
+One window per tab for everything the project has to read and edit.
+
+- **Rail** — a **Quick Access** group (plans, `ROADMAP.md`, the project's markdown, config files)
+  above a tree per project folder. Names use WebStorm's git colours, source files get a type
+  badge, and the rail's width is draggable.
+- **Search** — the box narrows Quick Access and finds any file under the project by name; `*`
+  and `?` make it a pattern (`*.md`, `plan*`).
+- **Keys like Finder** — arrows walk the tree, typing jumps to a name, `Space` Quick Looks,
+  `⌘C`/`⌘V` copy and paste files with Finder (never overwriting). See the
+  [shortcuts](#file-window-1).
+- **View or Edit** — markdown renders, images show on a checkerboard, HTML renders sandboxed.
+  Everything else opens in Monaco with highlighting for its type; JSON is validated.
+- **Saving** — `⌘S`; a dot marks unsaved changes. Files changed on disk (by Claude, by git)
+  reload within ~2 s, or offer **Reload from disk** / **Keep mine** if you have edits.
+- **Claude in the editor** — `⌃Space` asks Claude (Haiku) for the text at the cursor; it appears
+  as the top suggestion, and `Tab` inserts it. With a selection, `⌃Space` rewrites it from a
+  one-line instruction, shown as a diff — `⌘↵` applies it. Both run on your own login and count
+  against your plan.
+- Files over 2 MB ask before opening. The config list is tunable via `config-file-patterns.json`
+  in the rail.
+
+### Branches, tickets and the palette
+
+`⌘K` jumps to a tab (by title, folder or branch), runs an app action, or **recalls a branch** you
+worked on: every branch seen in any tab is remembered, and a repo's `git reflog` is mined the
+first time it shows up — so typing `MTX-10302` finds a branch from weeks ago. `Enter` copies its
+name.
+
+### Activity hours → Jira
+
+The 🕐 view (tab bar, top right) shows engaged time per day and per MTX ticket, logged by a hook
+while you work. Connect a Jira API token once and book the suggested worklogs from the panel.
+
+### Settings and notifications
+
+`⌘,` holds the switches: macOS notifications (PR approved, changes requested, comments, ready to
+merge, review requested, build failed or fixed, ticket moved, needs input), the Jira status
+lookup, CI polling, the review list, the behind-main threshold, window and tab behaviour,
+keep-awake, spell check, volume, and which services have credentials. Jira connects here; other
+tokens are read from your login shell.
+
+### Sessions that survive
+
+- Tabs, windows, colours, titles, prompt drafts and history are saved. On launch every tab comes
+  back and its Claude session is resumed in its own folder — background agents are re-attached,
+  not restarted.
+- While any session is busy, and for 10 minutes after, the Mac won't idle-sleep. The display
+  still can, and closing the lid still sleeps.
+- If the shell itself exits, the tab offers **New shell** or **Close tab**.
+
+### Phone companion
+
+The [claude-term companion](https://github.com/RobCvdV/claude-term-companion) app (iOS/Android)
+lists the Mac's sessions, follows their conversations, answers their prompts and sends new ones.
+
+- Reachable **only over Tailscale**; devices authenticate with an Ed25519 challenge, so no token
+  or password ever crosses the wire.
+- Pair with **⌘K → Phones — pair or revoke…**: a QR and a code, valid for two minutes and one
+  device. The same panel revokes devices.
+- Prompts are always still answerable in the terminal; whichever side answers first wins.
+  Nothing is auto-approved.
+- Paired phones get a push when a tab starts waiting, a long turn finishes or a session ends —
+  with only the title and folder name in it.
+
+The details are in [docs/companion.md](docs/companion.md).
+
+## Keyboard shortcuts
+
+`⌘/` shows the cheat sheet in the app.
+
+### Tabs and windows
+
+| Keys         | Action                               |
+| ------------ | ------------------------------------ |
+| `⌘T`         | New tab (home folder)                |
+| `⌘O`         | New tab in a chosen folder           |
+| `⌘W`         | Close tab                            |
+| `⌘1 …9`      | Jump to tab 1–9                      |
+| `⌘[ ⌘]`      | Previous / next tab                  |
+| `⌘N`         | New window                           |
+| `⇧⌘N`        | Move the tab to a new window         |
+| `⇧⌘M`        | Move the tab back to the main window |
+| `` ⌃` ``     | Next terminal window                 |
+| `⌘K`         | Command palette                      |
+| `⌘E`         | Mission control                      |
+| `⌘,`         | Settings                             |
+| `⌘⇧A`        | Next tab waiting for input           |
+| `⌘F`         | Find in the conversation             |
+| `⌘= ⌘-` `⌘0` | Zoom in / out, actual size           |
+
+### Prompt box
+
+| Keys     | Action                                    |
+| -------- | ----------------------------------------- |
+| `Enter`  | Send                                      |
+| `⇧Enter` | Newline                                   |
+| `/` `@`  | Command and file completion               |
+| `↑ ↓`    | Prompt history                            |
+| `Tab`    | Run Claude's suggested prompt (empty box) |
+| `←`      | Agents overview (empty box)               |
+| `⇧Tab`   | Cycle the permission mode                 |
+| `⌥Tab`   | Toggle focus between box and terminal     |
+| `Esc`    | To Claude Code, and focus the terminal    |
+| `⌘L`     | Focus the prompt box                      |
+| `⌘.`     | Spelling fixes                            |
+
+### File window
+
+| Keys        | Action                                                  |
+| ----------- | ------------------------------------------------------- |
+| `⇧⌘F`       | Find a file (`⌘F` too, outside the editor)              |
+| `↑ ↓ → ←`   | Move; open / close folders, step in / out               |
+| `a`–`z`     | Jump to the next name starting with what you type       |
+| `↵`         | Open in the editor                                      |
+| `Space`     | Quick Look                                              |
+| `⌘O`        | Open with the default app                               |
+| `⌘C` `⌘V`   | Copy and paste files with Finder                        |
+| `⌥⌘C`       | Copy the path                                           |
+| `⌃Space`    | Context menu in the tree (right-click too)              |
+| `⌘L` / `⌘E` | To the tree / to the editor                             |
+| `⌥⌘L`       | Select the open file in the tree                        |
+| `⌘P`        | Switch between View and Edit                            |
+| `⌘S`        | Save                                                    |
+| `⌃Space`    | In the editor: Claude completion, or edit the selection |
+| `⌘↵`        | Apply Claude's edit                                     |
 
 ## How it works
 
-Each tab spawns `claude --settings '<overlay>'` in a PTY. The overlay (per session, never touching `~/.claude/settings.json`) points `statusLine` at a tiny forwarder script (installed into the app's userData dir) that POSTs the statusline JSON to a local HTTP server in the Electron main process, and adds `type: "http"` hooks (SessionStart/UserPromptSubmit/PostToolUse/Stop/Elicitation/SessionEnd) that drive the per-tab activity state, plus `PermissionRequest` and a matcher-scoped `PreToolUse` on a long timeout — those two can be _held open_, which is how a prompt is answered from somewhere other than the terminal (`src/main/hook-config.ts`, `src/main/companion/parked-prompts.ts`). Prompt injection writes bracketed-paste framed text to the PTY followed by `\r`. The launcher also passes `--plugin-dir` for the bundled **term-bridge** mod (`resources/term-bridge`), which runs inside the session, holds questions and re-asks expired permissions for the companion, and reports who holds Claude Code's keyboard — a dialog, a menu, no input line, or the plain prompt — plus slash-command start/end; focus follows that instead of guessing from the screen, which stays the fallback for sessions without the mod. Its events and the app's focus moves are logged side by side to `ui-bridge.log` in userData.
+1. **Detection without touching your config.** Each tab's zsh gets a private `ZDOTDIR` whose
+   `.zshrc` sources your real one, then defines a `claude` function that adds a `--settings`
+   overlay. Other shells get a `PATH` shim instead.
+2. **The overlay** routes Claude Code's `statusLine` and hooks to a local HTTP server in the app.
+   `SessionStart` / `SessionEnd` show and hide the Claude UI; the other hooks drive activity,
+   focus and the companion.
+3. **Prompts** are written to the PTY as bracketed paste followed by `Enter`.
+4. **The term-bridge mod** (`resources/term-bridge`, loaded with `--plugin-dir`) runs inside the
+   session and reports who holds Claude Code's keyboard — a dialog, a menu or the prompt — so
+   focus can follow it.
 
-## Companion access (phone)
-
-The wire protocol lives in its own repo, [claude-term-protocol](https://github.com/RobCvdV/claude-term-protocol), pinned to a tag and shared with the mobile app so the two ends cannot drift apart. Types there are inferred from zod schemas, so validation and TypeScript are one statement rather than two that agree by hand.
-
-A companion device can list the host's sessions, answer their prompts and send new ones. It is reachable **only over Tailscale** — the server binds to the tailnet address plus loopback and never `0.0.0.0`, so nothing on the local network can reach it. WireGuard supplies the encryption; the app layer answers "which of my devices is this, and is this request fresh?" with an Ed25519 challenge/response, so **no token or password is ever sent over the wire**.
-
-Pairing is deliberate: **⌘K → Phones — pair or revoke…** opens a panel with a QR (address, port and code in one scan) and the same code in type-able form. It is valid for two minutes and enrols exactly one device, and the device proves possession of its own key. The panel also lists what is paired and revokes it. Revoking drops the socket immediately. There is no confirmation dialog: the code is the gate, and a second modal on top of the code panel is what deadlocked pairing the first time. The registry lives in `userData/companion-devices.json` (0600) and holds public keys only.
-
-There is no phone app yet — `scripts/companion-client.mjs` stands in for one:
-
-```bash
-node scripts/companion-client.mjs pair --host 100.x.y.z --port <port> --code ABCD2345
-node scripts/companion-client.mjs watch     # prints sessions + prompts; reads commands on stdin
-```
-
-Answering a permission prompt with **"allow and stop asking"** derives a rule and writes it to the project's `.claude/settings.local.json` — the same file Claude Code's own _"Yes, and don't ask again"_ uses. Rules are only offered for `Bash`, and never for a command containing shell operators: a prefix rule derived from `mkdir a && rm -rf b` would license the second half too. For tools whose rule would be a guessed path glob, the prompt is simply answered once.
-
-While a turn runs, a phone also sees **what it is doing**: the term-bridge mod reports the spinner's word ("Tinkering"), the tool running and what it runs on, and the steps finished so far.
-
-Prompts are held for a phone whenever one is **paired**, connected or not, and a phone that reconnects is handed everything still waiting. Questions (`AskUserQuestion`) are held by the term-bridge mod, which races the terminal's dialog against the phone with no time limit. Permissions stay on the `PermissionRequest` hook, which Claude Code gives up on after 600 s: at 9.5 minutes claude-term denies it with a reason the mod recognises, and the mod asks again as an **Allow/Deny** question — Allow re-runs that exact call, which claude-term lets through once. Nothing is remembered from a re-ask. Every held prompt's life — parked, answered, expired, taken off a phone nobody was polling for — is written to `companion.log` in userData.
-
-A prompt sent from a device is **held while the session is showing a dialog**, because a permission prompt or picker owns the keyboard and pasted text would answer it instead of asking anything. It is delivered as soon as the dialog is gone. A busy session needs no such care — Claude Code queues typed input mid-turn itself.
-
-When a tab starts waiting for input, a long turn finishes, or a session ends, paired phones get a **push notification** through Expo. It is suppressed while the app is focused (you are already there) and for any device that reports the session on screen (it already knows), and a tab cannot ping twice inside ten seconds. Bodies are deliberately vague — the title and the folder name, nothing else — because a push travels through Expo and Apple; the command, path and diff stay on the tailnet until the phone is opened. A token Expo reports as `DeviceNotRegistered` is dropped rather than kept forever.
-
-A device can also **snapshot a tab's terminal screen** (`v <tab>` in the client). That is a request/response snapshot of the visible rows, not a byte stream: Claude Code redraws in place on the alternate screen buffer, so its PTY output is mostly cursor moves and spinner frames, and there is no scrollback behind it. Only the renderer's xterm knows what is on screen, so main asks it over a request/response pair (`screen:request` / `screen:reply`, see `src/main/screen-requests.ts`) and gives up rather than hanging if no answer comes.
-
-A device can also **follow a session's conversation** (`w <tab>` in the client). That is read from the session's transcript, not from the terminal — Claude Code draws on the alternate screen buffer, which keeps no scrollback, so the terminal genuinely does not have the history. Turns are append-only, so a follower holds an index into them as its cursor and each poll costs a stat plus a read of the bytes appended since; the parse cache is shared with ⌘F, so following a session the user is also searching costs nothing extra.
+More detail, and the traps met along the way, in [docs/internals.md](docs/internals.md).
 
 ## Develop
 
 ```bash
 npm install
-npm run dev            # dev app with HMR + main-process watch
+npm run dev          # dev app with HMR and a main-process watch
+npm test             # vitest
+npm run typecheck && npm run lint
+npm run build:mac    # packaged app via electron-builder (also build:win, build:linux)
 ```
 
-`CLAUDE_TERM_DEFAULT_CWD=/some/project npm run dev` auto-opens a tab in that folder (skips the picker).
+| Variable                    | Effect                                                   |
+| --------------------------- | -------------------------------------------------------- |
+| `CLAUDE_TERM_DEFAULT_CWD`   | Open a tab in this folder on start (skips the picker)    |
+| `CLAUDE_TERM_USER_DATA_DIR` | Use this profile folder                                  |
+| `CLAUDE_TERM_DEBUG_PORT`    | Open a Chrome DevTools Protocol port                     |
+| `CLAUDE_TERM_E2E=1`         | Include the end-to-end tests (needs the `claude` binary) |
 
-## Build
+- `scripts/dev-instance.sh` and `scripts/cdp.mjs` start an isolated dev instance and drive it
+  over CDP — used to check UI changes in a real build.
+- Every push to `main` builds and publishes a release. The version comes from the commit
+  messages: `fix:` → patch, `feat:` → minor, `BREAKING CHANGE` → major.
 
-```bash
-npm run build:mac      # packaged .app via electron-builder
-```
+## Where things are stored
 
-## Gotchas encountered (kept working by this repo's config)
+Everything lives in the app's userData folder (`~/Library/Application Support/claude-term` on
+macOS). Dev runs use `claude-term-dev`, so they never touch your real tabs.
 
-- node-pty's prebuilt `spawn-helper` ships without +x → `postinstall` chmods it (otherwise `posix_spawnp failed`).
-- The statusLine `command` string runs through a shell and userData is under `Application Support` (space!) → the overlay quotes the forwarder path.
-- Resume uses the tab's recorded `session_id` (`--resume <id>`), never `claude -c`, which would grab the most recent session in that cwd — possibly someone else's.
-- Monaco: with a custom `wordPattern` that includes `/` and `@`, trigger characters are routed to the _quick suggest_ path (`LineContext.shouldAutoTrigger`), so `quickSuggestions` must be ON for the popups to appear; `fixedOverflowWidgets: true` is required because the input sits at the bottom of the window inside an `overflow: hidden` wrapper; editor options only apply on editor creation — restart the app after changing them (HMR won't recreate the editor).
-- Monaco Enter-to-submit: `editor.addCommand(KeyCode.Enter, …)` does NOT work — Monaco's text-input (EditContext) pipeline swallows Enter as a newline before the command keybinding fires. Intercept it in `editor.onKeyDown` with `preventDefault()` instead, and skip when `.suggest-widget.visible` (let Monaco accept the suggestion). Non-typing keys like Shift+Tab are fine via `addCommand`; only Enter needs the keydown path. (Note: synthetic CDP key events don't feed the EditContext, so newline insertion on Shift+Enter can't be exercised via `Input.dispatchKeyEvent` — it's stock Monaco behavior driven by real OS keys.)
-- `/add-dir` can only be observed as it is submitted. Claude Code keeps no readable record of a runtime `/add-dir` — it is absent from the statusline payload, from the session transcript, and from `~/.claude.json` — so the file window learns about extra roots from two places: `permissions.additionalDirectories` in the settings chain, and `/add-dir <path>` sniffed as it passes through `prompt:submit`. A `/add-dir` typed **directly into the terminal** bypasses the prompt box and cannot be seen; put it in `permissions.additionalDirectories` to make it stick. `/remove-dir <folder>` (or the folder chip's right-click menu) takes an extra folder back out: it drops the folder from the tab's record and remembers the removal, so neither the payload's `added_dirs` nor the settings chain can hand it back. Claude Code has no removal command of its own, so the running session keeps its access to the folder until the tab is restarted — the app just stops treating it as one of the tab's roots.
-- Profile isolation (2026-07-21 incident): package name and productName are both `claude-term`, so a dev run's default userData was the SAME dir as the installed app — a quitting dev/test instance overwrote the real `session.json` and the user's tabs were lost. Now: dev (unpackaged) runs use `claude-term-dev`, packaged runs with a CDP debug port use `claude-term-debug`, `CLAUDE_TERM_USER_DATA_DIR` still overrides everything (E2E fixtures), and a single-instance lock stops two instances sharing one profile. Every distinct `session.json` state is also snapshotted to `session-backups/` (last 20) before being overwritten — to recover tabs, copy a backup over `session.json` while the app is closed.
-- An `http` hook can **answer** a permission prompt, which is how anything outside the TUI (a mobile companion, a script) can approve one. Withholding the HTTP response parks that single decision — the turn waits, other hooks keep firing — and a 2xx body of `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}` releases it; a 2xx **empty** body means "no decision". Three traps: `PermissionRequest` answers with `decision.behavior` while `PreToolUse` uses `permissionDecision`; the native dialog is drawn **immediately**, in parallel with a parked hook, so the terminal is always still answerable and answering there closes the parked connection; and only `PreToolUse`'s `permissionDecisionReason` reaches the model, so that is the sole way to send an `AskUserQuestion` answer or plan feedback back. `Elicitation` is MCP-only and never fires for these. Measured against CLI 2.1.235 — see `docs/companion-hook-protocol.md` and re-run `scripts/hook-spike/tui.py` after a CLI upgrade.
+| File                        | Contents                                              |
+| --------------------------- | ----------------------------------------------------- |
+| `session.json`              | Open windows, tabs and their sessions                 |
+| `session-backups/`          | The last 20 versions of `session.json`                |
+| `config-file-patterns.json` | Which config files the file window lists              |
+| `companion-devices.json`    | Paired phones (public keys only)                      |
+| `ui-bridge.log`             | Focus moves and term-bridge events                    |
+| `companion.log`             | Every prompt held for a phone and what happened to it |
+
+To recover lost tabs, quit the app and copy a file from `session-backups/` over `session.json`.
