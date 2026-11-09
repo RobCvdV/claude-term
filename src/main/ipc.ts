@@ -16,6 +16,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import type {
   ClaudeTask,
   ContentSearch,
+  MissionTab,
+  MissionTabs,
   CompletionRequest,
   EditRequest,
   AppSettingsPatch,
@@ -86,6 +88,7 @@ import {
 import { insideAny, listTree } from './file-tree'
 import { findFiles } from './file-find'
 import { searchContents } from './content-search'
+import { MissionWindow } from './mission-window'
 import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
 import { gitMarks } from './git-marks'
@@ -160,6 +163,7 @@ export interface AppServices {
   pairing: Pairing
   hub: CompanionHub
   screens: ScreenRequests
+  mission: MissionWindow
   /** Drop the wake lock — called on the way out. */
   releaseSleepBlocker: () => void
 }
@@ -359,6 +363,11 @@ export function createServices(windows: TerminalWindows): AppServices {
     () => appSettings().behindThreshold,
     recentlyMovedByUs
   )
+  const mission = new MissionWindow(
+    () => join(app.getPath('userData'), 'mission-window.json'),
+    () => windows.quitting
+  )
+
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
     // background-agent refusal can no longer be ahead of us (see
@@ -368,6 +377,7 @@ export function createServices(windows: TerminalWindows): AppServices {
       rate.record(tabStatus.payload)
     }
     windows.sendForTab(tabStatus.tabId, 'status:update', tabStatus)
+    mission.send('status:update', tabStatus)
     hub.publishStatus(tabStatus)
     work.observe(tabStatus)
     updateSleepBlocker()
@@ -411,6 +421,7 @@ export function createServices(windows: TerminalWindows): AppServices {
 
   return {
     desktop,
+    mission,
     ptys,
     status,
     rate,
@@ -880,9 +891,13 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   })
   ipcMain.on('tabs:adopted', (e, tabIds: TabId[]) => windows.adopted(e.sender, tabIds))
   ipcMain.on('window:emptied', (e) => windows.emptied(e.sender))
-  ipcMain.on('tabs:report', (e, tabIds: TabId[], activeTab: TabId | null, title: string) =>
-    windows.reportTabs(e.sender, tabIds, activeTab, title)
+  ipcMain.on('tabs:report', (e, tabs: MissionTab[], activeTab: TabId | null, title: string) =>
+    windows.reportTabs(e.sender, tabs, activeTab, title)
   )
+  ipcMain.on('mission:toggle', () => services.mission.toggle())
+  ipcMain.on('mission:open', () => services.mission.open())
+  ipcMain.handle('mission:tabs', (): MissionTabs => windows.missionTabs())
+  ipcMain.on('tabs:activateGlobal', (_e, tabId: TabId) => windows.activate(tabId))
   ipcMain.on('tabs:selectGlobal', (_e, index: number) => windows.selectGlobal(index))
   ipcMain.on('tabs:stepGlobal', (e, delta: number) => windows.stepGlobal(e.sender, delta))
   ipcMain.handle('app:settings', () => appSettings())

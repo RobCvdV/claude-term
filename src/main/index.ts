@@ -84,6 +84,7 @@ const reviews = new ReviewQueue(
   () => appSettings().reviewQueue,
   (items, added) => {
     windows.broadcast('reviews:update', items)
+    services.mission.send('reviews:update', items)
     for (const pr of added) {
       services.desktop.notify({
         kind: 'reviewRequested',
@@ -181,9 +182,16 @@ app.whenReady().then(async () => {
     persist: ipc.writeSession,
     // detached docs/settings windows would otherwise keep the app alive after
     // the last terminal window is gone (window-all-closed never fires)
-    allClosed: () => closeAllDocsWindows()
+    allClosed: () => {
+      closeAllDocsWindows()
+      services.mission.closeForQuit()
+    }
   }
-  onAppSettings((s) => windows.broadcast('app:settingsChanged', s))
+  windows.onTabsChanged = () => services.mission.send('mission:tabs', windows.missionTabs())
+  onAppSettings((s) => {
+    windows.broadcast('app:settingsChanged', s)
+    services.mission.send('app:settingsChanged', s)
+  })
   ipcMain.handle('update:pending', () => pendingUpdate())
   ipcMain.handle('reviews:list', () => reviews.list())
   let reviewsOn = appSettings().reviewQueue
@@ -192,6 +200,7 @@ app.whenReady().then(async () => {
     reviewsOn = s.reviewQueue
   })
   openStartupWindows(ipc.loadSession())
+  services.mission.restore()
   ciPoller.start()
   reviews.start()
 

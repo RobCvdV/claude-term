@@ -55,7 +55,7 @@ function HowTo(): React.JSX.Element {
           Command palette — fuzzy-jump to a tab, recall a recent branch (Enter copies its name), or
           run an action
         </Keys>
-        <Keys k="⌘E">Mission control — every tab at a glance</Keys>
+        <Keys k="⌘E">Mission control window — every tab at a glance; ⌘E again closes it</Keys>
         <Keys k="⌘,">
           Settings — notifications, polling, integrations and the app&apos;s switches
         </Keys>
@@ -248,14 +248,17 @@ function Guide(): React.JSX.Element {
       <section>
         <h3>Mission control</h3>
         <p>
-          <b>⌘E</b> shows every tab at a glance: activity and elapsed time, context usage, and per
-          workspace repo the branch with its Jira status and topic (the ticket summary, else the PR
-          title), the PR&apos;s review state and comment count, the build (with progress while it
-          runs) and unpushed / behind counts — plus your last prompt (<b>asked</b>) and a summary of
+          <b>⌘E</b> opens a window with every tab of every terminal window at a glance (<b>⌘E</b>
+          again closes it): activity and elapsed time, context usage, and per workspace repo the
+          branch with its Jira status and topic (the ticket summary, else the PR title), the
+          PR&apos;s review state and comment count, the build (with progress while it runs) and
+          unpushed / behind counts — plus your last prompt (<b>asked</b>) and a summary of
           Claude&apos;s latest reply (<b>latest</b>; long turns are compressed by the local Bonsai
           model when one is running — plain truncation otherwise). The header counts what needs you
           across all tabs, and a card with a failed build, requested changes or a question gets a
-          red edge. Click a card to jump there; click a chip to open the ticket, PR or build.
+          red edge. Click a card to jump there — the window stays open, so it can sit beside your
+          terminals at whatever size you give it, and it opens where you left it (also after a
+          restart, if it was open). Click a chip to open the ticket, PR or build.
         </p>
         <p>
           A PR that is approved, green (or only waiting on an approval step) and has nothing

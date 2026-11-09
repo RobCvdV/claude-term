@@ -26,9 +26,10 @@ function showUnseen(win: BrowserWindow): void {
   win.showInactive()
 }
 
-/** Show a window for the first time. */
-export function showWindow(win: BrowserWindow): void {
+/** Show a window for the first time; `inactive` leaves the keys where they are. */
+export function showWindow(win: BrowserWindow, inactive = false): void {
   if (inBackground) showUnseen(win)
+  else if (inactive) win.showInactive()
   else win.show()
 }
 

@@ -8,7 +8,9 @@ export const WINDOW_KIND = {
   /** the app's own window: tabs, terminals, prompt box */
   main: 'Terminal',
   /** the detached viewer/editor (docs, settings, the file tree) */
-  files: 'File editor'
+  files: 'File editor',
+  /** every tab at a glance, in a window of its own */
+  mission: 'Mission control'
 } as const
 
 /** `Kind — part — part`, dropping the parts that are empty. */

@@ -2547,12 +2547,18 @@ body.rail-resizing {
 }
 
 /* ---- mission control (⌘E) ---- */
-.mission-panel {
-  width: min(1100px, 94vw);
+/* its own window: the panel is the whole window, and only the cards scroll */
+.mission-window {
+  height: 100vh;
+  display: flex;
+  background: var(--bg-raised);
 }
 
-.mission-panel .help-close {
-  margin-left: auto;
+.mission-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .mission-grid {
