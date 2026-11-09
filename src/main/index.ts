@@ -19,6 +19,7 @@ import { setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
 import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
+import { bringForward, inBackground, keepBackgroundRendering, showWindow } from './background-mode'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
 // anything reads app.getPath('userData').
@@ -50,11 +51,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 app.on('second-instance', () => {
   const win = windows.focusedOrPrimary()
-  if (win) {
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
-  }
+  if (win) bringForward(win)
 })
 
 const windows = new TerminalWindows()
@@ -106,6 +103,10 @@ if (process.env['CLAUDE_TERM_DEBUG_PORT']) {
   app.commandLine.appendSwitch('remote-debugging-port', process.env['CLAUDE_TERM_DEBUG_PORT'])
 }
 
+// no dock icon and no activation on launch: a background run never comes forward
+if (inBackground && process.platform === 'darwin') app.setActivationPolicy('accessory')
+keepBackgroundRendering()
+
 app.on('browser-window-created', (_event, win) => {
   installZoomKeys(win)
   installCycleKey(win, () => windows.cycle())
@@ -127,7 +128,7 @@ function makeWindow(bounds: WindowBounds | undefined): BrowserWindow {
     }
   })
 
-  win.on('ready-to-show', () => win.show())
+  win.on('ready-to-show', () => showWindow(win))
 
   win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
