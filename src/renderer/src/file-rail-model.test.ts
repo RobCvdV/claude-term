@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import type { TreeNode } from '../../shared/types'
+import type { LineHit, TreeNode } from '../../shared/types'
 import type { RailGroup } from './docs-rail'
 import {
   ancestorsIn,
   buildRows,
+  contentRows,
   filterRows,
   groupId,
   jump,
   left,
   pasteDir,
   QUICK,
+  rowName,
+  rowPath,
   quickId,
   right,
   step,
@@ -143,5 +146,42 @@ describe('paste and reveal', () => {
     expect(ancestorsIn('/r', '/r/src/main/x.ts')).toEqual(['/r', '/r/src', '/r/src/main'])
     expect(ancestorsIn('/r', '/r/x.ts')).toEqual(['/r'])
     expect(ancestorsIn('/r', '/other/x.ts')).toEqual([])
+  })
+})
+
+describe('contentRows', () => {
+  const hit = (line: number): LineHit => ({
+    line,
+    column: 1,
+    length: 3,
+    preview: 'foo',
+    previewAt: 0
+  })
+  const found = {
+    matches: [{ path: '/r/a.ts', name: 'a.ts', size: 9, hits: [hit(2), hit(7)] }],
+    truncated: false,
+    skippedLarge: 0
+  }
+
+  it('lists each file, landing on its first hit, then its lines', () => {
+    const rows = contentRows(found)
+    expect(rows.map((r) => [r.kind, r.depth])).toEqual([
+      ['item', 0],
+      ['hit', 1],
+      ['hit', 1]
+    ])
+    expect(rows[0]).toMatchObject({ at: { line: 2 } })
+    expect(rows.slice(1).map(rowPath)).toEqual(['/r/a.ts', '/r/a.ts'])
+    // type-to-jump goes by file names, not by line text
+    expect(rowName(rows[1])).toBe('')
+    expect(step(rows, rows[0].id, 2)).toBe(rows[2].id)
+  })
+
+  it('says when it stopped short or left files out', () => {
+    const rows = contentRows({ ...found, truncated: true, skippedLarge: 2 })
+    expect(rows.filter((r) => r.kind === 'note').map((r) => r.kind === 'note' && r.text)).toEqual([
+      'More matches not shown — narrow the search',
+      '2 files are too large to search'
+    ])
   })
 })

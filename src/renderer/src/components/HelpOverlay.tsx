@@ -102,6 +102,10 @@ function HowTo(): React.JSX.Element {
       <section>
         <h3>File window</h3>
         <Keys k="⇧⌘F">Find a file (⌘F too, outside the editor) — ↓ walks the results</Keys>
+        <Keys k="⇧⌘F ⇧⌘F">
+          In the box: switch to searching inside text files (the ≡ button too) — ↵ on a line opens
+          it there
+        </Keys>
         <Keys k="↑ ↓ → ←">
           Walk the rail — → opens a folder or steps in, ← closes it or steps out
         </Keys>
@@ -381,9 +385,13 @@ function Guide(): React.JSX.Element {
           box: it narrows Quick Access and searches the whole project with it, so a file the rail
           doesn&apos;t list (a <code>notes</code> with no extension, a script) still turns up by
           name — <code>*</code> and <code>?</code> make the query a pattern (<code>*.md</code>,{' '}
-          <code>plan*</code>). The rail works from the keyboard like Finder: arrows walk it (→ and ←
-          open and close a level), typing jumps to a name, ↵ opens the file here, Space Quick Looks
-          it, <code>⌘O</code> opens it in its default app, <code>⌘C</code>/<code>⌘V</code> copy and
+          <code>plan*</code>). <code>⇧⌘F</code> again in the box, or the ≡ button next to it,
+          searches inside the files instead: every text file (SVG, XML and JSON included; images,
+          audio and other binaries skipped) is read in small chunks, so even a huge file costs no
+          memory, and each matching line is listed under its file — ↵ or a click opens it with the
+          match selected. The rail works from the keyboard like Finder: arrows walk it (→ and ← open
+          and close a level), typing jumps to a name, ↵ opens the file here, Space Quick Looks it,{' '}
+          <code>⌘O</code> opens it in its default app, <code>⌘C</code>/<code>⌘V</code> copy and
           paste files to and from Finder (a clash gets Finder&apos;s &quot;copy&quot; name), and{' '}
           <code>⌃Space</code> or a right-click opens the same actions as a menu with{' '}
           <b>Show in Finder</b>. <code>⌥⌘L</code> or the ◎ button selects the open file in its tree.

@@ -35,6 +35,7 @@ import type {
   SlashCommand,
   TabId,
   TreeNode,
+  ContentSearch,
   TabInfo,
   TabStatus,
   VolumeOp,
@@ -176,6 +177,9 @@ export interface ClaudeTermApi {
   /** files anywhere under the window's roots matching the filter box (plain
    *  text matches anywhere; `*` and `?` make it a pattern) */
   findDocFiles(tabId: TabId, query: string): Promise<TreeNode[]>
+  /** text files under the window's roots containing `query`, line by line;
+   *  a newer call for the same tab cuts this one short */
+  searchDocContents(tabId: TabId, query: string): Promise<ContentSearch>
   /** a file's text; `allowOversize` answers the size warning ("Open anyway") */
   readDoc(tabId: TabId, path: string, allowOversize?: boolean): Promise<string | null>
   /** an image file as a data URL for the View, or null */
@@ -367,6 +371,7 @@ const api: ClaudeTermApi = {
   docsQuickLook: (tabId, path) => ipcRenderer.invoke('docs:quickLook', tabId, path),
   docsRailMenu: (req) => ipcRenderer.invoke('docs:railMenu', req),
   findDocFiles: (tabId, query) => ipcRenderer.invoke('docs:find', tabId, query),
+  searchDocContents: (tabId, query) => ipcRenderer.invoke('docs:grep', tabId, query),
   readDoc: (tabId, path, allowOversize) =>
     ipcRenderer.invoke('docs:read', tabId, path, allowOversize),
   readDocImage: (tabId, path) => ipcRenderer.invoke('docs:readImage', tabId, path),

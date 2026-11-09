@@ -13,21 +13,29 @@ import { FileRail, type RevealRequest } from './FileRail'
 import { revealLabel } from '../../../shared/reveal-label'
 import { renderMarkdown } from '../markdown'
 
-/** Where a terminal file link wants the cursor. */
+/** Where a terminal file link or a search hit wants the cursor; `length`
+ *  selects the match. */
 interface CursorAt {
   line: number
   column?: number
+  length?: number
 }
 
 const editorPath = (ed: monacoNs.editor.IStandaloneCodeEditor): string | undefined =>
   ed.getModel()?.uri.path
 
-function revealAt(ed: monacoNs.editor.IStandaloneCodeEditor, at: CursorAt): void {
+function revealAt(ed: monacoNs.editor.IStandaloneCodeEditor, at: CursorAt, focus = true): void {
   // a stale line number (the file shrank since it was printed) still lands in it
   const lineNumber = Math.min(at.line, ed.getModel()?.getLineCount() ?? 1)
-  ed.setPosition({ lineNumber, column: at.column ?? 1 })
+  const column = at.column ?? 1
+  ed.setSelection({
+    startLineNumber: lineNumber,
+    startColumn: column,
+    endLineNumber: lineNumber,
+    endColumn: column + (at.length ?? 0)
+  })
   ed.revealLineInCenter(lineNumber)
-  ed.focus()
+  if (focus) ed.focus()
 }
 
 /** The mode a file can actually be shown in: a raster image has no text to
@@ -59,7 +67,7 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
   // Where a `path:line` terminal link wants the cursor. Applied on mount for a
   // file the editor isn't showing yet, and straight away for one it is — a
   // second link into the open file must still move the cursor.
-  const openAtLine = useRef<CursorAt | null>(null)
+  const openAtLine = useRef<{ at: CursorAt; focus: boolean } | null>(null)
   const edRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null)
   // Enter on a rail row: the editor takes the keyboard once it is up
   const focusOnAttach = useRef(false)
@@ -108,7 +116,7 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
         ed.focus()
       }
       if (openAtLine.current) {
-        revealAt(ed, openAtLine.current)
+        revealAt(ed, openAtLine.current.at, openAtLine.current.focus)
         openAtLine.current = null
       }
       const subs: monacoNs.IDisposable[] = [
@@ -148,7 +156,7 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
       }
       openAtEnd.current = landing.atEnd
       const at = landing.line ? { line: landing.line, column: landing.column } : null
-      openAtLine.current = at
+      openAtLine.current = at && { at, focus: true }
       // already the open file: no editor is mounted for this, so move the cursor
       if (at && edRef.current && editorPath(edRef.current) === landing.item?.path) {
         revealAt(edRef.current, at)
@@ -262,7 +270,8 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
   const listed = docs ? railGroups(docs).reduce((n, g) => n + g.items.length, 0) : 0
   const empty = !docs || (!listed && !docs.roots.length)
 
-  const selectFile = (e: FileItem, focusEditor = false): void => {
+  const selectFile = (e: FileItem, focusEditor = false, at?: CursorAt): void => {
+    if (at) return openAt(e, at, focusEditor)
     if (e.path === selected?.path) {
       if (focusEditor) edRef.current?.focus()
       return
@@ -277,6 +286,22 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     if (focusEditor && modeFor(e.path) === 'view') {
       requestAnimationFrame(() => previewRef.current?.focus())
     }
+  }
+
+  /** A search hit: the file in the editor, the match selected. */
+  const openAt = (e: FileItem, at: CursorAt, focusEditor: boolean): void => {
+    const ed = edRef.current
+    if (e.path === selected?.path && mode === 'edit' && ed && editorPath(ed) === e.path) {
+      revealAt(ed, at, focusEditor)
+      return
+    }
+    if (e.path !== selected?.path) {
+      if (!editor.confirmDiscard()) return
+      setNewFileError(null)
+      editor.select(e)
+    }
+    openAtLine.current = { at, focus: focusEditor }
+    setMode(modeAllowed(e.path, 'edit'))
   }
 
   return (

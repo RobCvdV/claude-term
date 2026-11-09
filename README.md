@@ -170,7 +170,9 @@ One window per tab for everything the project has to read and edit.
   above a tree per project folder. Names use WebStorm's git colours, source files get a type
   badge, and the rail's width is draggable.
 - **Search** — the box narrows Quick Access and finds any file under the project by name; `*`
-  and `?` make it a pattern (`*.md`, `plan*`).
+  and `?` make it a pattern (`*.md`, `plan*`). The ≡ button (or `⇧⌘F` again in the box)
+  searches inside text files instead — binaries are skipped — listing each matching line; opening
+  one selects the match.
 - **Keys like Finder** — arrows walk the tree, typing jumps to a name, `Space` Quick Looks,
   `⌘C`/`⌘V` copy and paste files with Finder (never overwriting). See the
   [shortcuts](#file-window-1).
@@ -275,6 +277,7 @@ The details are in [docs/companion.md](docs/companion.md).
 | Keys        | Action                                                  |
 | ----------- | ------------------------------------------------------- |
 | `⇧⌘F`       | Find a file (`⌘F` too, outside the editor)              |
+| `⇧⌘F` again | In the box: search inside text files (≡ button too)     |
 | `↑ ↓ → ←`   | Move; open / close folders, step in / out               |
 | `a`–`z`     | Jump to the next name starting with what you type       |
 | `↵`         | Open in the editor                                      |

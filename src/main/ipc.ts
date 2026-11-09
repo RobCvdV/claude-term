@@ -15,6 +15,7 @@ import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import type {
   ClaudeTask,
+  ContentSearch,
   CompletionRequest,
   EditRequest,
   AppSettingsPatch,
@@ -84,6 +85,7 @@ import {
 } from './docs'
 import { insideAny, listTree } from './file-tree'
 import { findFiles } from './file-find'
+import { searchContents } from './content-search'
 import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
 import { gitMarks } from './git-marks'
@@ -1017,6 +1019,15 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.handle('docs:find', (_e, tabId: TabId, query: string) => {
     const { cwd, addedDirs } = rootsFor(tabId)
     return cwd ? findFiles([cwd, ...addedDirs], query) : []
+  })
+  // typing makes each search stale before it ends; only the latest one runs on
+  const latestGrep = new Map<TabId, number>()
+  ipcMain.handle('docs:grep', (_e, tabId: TabId, query: string): Promise<ContentSearch> => {
+    const { cwd, addedDirs } = rootsFor(tabId)
+    const n = (latestGrep.get(tabId) ?? 0) + 1
+    latestGrep.set(tabId, n)
+    if (!cwd) return Promise.resolve({ matches: [], truncated: false, skippedLarge: 0 })
+    return searchContents([cwd, ...addedDirs], query, () => latestGrep.get(tabId) !== n)
   })
   // The app's own settings for the tab's project, kept with the project.
   ipcMain.handle('project:settings', (_e, tabId: TabId): ProjectSettings => {
