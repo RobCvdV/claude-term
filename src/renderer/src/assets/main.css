@@ -953,6 +953,12 @@ body {
   color: var(--fg);
 }
 
+.rail-locate.on {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .rail-locate:disabled {
   opacity: 0.4;
   cursor: default;
@@ -1069,6 +1075,30 @@ body {
 .rail-name {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* a search hit: its line number, then the line with the match marked */
+.rail-line {
+  flex-shrink: 0;
+  min-width: 2.5em;
+  text-align: right;
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-hit .rail-name {
+  font-family: Menlo, Monaco, monospace;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  white-space: pre;
+  tab-size: 2;
+}
+
+.rail-hit mark {
+  background: color-mix(in srgb, var(--yellow) 35%, transparent);
+  color: var(--fg);
+  border-radius: 2px;
 }
 
 .rail-sub {

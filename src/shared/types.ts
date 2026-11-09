@@ -344,6 +344,36 @@ export interface TreeNode {
   excluded?: boolean
 }
 
+/** One line of a file that contains the searched text. */
+export interface LineHit {
+  /** 1-based, like the editor's */
+  line: number
+  /** 1-based, in UTF-16 units — what Monaco takes */
+  column: number
+  length: number
+  /** the line around the match, trimmed to fit a rail row */
+  preview: string
+  /** where the match sits in `preview` */
+  previewAt: number
+}
+
+export interface ContentMatch {
+  path: string
+  /** relative to its root, as the rail shows it */
+  name: string
+  size: number
+  hits: LineHit[]
+}
+
+/** What a search inside files found, and what it left out. */
+export interface ContentSearch {
+  matches: ContentMatch[]
+  /** stopped at the hit limit — there may be more */
+  truncated: boolean
+  /** text files too large to search */
+  skippedLarge: number
+}
+
 /** How git sees a file in the tree, for its colour. */
 export type GitMark = 'modified' | 'added' | 'untracked' | 'ignored' | 'conflict'
 

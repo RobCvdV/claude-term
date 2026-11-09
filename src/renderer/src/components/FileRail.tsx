@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { GitMarks, ProjectDocs, RailAction, TreeNode } from '../../../shared/types'
+import type {
+  ContentSearch,
+  GitMarks,
+  LineHit,
+  ProjectDocs,
+  RailAction,
+  TreeNode
+} from '../../../shared/types'
 import { markFor } from '../../../shared/git-marks'
 import { matchesFilter } from '../../../shared/glob-match'
 import { railGroups, type FileItem } from '../docs-rail'
@@ -7,6 +14,7 @@ import { iconFor } from '../file-icons'
 import {
   ancestorsIn,
   buildRows,
+  contentRows,
   filterRows,
   firstStop,
   groupId,
@@ -33,6 +41,7 @@ const PAGE = 10
 const CLIP_ECHO_MS = 500
 const STEP = 12
 const WIDTH_KEY = 'fileRail.width'
+const IN_FILES_KEY = 'fileRail.inFiles'
 const MIN_WIDTH = 180
 const DEFAULT_WIDTH = 280
 
@@ -50,8 +59,9 @@ interface Props {
   tabId: string
   docs: ProjectDocs
   selectedPath?: string
-  /** open a file; `focusEditor` hands the keyboard to the editor */
-  onOpen: (item: FileItem, focusEditor: boolean) => void
+  /** open a file; `focusEditor` hands the keyboard to the editor, `at` puts
+   *  the cursor on a search hit */
+  onOpen: (item: FileItem, focusEditor: boolean, at?: LineHit) => void
   /** bumped whenever files may have changed on disk (a save, a new file) */
   refresh: number
   reveal: RevealRequest | null
@@ -66,8 +76,16 @@ function readWidth(): number {
   }
 }
 
+function readInFiles(): boolean {
+  try {
+    return localStorage.getItem(IN_FILES_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 const itemOf = (row: RailRow): FileItem | null => {
-  if (row.kind === 'item') return row.item
+  if (row.kind === 'item' || row.kind === 'hit') return row.item
   if (row.kind === 'file') return { path: row.node.path, label: row.node.name, size: row.node.size }
   return null
 }
@@ -127,6 +145,9 @@ export function FileRail({
   const [marks, setMarks] = useState<GitMarks | null>(null)
   const [filter, setFilter] = useState('')
   const [found, setFound] = useState<{ query: string; hits: TreeNode[] } | null>(null)
+  // the box searches inside files instead of by name
+  const [inFiles, setInFiles] = useState(readInFiles)
+  const [grepped, setGrepped] = useState<{ query: string; result: ContentSearch } | null>(null)
   // one cursor per mode, so clearing the filter goes back to where you were
   const [treeCursor, setTreeCursor] = useState<string | null>(null)
   const [findCursor, setFindCursor] = useState<string | null>(null)
@@ -211,7 +232,7 @@ export function FileRail({
 
   // …and searches the project for anything Quick Access doesn't list
   useEffect(() => {
-    if (!filtering) return
+    if (!filtering || inFiles) return
     let live = true
     const timer = setTimeout(() => {
       void window.claudeTerm.findDocFiles(tabId, filter).then((hits) => {
@@ -222,7 +243,33 @@ export function FileRail({
       live = false
       clearTimeout(timer)
     }
-  }, [tabId, filter, filtering, refresh])
+  }, [tabId, filter, filtering, inFiles, refresh])
+
+  useEffect(() => {
+    if (!filtering || !inFiles) return
+    let live = true
+    const timer = setTimeout(() => {
+      void window.claudeTerm.searchDocContents(tabId, filter).then((result) => {
+        if (live) setGrepped({ query: filter, result })
+      })
+    }, FIND_DEBOUNCE_MS)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [tabId, filter, filtering, inFiles, refresh])
+  const grepDone = !!grepped && grepped.query === filter
+
+  const toggleInFiles = (): void => {
+    setInFiles((on) => {
+      try {
+        localStorage.setItem(IN_FILES_KEY, on ? '0' : '1')
+      } catch {
+        // storage blocked — the mode just isn't remembered
+      }
+      return !on
+    })
+  }
 
   const elsewhere = useMemo((): FileItem[] => {
     if (!found || found.query !== filter) return []
@@ -234,10 +281,15 @@ export function FileRail({
 
   const rows = useMemo(
     () =>
-      filtering
-        ? filterRows(shownGroups, elsewhere)
-        : buildRows({ groups, roots: docs.roots, entries, open }),
-    [filtering, shownGroups, elsewhere, groups, docs.roots, entries, open]
+      !filtering
+        ? buildRows({ groups, roots: docs.roots, entries, open })
+        : inFiles
+          ? // the last results stay up while the next search runs
+            grepped
+            ? contentRows(grepped.result)
+            : []
+          : filterRows(shownGroups, elsewhere),
+    [filtering, inFiles, grepped, shownGroups, elsewhere, groups, docs.roots, entries, open]
   )
   // a new search starts on its first hit
   const cursor = filtering
@@ -337,9 +389,14 @@ export function FileRail({
 
   // ⇧⌘F, ⌘L and ⌥⌘L from anywhere in the window, the editor included; plain ⌘F
   // only outside the editor, which has a find of its own
-  const keysRef = useRef({ focusSearch, locate, focusList })
+  // ⇧⌘F in the box itself switches between names and inside files
+  const findKey = (): void => {
+    if (document.activeElement === searchRef.current) toggleInFiles()
+    else focusSearch()
+  }
+  const keysRef = useRef({ focusSearch, findKey, locate, focusList })
   useEffect(() => {
-    keysRef.current = { focusSearch, locate, focusList }
+    keysRef.current = { focusSearch, findKey, locate, focusList }
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -348,7 +405,8 @@ export function FileRail({
       if (e.code === 'KeyF' && !e.altKey && (e.shiftKey || !inEditor)) {
         e.preventDefault()
         e.stopPropagation()
-        keysRef.current.focusSearch()
+        if (e.shiftKey) keysRef.current.findKey()
+        else keysRef.current.focusSearch()
       } else if (e.code === 'KeyL' && e.altKey && !e.shiftKey) {
         e.preventDefault()
         e.stopPropagation()
@@ -365,7 +423,8 @@ export function FileRail({
 
   const activate = (row: RailRow, focusEditor: boolean): void => {
     const item = itemOf(row)
-    if (item) onOpen(item, focusEditor)
+    const at = row.kind === 'hit' ? row.hit : row.kind === 'item' ? row.at : undefined
+    if (item) onOpen(item, focusEditor, at)
     else toggle(row)
   }
 
@@ -625,6 +684,38 @@ export function FileRail({
         </div>
       )
     }
+    if (row.kind === 'hit') {
+      const { hit } = row
+      const end = hit.previewAt + hit.length
+      return (
+        <div
+          key={row.id}
+          data-id={row.id}
+          role="treeitem"
+          aria-selected={row.id === cursor}
+          className={classes.join(' ')}
+          style={{ paddingLeft: 6 + row.depth * STEP }}
+          title={`${row.item.label}:${hit.line}`}
+          onClick={() => {
+            setCursor(row.id)
+            activate(row, false)
+            listRef.current?.focus()
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setCursor(row.id)
+            void showMenu(row, { x: e.clientX, y: e.clientY })
+          }}
+        >
+          <span className="rail-line">{hit.line}</span>
+          <span className="rail-name">
+            {hit.preview.slice(0, hit.previewAt)}
+            <mark>{hit.preview.slice(hit.previewAt, end)}</mark>
+            {hit.preview.slice(end)}
+          </span>
+        </div>
+      )
+    }
     const openable = isOpenable(row)
     const title =
       row.kind === 'header'
@@ -671,6 +762,7 @@ export function FileRail({
   }
 
   const noMatch = filtering && !rows.some((r) => r.kind === 'item')
+  const searching = filtering && inFiles && !grepDone
 
   return (
     <div className="file-rail" style={{ width }}>
@@ -681,10 +773,25 @@ export function FileRail({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={onSearchKey}
-          placeholder="Find a file — * allowed"
+          placeholder={inFiles ? 'Search inside files' : 'Find a file — * allowed'}
           spellCheck={false}
           autoFocus
         />
+        <button
+          className={`rail-locate ${inFiles ? 'on' : ''}`}
+          onClick={() => {
+            toggleInFiles()
+            searchRef.current?.focus()
+          }}
+          aria-pressed={inFiles}
+          title={
+            inFiles
+              ? 'Searching inside text files — click to find files by name (⇧⌘F in the box)'
+              : 'Search inside text files instead of by name (⇧⌘F in the box)'
+          }
+        >
+          ≡
+        </button>
         <button
           className="rail-locate"
           onClick={locate}
@@ -716,7 +823,12 @@ export function FileRail({
         }}
       >
         {rows.map(renderRow)}
-        {noMatch && <p className="activity-empty">No file matches.</p>}
+        {searching && noMatch && <p className="activity-empty">Searching…</p>}
+        {noMatch && !searching && (
+          <p className="activity-empty">
+            {inFiles ? 'No text file contains that.' : 'No file matches.'}
+          </p>
+        )}
       </div>
       {notice && <div className="rail-notice">{notice}</div>}
       <div className="rail-resize" onMouseDown={startResize} title="Drag to resize" />

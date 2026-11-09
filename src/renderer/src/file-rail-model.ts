@@ -1,7 +1,7 @@
 /** The file rail as a flat list of rows, and what the keys do to it. Pure — the
  *  component renders and dispatches; keeping the choices here makes them testable. */
 
-import type { TreeNode, TreeRoot } from '../../shared/types'
+import type { ContentSearch, LineHit, TreeNode, TreeRoot } from '../../shared/types'
 import type { FileItem, RailGroup } from './docs-rail'
 
 export const QUICK = 'quick'
@@ -23,7 +23,10 @@ export type RailRow =
   | { kind: 'group'; id: string; label: string; subtitle?: string; depth: 1; open: boolean }
   /** a group's title while filtering: always open, not a stop for the keys */
   | { kind: 'label'; id: string; label: string; depth: 0 }
-  | { kind: 'item'; id: string; item: FileItem; depth: number }
+  /** `at`: where a search inside files found it first */
+  | { kind: 'item'; id: string; item: FileItem; depth: number; at?: LineHit }
+  /** a matching line, under its file, while searching inside files */
+  | { kind: 'hit'; id: string; item: FileItem; hit: LineHit; depth: number }
   | { kind: 'dir'; id: string; node: TreeNode; depth: number; open: boolean; excluded: boolean }
   | { kind: 'file'; id: string; node: TreeNode; depth: number; excluded: boolean }
   | { kind: 'note'; id: string; text: string; depth: number }
@@ -112,6 +115,36 @@ export function filterRows(groups: RailGroup[], elsewhere: FileItem[]): RailRow[
   return rows
 }
 
+/** The rows while searching inside files: each file, then its matching lines. */
+export function contentRows(found: ContentSearch): RailRow[] {
+  const rows: RailRow[] = []
+  for (const m of found.matches) {
+    const item: FileItem = { path: m.path, label: m.name, size: m.size }
+    rows.push({ kind: 'item', id: `c:${m.path}`, item, depth: 0, at: m.hits[0] })
+    for (const hit of m.hits) {
+      rows.push({ kind: 'hit', id: `c:${m.path}:${hit.line}`, item, hit, depth: 1 })
+    }
+  }
+  if (found.truncated) {
+    rows.push({
+      kind: 'note',
+      id: 'c:more',
+      text: 'More matches not shown — narrow the search',
+      depth: 0
+    })
+  }
+  if (found.skippedLarge) {
+    const n = found.skippedLarge
+    rows.push({
+      kind: 'note',
+      id: 'c:large',
+      text: `${n} file${n === 1 ? ' is' : 's are'} too large to search`,
+      depth: 0
+    })
+  }
+  return rows
+}
+
 export const focusable = (row: RailRow): boolean => row.kind !== 'note' && row.kind !== 'label'
 
 export const isOpenable = (row: RailRow): row is OpenableRow => 'open' in row
@@ -125,6 +158,7 @@ export function rowName(row: RailRow): string {
     case 'file':
       return row.node.name
     case 'note':
+    case 'hit':
       return ''
     default:
       return row.label
@@ -133,7 +167,7 @@ export function rowName(row: RailRow): string {
 
 /** The file or folder a row stands for, if any. */
 export function rowPath(row: RailRow): string | undefined {
-  if (row.kind === 'item') return row.item.path
+  if (row.kind === 'item' || row.kind === 'hit') return row.item.path
   if (row.kind === 'dir' || row.kind === 'file') return row.node.path
   if (row.kind === 'header') return row.dir
   return undefined
