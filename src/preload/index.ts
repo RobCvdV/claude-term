@@ -36,6 +36,8 @@ import type {
   TabId,
   TreeNode,
   ContentSearch,
+  MissionTab,
+  MissionTabs,
   TabInfo,
   TabStatus,
   VolumeOp,
@@ -244,8 +246,17 @@ export interface ClaudeTermApi {
   onHandoffAll(cb: (windowId: number) => void): () => void
   /** Window menu: move the active tab to a new window */
   onMoveActiveTab(cb: (target: HandoffTarget) => void): () => void
-  /** order + active tab of this window, for numbering and cycling across windows */
-  reportTabs(tabIds: TabId[], activeId: TabId | null, title: string): void
+  /** this window's tabs + active tab, for numbering and cycling across windows
+   *  and for Mission control */
+  reportTabs(tabs: MissionTab[], activeId: TabId | null, title: string): void
+  /** switch to a tab in whichever window holds it, and bring that forward */
+  activateGlobalTab(tabId: TabId): void
+  /** ⌘E: open the Mission control window, or close it */
+  toggleMission(): void
+  openMission(): void
+  /** every terminal window's tabs, for the Mission control window */
+  missionTabs(): Promise<MissionTabs>
+  onMissionTabs(cb: (tabs: MissionTabs) => void): () => void
   selectGlobalTab(index: number): void
   stepGlobalTab(delta: number): void
   /** another window's ⌘1–9 / ⌘[ ⌘] landed on one of this window's tabs */
@@ -402,7 +413,12 @@ const api: ClaudeTermApi = {
   onDropHover: (cb) => subscribe('tabs:dropHover', cb),
   onHandoffAll: (cb) => subscribe('tabs:handoffAll', cb),
   onMoveActiveTab: (cb) => subscribe('tabs:moveActive', cb),
-  reportTabs: (tabIds, activeId, title) => ipcRenderer.send('tabs:report', tabIds, activeId, title),
+  reportTabs: (tabs, activeId, title) => ipcRenderer.send('tabs:report', tabs, activeId, title),
+  activateGlobalTab: (tabId) => ipcRenderer.send('tabs:activateGlobal', tabId),
+  toggleMission: () => ipcRenderer.send('mission:toggle'),
+  openMission: () => ipcRenderer.send('mission:open'),
+  missionTabs: () => ipcRenderer.invoke('mission:tabs'),
+  onMissionTabs: (cb) => subscribe('mission:tabs', cb),
   selectGlobalTab: (index) => ipcRenderer.send('tabs:selectGlobal', index),
   stepGlobalTab: (delta) => ipcRenderer.send('tabs:stepGlobal', delta),
   onActivateTab: (cb) => subscribe('tabs:activate', cb),

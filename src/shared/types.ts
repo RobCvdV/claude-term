@@ -601,6 +601,18 @@ export interface TabInfo {
   title: string
 }
 
+/** A tab as the Mission control window lists it — from whichever window holds it. */
+export interface MissionTab extends TabInfo {
+  color?: string
+}
+
+/** Every tab across the terminal windows, left to right, for Mission control. */
+export interface MissionTabs {
+  tabs: MissionTab[]
+  /** the active tab of the terminal window used last */
+  activeId: TabId | null
+}
+
 /** An unsubmitted prompt, with the image chips it still refers to. */
 export interface PromptDraft {
   text: string

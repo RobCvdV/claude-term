@@ -20,7 +20,6 @@ import { ActivityOverview } from './components/ActivityOverview'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { CompanionPanel } from './components/CompanionPanel'
 import { HelpOverlay } from './components/HelpOverlay'
-import { MissionControl } from './components/MissionControl'
 import { SettingsPanel } from './components/SettingsPanel'
 import { autoTabTitle, composeWindowTitle } from './tab-title'
 import { WINDOW_KIND, windowTitle } from '../../shared/window-titles'
@@ -94,7 +93,6 @@ export default function App(): React.JSX.Element {
   const [showPalette, setShowPalette] = useState(false)
   // recent-branch history for the palette, refreshed each time it opens
   const [recentBranches, setRecentBranches] = useState<BranchHistoryEntry[]>([])
-  const [showMission, setShowMission] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showCompanion, setShowCompanion] = useState(false)
   // help overlay: which section to show, or null when closed (Help menu / ⌘/)
@@ -704,11 +702,7 @@ export default function App(): React.JSX.Element {
         openSearch()
       } else if (e.key === 'e') {
         e.preventDefault()
-        // the overlay holds focus while open — closing must give it back
-        setShowMission((v) => {
-          if (v && activeId) restoreFocus(activeId)
-          return !v
-        })
+        window.claudeTerm.toggleMission()
       } else if (e.key.toLowerCase() === 'a' && e.shiftKey) {
         e.preventDefault()
         jumpAttention()
@@ -750,14 +744,15 @@ export default function App(): React.JSX.Element {
   const showClaudeUi = !!activeStatus?.claudeActive
   const activeTitle = tabs.find((t) => t.tabId === activeId)?.title ?? ''
 
-  // main numbers and cycles tabs across windows from what each one reports
+  // main numbers and cycles tabs across windows from what each one reports, and
+  // Mission control lists them
   useEffect(() => {
     window.claudeTerm.reportTabs(
-      tabs.map((t) => t.tabId),
+      tabs.map((t) => ({ ...t, color: colors[t.tabId] })),
       activeId,
       activeTitle
     )
-  }, [tabs, activeId, activeTitle])
+  }, [tabs, colors, activeId, activeTitle])
 
   // The OS window title. It leads with the fixed kind so switchers and window
   // managers can find this window by title, then names the tab it is showing
@@ -842,7 +837,12 @@ export default function App(): React.JSX.Element {
       shortcut: '⌃`',
       run: () => window.claudeTerm.nextWindow()
     },
-    { id: 'mission', label: 'Mission control', shortcut: '⌘E', run: () => setShowMission(true) },
+    {
+      id: 'mission',
+      label: 'Mission control',
+      shortcut: '⌘E',
+      run: () => window.claudeTerm.openMission()
+    },
     { id: 'settings', label: 'Settings', shortcut: '⌘,', run: () => setShowSettings(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
     { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },
@@ -945,19 +945,6 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {showMission && (
-        <MissionControl
-          tabs={tabs}
-          statuses={statuses}
-          colors={colors}
-          activeId={activeId}
-          onSelectTab={setActiveId}
-          onClose={() => {
-            setShowMission(false)
-            if (activeId) restoreFocus(activeId)
-          }}
-        />
-      )}
       {showPalette && (
         <CommandPalette
           tabs={tabs}
@@ -1015,7 +1002,7 @@ export default function App(): React.JSX.Element {
               onEditDoc={editDoc}
               onOpenPalette={openPalette}
               onFindInTerminal={openSearch}
-              onOpenMission={() => setShowMission(true)}
+              onOpenMission={() => window.claudeTerm.toggleMission()}
               onShowHelp={() => setHelpSection('howto')}
             />
           )}

@@ -22,7 +22,8 @@ integrations are tuned for MendriX work (MTX tickets).
 - **Prompt box** — a real editor under the terminal: multiline, spell + grammar check,
   `/` command and `@` file completion, history.
 - **Live status bar** — activity, branch and ticket, PR review, CI, context use and rate limits.
-- **Mission control** (`⌘E`) — every tab and repo at a glance, with what needs you.
+- **Mission control** (`⌘E`) — every tab and repo at a glance, with what needs you, in a window
+  you can keep open beside your terminals.
 - **Focus follows the conversation** — dialogs take the keyboard, finished turns hand it back.
 - **Undo a turn** — every prompt snapshots the repo; revert exactly what a turn wrote.
 - **File window** — plans, docs, config and the project tree, with Finder-style keys and a
@@ -120,12 +121,13 @@ The PR, Jira, branch and folder chips open a dropdown on a click or right-click 
 
 ### Mission control
 
-`⌘E` shows every tab: activity, elapsed time and context use, and per repo the branch, Jira
+`⌘E` opens (and closes) a window with every tab of every terminal window: activity, elapsed time and context use, and per repo the branch, Jira
 status, topic (ticket summary or PR title), PR review and comments, build state and unpushed /
 behind counts — plus your last prompt and a summary of Claude's latest reply.
 
 - The header counts what needs you; a card with a failed build, requested changes or a question
-  gets a red edge. Click a card to jump to its tab.
+  gets a red edge. Click a card to jump to its tab; the window stays open.
+- The window keeps its size and place, and reopens on launch if it was open when you quit.
 - **ready to merge** marks an approved, green PR with nothing unpushed, with a button to move its
   ticket from Peer review to Deploy.
 - **rebase?** (orange) marks a PR'd branch far behind main; the threshold is in Settings.
@@ -250,7 +252,7 @@ The details are in [docs/companion.md](docs/companion.md).
 | `⇧⌘M`        | Move the tab back to the main window |
 | `` ⌃` ``     | Next terminal window                 |
 | `⌘K`         | Command palette                      |
-| `⌘E`         | Mission control                      |
+| `⌘E`         | Open / close Mission control         |
 | `⌘,`         | Settings                             |
 | `⌘⇧A`        | Next tab waiting for input           |
 | `⌘F`         | Find in the conversation             |

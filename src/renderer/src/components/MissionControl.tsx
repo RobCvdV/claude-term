@@ -11,7 +11,6 @@ import type {
 import { nameOf } from '../../../shared/status-folders'
 import { isTrunkBranch } from '../../../shared/repo-links'
 import { ticketUrl } from '../../../shared/jira-labels'
-import { useModalOverlay } from '../modal-overlay'
 import { ciLabel, ciTone, prReviewLabel, prTone, ticketTone } from '../work-status'
 import { readyToMerge, ticketDrift, ticketStage, tooFarBehind } from '../../../shared/work-rules'
 import { useAppSettings } from '../use-app-settings'
@@ -22,7 +21,6 @@ interface Props {
   colors: Record<TabId, string>
   activeId: TabId | null
   onSelectTab: (tabId: TabId) => void
-  onClose: () => void
 }
 
 function dotFor(status: TabStatus | null | undefined): string {
@@ -276,7 +274,7 @@ function summary(
     .map((c) => ({ text: `${c.n} ${c.text}`, tone: c.tone }))
 }
 
-/** ⌘E overview: every tab at a glance — activity + elapsed, context %, and per
+/** ⌘E window: every tab at a glance — activity + elapsed, context %, and per
  *  repo the branch with its Jira status, PR review, CI (with progress) and
  *  local git counts, plus a one-line "doing" snippet. Click a card to go; click
  *  a chip to open the ticket, PR or build. */
@@ -285,8 +283,7 @@ export function MissionControl({
   statuses,
   colors,
   activeId,
-  onSelectTab,
-  onClose
+  onSelectTab
 }: Props): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -294,7 +291,6 @@ export function MissionControl({
     return () => clearInterval(id)
   }, [])
 
-  const panelRef = useModalOverlay<HTMLDivElement>(onClose)
   const settings = useAppSettings()
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   useEffect(() => {
@@ -329,19 +325,9 @@ export function MissionControl({
     }
   }, [tabs, statuses])
 
-  const pick = (tabId: TabId): void => {
-    onClose()
-    onSelectTab(tabId)
-  }
-
   return (
-    <div className="activity-backdrop" onMouseDown={onClose}>
-      <div
-        ref={panelRef}
-        tabIndex={-1}
-        className="activity-panel mission-panel"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <div className="mission-window">
+      <div className="mission-panel">
         <div className="activity-head">
           <span className="activity-title">Mission control</span>
           <span className="mission-summary">
@@ -355,9 +341,6 @@ export function MissionControl({
             ))}
             {todo > 0 && <span className="tone-magenta">{todo} to review</span>}
           </span>
-          <button className="help-close" onClick={onClose} title="Close (Esc)">
-            ×
-          </button>
         </div>
         {waiting.length > 0 && (
           <div className="mission-reviews">
@@ -403,7 +386,7 @@ export function MissionControl({
                 key={tab.tabId}
                 className={`mission-card ${tab.tabId === activeId ? 'mission-active' : ''} ${needsYou(st) ? 'mission-alert' : ''}`}
                 style={colors[tab.tabId] ? { borderColor: colors[tab.tabId] } : undefined}
-                onClick={() => pick(tab.tabId)}
+                onClick={() => onSelectTab(tab.tabId)}
               >
                 <div className="mission-row">
                   <span className={dotFor(st)} />

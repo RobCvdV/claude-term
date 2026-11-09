@@ -1,6 +1,8 @@
 import { BrowserWindow, dialog, screen, type WebContents } from 'electron'
 import type {
   HandoffTarget,
+  MissionTab,
+  MissionTabs,
   PersistedSession,
   PersistedSessionFile,
   TabHandoff,
@@ -31,7 +33,7 @@ interface Entry {
   slice: PersistedSession | null
   /** kept up to date so a closed window still reports where it was */
   bounds: WindowBounds
-  tabOrder: TabId[]
+  tabs: MissionTab[]
   activeTab: TabId | null
   activeTitle: string
   /** tabs sent here before the renderer could take them */
@@ -69,6 +71,8 @@ export class TerminalWindows {
   /** set on the way out: windows closing then must not ask or forget their tabs */
   quitting = false
   hooks: WindowHooks | null = null
+  /** what Mission control lists changed: tabs, their titles, the window in use */
+  onTabsChanged: (() => void) | null = null
 
   create(boot: WindowBoot, bounds?: WindowBounds): BrowserWindow {
     if (!this.hooks) throw new Error('TerminalWindows used before hooks were set')
@@ -88,12 +92,15 @@ export class TerminalWindows {
       booted: false,
       slice: boot.mode === 'restore' ? boot.session : null,
       bounds: win.getBounds(),
-      tabOrder: [],
+      tabs: [],
       activeTab: null,
       activeTitle: '',
       pendingAdopt: []
     })
-    win.on('focus', () => (this.lastFocused = id))
+    win.on('focus', () => {
+      this.lastFocused = id
+      this.onTabsChanged?.()
+    })
     const track = (): void => {
       const entry = this.entries.get(id)
       if (entry && !win.isDestroyed()) entry.bounds = win.getBounds()
@@ -343,13 +350,28 @@ export class TerminalWindows {
 
   // ---- tab navigation across windows ----
 
-  reportTabs(sender: WebContents, tabIds: TabId[], activeTab: TabId | null, title: string): void {
+  reportTabs(
+    sender: WebContents,
+    tabs: MissionTab[],
+    activeTab: TabId | null,
+    title: string
+  ): void {
     const win = this.fromSender(sender)
     const entry = win ? this.entries.get(win.id) : undefined
     if (!entry) return
-    entry.tabOrder = tabIds
+    entry.tabs = tabs
     entry.activeTab = activeTab
     entry.activeTitle = title
+    this.onTabsChanged?.()
+  }
+
+  /** every window's tabs, left to right, for Mission control */
+  missionTabs(): MissionTabs {
+    const used = this.focusedOrPrimary()
+    return {
+      tabs: this.spatial().flatMap((e) => e.tabs),
+      activeId: used ? (this.entries.get(used.id)?.activeTab ?? null) : null
+    }
   }
 
   private spatial(): Entry[] {
@@ -359,7 +381,7 @@ export class TerminalWindows {
   }
 
   private globalTabs(): TabId[] {
-    return this.spatial().flatMap((e) => e.tabOrder)
+    return this.spatial().flatMap((e) => e.tabs.map((t) => t.tabId))
   }
 
   /** ⌘1–9 over every window's tabs, left to right */
@@ -451,5 +473,6 @@ export class TerminalWindows {
     if (entry && keep) this.retained.push(entry)
     else this.hooks?.persist(this.sessionFile())
     if (this.entries.size === 0) this.hooks?.allClosed()
+    else this.onTabsChanged?.()
   }
 }
