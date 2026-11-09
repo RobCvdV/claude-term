@@ -120,6 +120,28 @@ export interface CiInfo {
   detail?: string
 }
 
+/** `queued`: scheduled, waiting for a device; `stopped`: cancelled before it finished */
+export type E2eState = 'queued' | 'running' | 'passed' | 'failed' | 'stopped'
+
+/** One e2e test group's latest AWS Device Farm run on a branch. */
+export interface E2eRun {
+  /** the group's title, e.g. "workingHours" or "Group 1" */
+  group: string
+  state: E2eState
+  /** device jobs */
+  jobsDone: number
+  jobsTotal: number
+  /** tests so far */
+  passed: number
+  failed: number
+  /** the CI build that started it, e.g. "#9409" */
+  build?: string
+  /** the run in the AWS console */
+  url: string
+  /** epoch ms */
+  created: number
+}
+
 /** Projected time one rate-limit window hits 100% at the current pace. */
 export interface WindowForecast {
   /** epoch seconds of the projected hit, null when pace ≈ 0 or data too thin */
@@ -140,6 +162,8 @@ export interface RepoStatus {
   root: string
   git: GitInfo
   ci: CiInfo | null
+  /** Device Farm e2e runs for this repo's branch, one per test group */
+  e2e?: E2eRun[]
 }
 
 /** What a running turn is doing, as the term-bridge mod sees the terminal. */
@@ -182,6 +206,8 @@ export interface TabStatus {
   git: GitInfo | null
   /** live CI state for this tab's repo+branch (null until the poller knows) */
   ci: CiInfo | null
+  /** Device Farm e2e runs for this tab's repo+branch, one per test group */
+  e2e?: E2eRun[]
   /** other workspace repos (added dirs in a different repo), with their own
    *  git + CI state — drives the grouped PR dropdown and extra CI links */
   extraRepos: RepoStatus[]
@@ -708,6 +734,8 @@ export interface NotifyEvents {
   prComments: boolean
   ciFailed: boolean
   ciFixed: boolean
+  /** an e2e test group on Device Farm failed */
+  e2eFailed: boolean
   ticketMoved: boolean
   readyToMerge: boolean
   reviewRequested: boolean
@@ -731,7 +759,7 @@ export interface AppSettings {
   restoreWindowBounds: boolean
   /** hold off system sleep while a session works */
   keepAwake: boolean
-  /** poll Jenkins / CircleCI / Actions for build state */
+  /** poll Jenkins / CircleCI / Actions for build state, and Device Farm for e2e runs */
   ciPolling: boolean
   /** a PR'd branch this many commits behind main gets flagged */
   behindThreshold: number
@@ -754,6 +782,7 @@ export interface IntegrationStatus {
   github: string | null
   circleci: boolean
   jenkins: boolean
+  devicefarm: boolean
 }
 
 /** Someone else's open PR that asks for my review. */

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type {
   ActivityState,
   CiInfo,
+  E2eRun,
   GitInfo,
   ReviewItem,
   TabId,
@@ -11,7 +12,17 @@ import type {
 import { nameOf } from '../../../shared/status-folders'
 import { isTrunkBranch } from '../../../shared/repo-links'
 import { ticketUrl } from '../../../shared/jira-labels'
-import { ciLabel, ciTone, prReviewLabel, prTone, ticketTone } from '../work-status'
+import {
+  ciLabel,
+  ciTone,
+  e2eDot,
+  e2eRunLabel,
+  e2eTone,
+  prReviewLabel,
+  prTone,
+  ticketTone
+} from '../work-status'
+import { e2eSummary } from '../../../shared/e2e'
 import { readyToMerge, ticketDrift, ticketStage, tooFarBehind } from '../../../shared/work-rules'
 import { useAppSettings } from '../use-app-settings'
 
@@ -127,15 +138,19 @@ function RepoWork({
   label,
   git,
   ci,
+  e2e = [],
   behindThreshold
 }: {
   label?: string
   git: GitInfo
   ci: CiInfo | null
+  e2e?: E2eRun[]
   behindThreshold: number
 }): React.JSX.Element {
   const { pr, ticket } = git
   const ready = readyToMerge(git, ci, behindThreshold)
+  // e2e doesn't hold a merge back, but a failing group is worth a second look
+  const e2eFails = e2eSummary(e2e)?.state === 'failed'
   const behindFlag = tooFarBehind(git, behindThreshold)
   const drift = ticketDrift(git)
   return (
@@ -157,7 +172,14 @@ function RepoWork({
         <div className="mission-topic">{ticket?.summary || pr?.title}</div>
       )}
       <div className="mission-row mission-chips">
-        {ready && <span className="mission-chip mission-ready">✓ ready to merge</span>}
+        {ready &&
+          (e2eFails ? (
+            <span className="mission-chip tone-orange" title="approved and green, but e2e fails">
+              ✓ ready — E2E fails, merge anyway?
+            </span>
+          ) : (
+            <span className="mission-chip mission-ready">✓ ready to merge</span>
+          ))}
         {pr ? (
           <LinkChip url={pr.url} className={prTone(pr)} title={pr.title}>
             ● PR #{pr.number} {prReviewLabel(pr)}
@@ -209,6 +231,25 @@ function RepoWork({
           />
         )}
       </div>
+      {e2e.length > 0 && (
+        <div className="mission-row mission-chips">
+          {e2e.map((run) => (
+            <LinkChip
+              key={run.url}
+              url={run.url}
+              className={e2eTone(run.state)}
+              title={`E2E ${run.group}${run.build ? ` ${run.build}` : ''} — open in AWS Device Farm`}
+            >
+              <span className={e2eDot(run.state)}>●</span> {run.group} · {e2eRunLabel(run)}
+              {run.state === 'running' && run.jobsTotal > 0 && (
+                <span className="mission-bar">
+                  <span style={{ width: `${(run.jobsDone / run.jobsTotal) * 100}%` }} />
+                </span>
+              )}
+            </LinkChip>
+          ))}
+        </div>
+      )}
       {drift && (
         <div className="mission-row mission-drift">
           <span>⚠ {drift.text}</span>
@@ -230,10 +271,15 @@ function needsYou(st: TabStatus | null): boolean {
   if (!st) return false
   if (st.claudeActive && st.activity === 'needs-attention') return true
   const repos = [
-    { git: st.git, ci: st.ci },
-    ...st.extraRepos.map((r) => ({ git: r.git, ci: r.ci }))
+    { git: st.git, ci: st.ci, e2e: st.e2e },
+    ...st.extraRepos.map((r) => ({ git: r.git, ci: r.ci, e2e: r.e2e }))
   ]
-  return repos.some((r) => r.ci?.state === 'failed' || r.git?.pr?.review === 'changes')
+  return repos.some(
+    (r) =>
+      r.ci?.state === 'failed' ||
+      r.git?.pr?.review === 'changes' ||
+      !!r.e2e?.some((run) => run.state === 'failed')
+  )
 }
 
 /** Counts across all tabs for the header, e.g. "1 needs input · 2 approved". */
@@ -248,10 +294,12 @@ function summary(
   let changes = 0
   let approved = 0
   let waiting = 0
+  let e2eFailed = 0
   for (const st of statuses) {
     if (!st) continue
     if (st.claudeActive && st.activity === 'needs-attention') input++
-    for (const r of [{ git: st.git, ci: st.ci }, ...st.extraRepos]) {
+    for (const r of [{ git: st.git, ci: st.ci, e2e: st.e2e }, ...st.extraRepos]) {
+      e2eFailed += r.e2e?.filter((run) => run.state === 'failed').length ?? 0
       if (r.ci?.state === 'failed') failed++
       if (r.ci?.state === 'running') building++
       const review = r.git?.pr && !r.git.pr.draft ? r.git.pr.review : null
@@ -264,6 +312,7 @@ function summary(
   return [
     { n: input, text: 'need input', tone: 'tone-red' },
     { n: failed, text: 'build failed', tone: 'tone-red' },
+    { n: e2eFailed, text: 'e2e failed', tone: 'tone-red' },
     { n: changes, text: 'changes requested', tone: 'tone-red' },
     { n: building, text: 'building', tone: 'tone-orange' },
     { n: waiting, text: 'awaiting review', tone: 'tone-orange' },
@@ -406,6 +455,7 @@ export function MissionControl({
                     label={extras.length > 0 ? folder : undefined}
                     git={st.git}
                     ci={st.ci}
+                    e2e={st.e2e}
                     behindThreshold={settings.behindThreshold}
                   />
                 )}
@@ -417,6 +467,7 @@ export function MissionControl({
                       label={nameOf(r.root)}
                       git={r.git}
                       ci={r.ci}
+                      e2e={r.e2e}
                       behindThreshold={settings.behindThreshold}
                     />
                   ))}

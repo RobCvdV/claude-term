@@ -1,4 +1,4 @@
-import type { BranchPr, CiInfo, GitInfo, TicketStatus } from '../../shared/types'
+import type { BranchPr, CiInfo, E2eRun, E2eState, GitInfo, TicketStatus } from '../../shared/types'
 import { ticketStage, type TicketStage } from '../../shared/work-rules'
 
 /** Labels and colour classes for PR review, CI and Jira status — shared by the
@@ -47,6 +47,44 @@ export function ciTone(ci: CiInfo): string {
       : ci.state === 'running' || ci.state === 'held'
         ? 'tone-orange'
         : 'tone-dim'
+}
+
+/** The CI dot class an e2e state reads as. */
+export function e2eDot(state: E2eState): string {
+  const map: Record<E2eState, string> = {
+    passed: 'ci-success',
+    failed: 'ci-failed',
+    running: 'ci-running',
+    queued: 'ci-held',
+    stopped: 'ci-unknown'
+  }
+  return map[state]
+}
+
+export function e2eTone(state: E2eState): string {
+  return state === 'passed'
+    ? 'tone-green'
+    : state === 'failed'
+      ? 'tone-red'
+      : state === 'stopped'
+        ? 'tone-dim'
+        : 'tone-orange'
+}
+
+/** One group's line: what it is doing, or how its tests came out. */
+export function e2eRunLabel(run: E2eRun): string {
+  switch (run.state) {
+    case 'queued':
+      return 'queued'
+    case 'running':
+      return run.passed || run.failed ? `running · ${run.passed + run.failed} tests` : 'running'
+    case 'stopped':
+      return 'stopped'
+    case 'failed':
+      return `${run.failed} of ${run.passed + run.failed} failed`
+    case 'passed':
+      return `${run.passed} passed`
+  }
 }
 
 const STAGE_TONES: Record<TicketStage, string> = {

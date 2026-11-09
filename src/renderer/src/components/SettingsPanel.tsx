@@ -18,6 +18,7 @@ const EVENTS: { key: NotifyEvent; label: string; hint?: string }[] = [
   { key: 'reviewRequested', label: 'A PR asks for your review' },
   { key: 'ciFailed', label: 'Build failed' },
   { key: 'ciFixed', label: 'Build green again after a failure' },
+  { key: 'e2eFailed', label: 'E2E test group failed', hint: 'AWS Device Farm' },
   { key: 'ticketMoved', label: 'Jira ticket moved', hint: 'by someone else' },
   {
     key: 'needsInput',
@@ -157,7 +158,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): React.JSX.E
                 on={s.ciPolling}
                 onChange={(ciPolling) => set({ ciPolling })}
                 label="Poll CI for build state"
-                hint="Jenkins, CircleCI, GitHub Actions"
+                hint="Jenkins, CircleCI, GitHub Actions, and e2e runs on AWS Device Farm"
               />
               <Toggle
                 on={s.jiraTicketStatus}
@@ -278,6 +279,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): React.JSX.E
                     name="CircleCI"
                     ok={svc.circleci}
                     howTo="export CIRCLECI_TOKEN (User Settings → Personal API Tokens)"
+                  />
+                  <Service
+                    name="AWS Device Farm"
+                    ok={svc.devicefarm}
+                    howTo="export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (Device Farm read access)"
                   />
                   <Service
                     name="Jenkins"

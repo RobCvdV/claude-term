@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BranchPr, CiInfo, CiState, GitInfo, TabStatus } from '../shared/types'
+import type { BranchPr, CiInfo, CiState, E2eRun, GitInfo, TabStatus } from '../shared/types'
 import { WorkWatch, type WorkEvent } from './work-watch'
 
 const pr = (p: Partial<BranchPr> = {}): BranchPr => ({
@@ -122,5 +122,37 @@ describe('WorkWatch', () => {
     watch.observe(tab(git({ pr: pr({ review: 'approved' }) }), null, 't1'))
     watch.observe(tab(git({ pr: pr({ review: 'approved' }) }), null, 't2'))
     expect(events).toHaveLength(1)
+  })
+})
+
+describe('e2e groups', () => {
+  const run = (group: string, state: E2eRun['state']): E2eRun => ({
+    group,
+    state,
+    jobsDone: 0,
+    jobsTotal: 1,
+    passed: 0,
+    failed: 0,
+    url: '',
+    created: 0
+  })
+  const withE2e = (runs: E2eRun[]): TabStatus =>
+    ({ ...tab(git()), e2e: runs }) as unknown as TabStatus
+
+  it('notifies once for groups seen running that failed', () => {
+    const { watch, events } = watcher()
+    watch.observe(withE2e([run('workingHours', 'running'), run('questionnaire', 'running')]))
+    watch.observe(withE2e([run('workingHours', 'failed'), run('questionnaire', 'failed')]))
+    watch.observe(withE2e([run('workingHours', 'failed'), run('questionnaire', 'failed')]))
+    expect(events.map((e) => [e.kind, e.title])).toEqual([
+      ['e2eFailed', 'E2E failed: workingHours, questionnaire']
+    ])
+  })
+
+  it('stays quiet about a group that had failed before the first look', () => {
+    const { watch, events } = watcher()
+    watch.observe(withE2e([run('Group 1', 'failed')]))
+    watch.observe(withE2e([run('Group 1', 'failed')]))
+    expect(events).toEqual([])
   })
 })

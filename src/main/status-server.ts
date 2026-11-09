@@ -6,6 +6,7 @@ import { join } from 'path'
 import type {
   ActivityState,
   CiInfo,
+  E2eRun,
   GitInfo,
   HookEvent,
   RunningWork,
@@ -419,6 +420,25 @@ export class StatusServer {
     if (prev?.state === 'success' && ci?.state === 'failed') {
       this.onAttention(tabId, 'CiFailed')
     }
+  }
+
+  /** E2E poller result for a tab's own repo (`root` null) or an extra one. A
+   *  group turning failed pings attention, like a broken build. */
+  setE2e(tabId: TabId, root: string | null, runs: E2eRun[]): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen) return
+    const target = root === null ? tab.status : tab.status.extraRepos.find((r) => r.root === root)
+    if (!target) return
+    const next = runs.length ? runs : undefined
+    if (JSON.stringify(target.e2e) === JSON.stringify(next)) return
+    const before = new Map((target.e2e ?? []).map((r) => [r.group, r.state]))
+    target.e2e = next
+    this.onUpdate(tab.status)
+    // only a group seen going, not one that had failed before we looked
+    const broke = runs.some(
+      (r) => r.state === 'failed' && before.has(r.group) && before.get(r.group) !== 'failed'
+    )
+    if (broke) this.onAttention(tabId, 'CiFailed')
   }
 
   getCwd(tabId: TabId): string | null {
