@@ -42,6 +42,13 @@ with the Read tool; send them to the user only when asked.
 
 ## Gotchas (each cost real time once)
 
+- **The instance is invisible.** `start` sets `CLAUDE_TERM_BACKGROUND=1`: no
+  dock icon, windows never take focus and are transparent and click-through,
+  so the user's own work is never interrupted. Check it only over CDP
+  (`eval`, `shot`); `cdp.mjs` emulates page focus so keys still land.
+- **`type` right after `start` can be lost** — the shell prompt isn't up yet.
+  Check `.xterm-rows` and type again if it is still a bare prompt.
+
 - **Wait for the lookups.** PR, CI and Jira state arrive on the 10 s git poll
   after a cache miss — a first look right after `start` shows "no PR". Use
   `WAIT_MS=12000`.

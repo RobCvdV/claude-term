@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type { TabId } from '../shared/types'
+import { bringForward, showWindow } from './background-mode'
 
 /**
  * Detached editor windows, one per tab and one set per kind (docs, settings).
@@ -115,9 +116,7 @@ export function createFileWindows<Open>(spec: FileWindowSpec<Open>): FileWindows
     ensureIpc()
     const existing = windows.get(tabId)
     if (existing && !existing.win.isDestroyed()) {
-      if (existing.win.isMinimized()) existing.win.restore()
-      existing.win.show()
-      existing.win.focus()
+      bringForward(existing.win)
       spec.retarget(existing.win, title, open)
       return
     }
@@ -137,7 +136,7 @@ export function createFileWindows<Open>(spec: FileWindowSpec<Open>): FileWindows
     const entry: Entry = { win, dirty: false, forceClose: false }
     windows.set(tabId, entry)
 
-    win.on('ready-to-show', () => win.show())
+    win.on('ready-to-show', () => showWindow(win))
     win.on('close', (e) => {
       if (entry.forceClose || !entry.dirty) return
       e.preventDefault()

@@ -55,6 +55,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 sock.onopen = async () => {
   try {
+    // the instance runs without OS focus; without this the page drops keys and focus()
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true })
     await sleep(Number(process.env.WAIT_MS || 0))
     if (cmd === 'eval') {
       console.log(JSON.stringify(await evaluate(rest[1]), null, 2))

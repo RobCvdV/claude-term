@@ -27,7 +27,8 @@ case "${1:-}" in
     if [ -f "$REAL" ] && grep -q '"enc":false' "$REAL"; then cp "$REAL" "$PROFILE/"; fi
     [ -f "$PROFILE/app-settings.json" ] || echo '{"jiraTicketStatus":true}' > "$PROFILE/app-settings.json"
     cd "$ROOT"
-    CLAUDE_TERM_USER_DATA_DIR="$PROFILE" CLAUDE_TERM_DEBUG_PORT="$PORT" CLAUDE_TERM_RENDERER_PORT=$((PORT + 100)) CLAUDE_TERM_DEFAULT_CWD="$PROJECT" \
+    # CLAUDE_TERM_BACKGROUND: windows never take focus from whoever is at the keyboard
+    CLAUDE_TERM_BACKGROUND=1 CLAUDE_TERM_USER_DATA_DIR="$PROFILE" CLAUDE_TERM_DEBUG_PORT="$PORT" CLAUDE_TERM_RENDERER_PORT=$((PORT + 100)) CLAUDE_TERM_DEFAULT_CWD="$PROJECT" \
       nohup perl -e 'setpgrp; exec @ARGV' npm run dev > "$LOG" 2>&1 &
     # its own process group, so stop never touches a dev build you run yourself
     echo $! > "$PIDFILE"

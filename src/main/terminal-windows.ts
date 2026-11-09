@@ -18,6 +18,7 @@ import {
   usableBounds,
   windowAtTabBar
 } from './window-order'
+import { bringForward } from './background-mode'
 
 interface Entry {
   win: BrowserWindow
@@ -253,8 +254,7 @@ export class TerminalWindows {
         : undefined
     if (entry.booted) this.sendAdopt(entry, handoffs, atX)
     else entry.pendingAdopt.push(...handoffs)
-    targetWin.show()
-    targetWin.focus()
+    bringForward(targetWin)
   }
 
   /** the window whose tab bar a dragged tab is over, if any but its own */
@@ -380,9 +380,7 @@ export class TerminalWindows {
     const id = this.owner.get(tabId)
     const win = id !== undefined ? this.entries.get(id)?.win : undefined
     if (!win || win.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+    bringForward(win)
     win.webContents.send('tabs:activate', tabId)
   }
 
@@ -396,8 +394,7 @@ export class TerminalWindows {
         : (this.focusedOrPrimary()?.id ?? null)
     const win = nextId !== null ? this.entries.get(nextId)?.win : undefined
     if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.focus()
+    bringForward(win)
   }
 
   /** the other windows a tab can move to, labelled by position and active tab */

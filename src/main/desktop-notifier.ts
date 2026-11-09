@@ -1,6 +1,7 @@
 import { Notification } from 'electron'
 import type { NotifyEvent, TabId } from '../shared/types'
 import { appSettings } from './app-settings'
+import { inBackground } from './background-mode'
 
 export interface Notice {
   kind: NotifyEvent
@@ -47,7 +48,7 @@ export class DesktopNotifier {
   }
 
   private show(title: string, body: string, sound: boolean, onClick?: () => void): void {
-    if (!Notification.isSupported()) return
+    if (!Notification.isSupported() || inBackground) return
     const note = new Notification({ title, body, silent: !sound })
     this.live.add(note)
     note.on('click', () => onClick?.())
