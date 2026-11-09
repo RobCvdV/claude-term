@@ -106,6 +106,9 @@ Left to right:
 - **Editor windows** — `plan`, `roadmap`, `docs` and `settings` open the [file window](#file-window).
 - **CI links** — Jenkins (TMS repos), CircleCI or GitHub Actions, with a live build dot and
   progress while building.
+- **E2E** — the branch's AWS Device Farm runs (projects named after the repo), all test groups
+  as one dot, progress and done-count; click for each group with its own bar, and open a run in
+  AWS. Needs `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `~/.zshrc`.
 - **PRs**, with a dot for the branch's review state: orange awaiting review, green approved,
   red changes requested, blue merged, grey no PR.
 - **Jira**, **Releases** or **Downloads**, notification volume and the clock.
@@ -129,7 +132,9 @@ behind counts — plus your last prompt and a summary of Claude's latest reply.
   gets a red edge. Click a card to jump to its tab; the window stays open.
 - The window keeps its size and place, and reopens on launch if it was open when you quit.
 - **ready to merge** marks an approved, green PR with nothing unpushed, with a button to move its
-  ticket from Peer review to Deploy.
+  ticket from Peer review to Deploy. Failing e2e doesn't block it, but turns it into **E2E fails,
+  merge anyway?**
+- Each e2e test group gets a chip on its repo's line; a failed one gives the card a red edge.
 - **rebase?** (orange) marks a PR'd branch far behind main; the threshold is in Settings.
 - **⚠** flags a ticket lagging its branch, with a one-click move where the next stage is obvious.
   Every move asks first.

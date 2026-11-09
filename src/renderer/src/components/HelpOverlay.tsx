@@ -263,13 +263,16 @@ function Guide(): React.JSX.Element {
         <p>
           A PR that is approved, green (or only waiting on an approval step) and has nothing
           uncommitted, unpushed or too far behind main reads <b>ready to merge</b> — with a button
-          to move its ticket from Peer review to Deploy. A branch with a PR that is many commits
-          behind main gets an orange <b>rebase?</b> (the threshold is in Settings). A yellow ⚠ line
-          flags a ticket lagging the branch: a PR open while the ticket is still Active, a merged PR
-          whose ticket did not move on, or a Done ticket whose branch is still checked out — with a
-          one-click move where there is an obvious next stage. Every move asks first. Above the
-          cards, <b>Waiting on your review</b> lists other people&apos;s open PRs that name you as
-          reviewer (Bitbucket repos you have open, plus a GitHub search), refreshed every 5 minutes.
+          to move its ticket from Peer review to Deploy; with a failing e2e group it reads{' '}
+          <b>E2E fails, merge anyway?</b> instead. Each e2e group on AWS Device Farm gets a chip on
+          its repo&apos;s line (click it for the run), and a failed one gives the card a red edge. A
+          branch with a PR that is many commits behind main gets an orange <b>rebase?</b> (the
+          threshold is in Settings). A yellow ⚠ line flags a ticket lagging the branch: a PR open
+          while the ticket is still Active, a merged PR whose ticket did not move on, or a Done
+          ticket whose branch is still checked out — with a one-click move where there is an obvious
+          next stage. Every move asks first. Above the cards, <b>Waiting on your review</b> lists
+          other people&apos;s open PRs that name you as reviewer (Bitbucket repos you have open,
+          plus a GitHub search), refreshed every 5 minutes.
         </p>
       </section>
       <section>
@@ -278,15 +281,15 @@ function Guide(): React.JSX.Element {
           <b>⌘,</b> (also <b>claude-term → Settings…</b>) holds the app&apos;s switches. Changes
           apply at once. <b>Notifications</b> are macOS notifications for a PR approved, changes
           requested, new PR comments, a PR ready to merge, a review request, a failed build, a build
-          green again after a failure, a Jira ticket moved by someone else, and (off by default) a
-          session needing input while the app is in the background — each with its own switch, plus
-          one for all of them, &quot;only in the background&quot; and sound. The first look at a
-          branch only sets a baseline, and tabs sharing a branch raise one notification. Clicking
-          one jumps to its tab. Also here: the Jira status lookup (off by default — it reads the
-          Jira token from the keychain), CI polling, the review list, the behind-main threshold,
-          window and tab behaviour, keep-awake, spell check, volume, and which services have
-          credentials — Jira connects here; the rest read tokens from your login shell when the app
-          starts.
+          green again after a failure, a failed e2e test group, a Jira ticket moved by someone else,
+          and (off by default) a session needing input while the app is in the background — each
+          with its own switch, plus one for all of them, &quot;only in the background&quot; and
+          sound. The first look at a branch only sets a baseline, and tabs sharing a branch raise
+          one notification. Clicking one jumps to its tab. Also here: the Jira status lookup (off by
+          default — it reads the Jira token from the keychain), CI polling, the review list, the
+          behind-main threshold, window and tab behaviour, keep-awake, spell check, volume, and
+          which services have credentials — Jira connects here; the rest read tokens from your login
+          shell when the app starts.
         </p>
       </section>
       <section>
@@ -300,9 +303,12 @@ function Guide(): React.JSX.Element {
           time-to-reset — hover them for a burn forecast, and they turn orange early when the
           current pace hits 100% before the reset. On the right: plan / roadmap / docs / settings
           editor windows for the project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions)
-          with a live build-state dot (and progress while building), the Jira to-do and open-PRs
-          dropdowns (they open on a right-click, never on hover), Releases (GitHub) or Downloads (a
-          Bitbucket repo with files there), notification volume, and the clock.
+          with a live build-state dot (and progress while building), <b>E2E</b> — the branch&apos;s
+          AWS Device Farm test groups as one dot, progress and done-count, with each group in its
+          dropdown (needs <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> in
+          your shell; projects are matched by the repo&apos;s folder name), the Jira to-do and
+          open-PRs dropdowns (they open on a right-click, never on hover), Releases (GitHub) or
+          Downloads (a Bitbucket repo with files there), notification volume, and the clock.
         </p>
       </section>
       <section>

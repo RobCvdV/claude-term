@@ -5,6 +5,7 @@ import type {
   CiInfo,
   CiProvider,
   DocGroup,
+  E2eRun,
   GitInfo,
   PrGroup,
   ProjectDocs,
@@ -32,11 +33,15 @@ import {
   branchPrLabel,
   branchPrTone,
   ciLabel,
+  e2eDot,
+  e2eRunLabel,
+  e2eTone,
   prReviewLabel,
   prTone,
   ticketTone
 } from '../work-status'
 import { readyToMerge, tooFarBehind } from '../../../shared/work-rules'
+import { e2eSummary } from '../../../shared/e2e'
 import { useAppSettings } from '../use-app-settings'
 import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
 
@@ -361,7 +366,8 @@ function PrMenu({
   prUrlByRoot,
   current,
   branchGit,
-  ready
+  ready,
+  e2eFails
 }: {
   tabId: TabId
   prUrlByRoot: Map<string, string | null>
@@ -371,6 +377,8 @@ function PrMenu({
   branchGit: GitInfo | null
   /** approved, green and clean — the dot gets a check */
   ready: boolean
+  /** an e2e group fails: still mergeable, but say so */
+  e2eFails: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [groups, setGroups] = useState<PrGroup[] | null>(null)
@@ -394,7 +402,7 @@ function PrMenu({
         className="ext-link"
         title={
           showDot && branchGit
-            ? `${branchPrLabel(branchGit)}${ready ? ' — ready to merge' : ''}${current?.comments ? ` · ${current.comments} comments` : ''}`
+            ? `${branchPrLabel(branchGit)}${ready ? (e2eFails ? ' — ready, but E2E fails: merge anyway?' : ' — ready to merge') : ''}${current?.comments ? ` · ${current.comments} comments` : ''}`
             : undefined
         }
         onClick={() => (open ? setOpen(false) : show())}
@@ -451,6 +459,77 @@ function PrMenu({
               </Fragment>
             ))
           )}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** "E2E" chip: every Device Farm test group of the tab as one dot, progress
+ *  and done-count; click drops down each group, a row opens its run in AWS. */
+function E2eMenu({ repos }: { repos: { name: string; runs: E2eRun[] }[] }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ right: 0, bottom: 0 })
+  const anchor = useRef<HTMLSpanElement>(null)
+  useDismiss(open, anchor, () => setOpen(false))
+  const sum = e2eSummary(repos.flatMap((r) => r.runs))!
+  const show = (): void => {
+    const r = anchor.current?.getBoundingClientRect()
+    if (r) setPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top })
+    setOpen(true)
+  }
+  const title =
+    sum.state === 'failed'
+      ? `E2E failed: ${sum.failedGroups.join(', ')}`
+      : `E2E ${sum.done}/${sum.total} groups done${sum.state === 'running' ? ` · ${sum.progress}%` : ''}`
+  return (
+    <span ref={anchor} className="pr-menu">
+      <span
+        className="ext-link"
+        title={title}
+        onClick={() => (open ? setOpen(false) : show())}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          show()
+        }}
+      >
+        <span className={`ci-dot ${e2eDot(sum.state)}`}>●</span>
+        E2E
+        {sum.state === 'running' && <span className="ci-pct">{sum.progress}%</span>}
+        <span className="e2e-count">
+          {sum.done}/{sum.total}
+        </span>
+      </span>
+      {open && (
+        <div className="pr-dropdown e2e-dropdown" style={{ right: pos.right, bottom: pos.bottom }}>
+          {repos.map((repo) => (
+            <Fragment key={repo.name}>
+              {repos.length > 1 && <div className="pr-group">{repo.name}</div>}
+              {repo.runs.map((run) => (
+                <button
+                  key={run.url}
+                  title={`${run.group}${run.build ? ` ${run.build}` : ''} — open the run in AWS Device Farm`}
+                  onClick={() => {
+                    window.open(run.url)
+                    setOpen(false)
+                  }}
+                >
+                  <span className={`ci-dot ${e2eDot(run.state)}`}>●</span>
+                  <span className="pr-title">{run.group}</span>
+                  {run.build && <span className="pr-number">{run.build}</span>}
+                  <span className="e2e-bar">
+                    <span
+                      className={e2eTone(run.state)}
+                      style={{
+                        width: `${run.jobsTotal ? (run.jobsDone / run.jobsTotal) * 100 : 0}%`
+                      }}
+                    />
+                  </span>
+                  <span className={`pr-review ${e2eTone(run.state)}`}>{e2eRunLabel(run)}</span>
+                </button>
+              ))}
+            </Fragment>
+          ))}
         </div>
       )}
     </span>
@@ -761,6 +840,10 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
   const jenkins = cwd && git?.branch ? jenkinsJobUrl(cwd.split('/').pop() ?? '', git.branch) : null
   const ci = status?.ci ?? null
   const extraRepos = status?.extraRepos ?? []
+  const e2eRepos = [
+    { name: nameOf(status?.cwd ?? ''), runs: status?.e2e ?? [] },
+    ...extraRepos.map((r) => ({ name: nameOf(r.root), runs: r.e2e ?? [] }))
+  ].filter((r) => r.runs.length)
   // current-branch PR per workspace repo, for the dropdown's bold highlight
   const prUrlByRoot = new Map<string, string | null>([
     ...(cwd ? [[cwd, git?.prUrl ?? null] as const] : []),
@@ -941,6 +1024,7 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
           <CiPct ci={ci} provider="circleci" />
         </ExternalLink>
       )}
+      {e2eRepos.length > 0 && <E2eMenu repos={e2eRepos} />}
       {(repo || extraRepos.length > 0) && tabId && (
         <PrMenu
           tabId={tabId}
@@ -948,6 +1032,7 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
           current={git?.pr ?? null}
           branchGit={git ?? null}
           ready={!!git && readyToMerge(git, status?.ci ?? null, settings.behindThreshold)}
+          e2eFails={!!status?.e2e?.some((r) => r.state === 'failed')}
         />
       )}
       {actions && (

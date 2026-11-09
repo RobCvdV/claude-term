@@ -20,6 +20,7 @@ import { ReviewQueue } from './review-queue'
 import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
 import { bringForward, inBackground, keepBackgroundRendering, showWindow } from './background-mode'
+import { E2ePoller } from './e2e-status'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
 // anything reads app.getPath('userData').
@@ -65,6 +66,14 @@ const ciPoller = new CiPoller(
   () => services.status.allSnapshots(),
   (tabId, root, ci) =>
     root === null ? services.status.setCi(tabId, ci) : services.status.setRepoCi(tabId, root, ci),
+  () => windows.anyVisible(),
+  () => appSettings().ciPolling
+)
+
+// E2E runs on AWS Device Farm, per test group; same switch and rhythm as CI
+const e2ePoller = new E2ePoller(
+  () => services.status.allSnapshots(),
+  (tabId, root, runs) => services.status.setE2e(tabId, root, runs),
   () => windows.anyVisible(),
   () => appSettings().ciPolling
 )
@@ -202,6 +211,7 @@ app.whenReady().then(async () => {
   openStartupWindows(ipc.loadSession())
   services.mission.restore()
   ciPoller.start()
+  e2ePoller.start()
   reviews.start()
 
   // Background auto-update: check on launch + daily, download silently, and let
@@ -369,6 +379,7 @@ async function startCompanion(): Promise<void> {
 function shutdown(): Promise<void> {
   shutdownDone ??= (async () => {
     ciPoller.stop()
+    e2ePoller.stop()
     // Hand every held prompt back to its session before anything else: a parked
     // hook waits on us for minutes, and a session killed mid-wait would sit
     // there with a dialog nobody answered.

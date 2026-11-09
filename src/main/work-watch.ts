@@ -1,6 +1,8 @@
 import type {
   CiInfo,
   CiState,
+  E2eRun,
+  E2eState,
   GitInfo,
   NotifyEvent,
   PrReview,
@@ -31,10 +33,18 @@ export interface RepoSnap {
   settled: CiState | null
   ticket: string | null
   ready: boolean
+  /** each e2e test group's state */
+  e2e: Record<string, E2eState>
 }
 
-export function snapOf(git: GitInfo, ci: CiInfo | null, behindThreshold: number): RepoSnap {
+export function snapOf(
+  git: GitInfo,
+  ci: CiInfo | null,
+  behindThreshold: number,
+  e2e: E2eRun[] = []
+): RepoSnap {
   return {
+    e2e: Object.fromEntries(e2e.map((r) => [r.group, r.state])),
     prNumber: git.pr?.number ?? null,
     review: git.pr && !git.pr.draft ? git.pr.review : null,
     comments: git.pr?.comments ?? null,
@@ -93,6 +103,13 @@ export function diffSnaps(
       out.push({ kind: 'ciFixed', title: 'Build green again', body: where })
     }
   }
+  // a group seen going that failed — not one that had failed before we looked
+  const broke = Object.entries(next.e2e)
+    .filter(([g, s]) => s === 'failed' && prev.e2e[g] && prev.e2e[g] !== 'failed')
+    .map(([g]) => g)
+  if (broke.length) {
+    out.push({ kind: 'e2eFailed', title: `E2E failed: ${broke.join(', ')}`, body: where })
+  }
   if (prev.ticket && next.ticket && prev.ticket !== next.ticket && !ctx.ticketMovedByUs) {
     out.push({
       kind: 'ticketMoved',
@@ -118,20 +135,22 @@ export class WorkWatch {
   ) {}
 
   observe(status: TabStatus): void {
-    const repos: { git: GitInfo | null; ci: CiInfo | null }[] = [
-      { git: status.git, ci: status.ci },
+    const repos: { git: GitInfo | null; ci: CiInfo | null; e2e?: E2eRun[] }[] = [
+      { git: status.git, ci: status.ci, e2e: status.e2e },
       ...status.extraRepos
     ]
-    for (const { git, ci } of repos) {
+    for (const { git, ci, e2e } of repos) {
       if (!git?.branch || !git.remoteUrl) continue
       const key = `${git.remoteUrl}#${git.branch}`
-      const next = snapOf(git, ci, this.behindThreshold())
+      const next = snapOf(git, ci, this.behindThreshold(), e2e)
       const prev = this.seen.get(key)
       // keep the last known CI / ticket through a poll that came back empty
       if (prev) {
         next.ci ??= prev.ci
         next.settled ??= prev.settled
         next.ticket ??= prev.ticket
+        // a poll that came back empty keeps the groups we knew
+        if (!Object.keys(next.e2e).length) next.e2e = prev.e2e
       }
       this.seen.set(key, next)
       if (!prev) continue

@@ -2940,6 +2940,36 @@ label.settings-row {
   font-variant-numeric: tabular-nums;
 }
 
+/* e2e groups: how many are done, and each group's device jobs as a bar */
+.e2e-count {
+  margin-left: 3px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.e2e-dropdown {
+  min-width: 300px;
+}
+
+.e2e-dropdown button {
+  align-items: center;
+}
+
+.e2e-bar {
+  flex: 0 0 48px;
+  height: 4px;
+  margin-left: auto;
+  border-radius: 2px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.e2e-bar > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+
 /* Jira status of the branch's ticket: a dot behind the branch chip, and a
    label in the Jira dropdown */
 .ticket-status {

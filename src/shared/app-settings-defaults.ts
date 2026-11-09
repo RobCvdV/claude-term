@@ -18,6 +18,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
     prComments: true,
     ciFailed: true,
     ciFixed: true,
+    e2eFailed: true,
     ticketMoved: true,
     readyToMerge: true,
     reviewRequested: true,
