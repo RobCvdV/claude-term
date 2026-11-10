@@ -306,9 +306,9 @@ function Guide(): React.JSX.Element {
           with a live build-state dot (and progress while building), <b>E2E</b> — the branch&apos;s
           AWS Device Farm test groups as one dot, progress and done-count, with each group in its
           dropdown (needs <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> in
-          your shell; projects are matched by the repo&apos;s folder name), the Jira to-do and
-          open-PRs dropdowns (they open on a right-click, never on hover), Releases (GitHub) or
-          Downloads (a Bitbucket repo with files there), notification volume, and the clock.
+          your shell; projects are matched by repo name, any checkout), the Jira to-do and open-PRs
+          dropdowns (they open on a right-click, never on hover), Releases (GitHub) or Downloads (a
+          Bitbucket repo with files there), notification volume, and the clock.
         </p>
       </section>
       <section>

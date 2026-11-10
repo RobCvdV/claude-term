@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { e2eSummary } from '../shared/e2e'
 import type { E2eRun } from '../shared/types'
-import { consoleUrl, groupOf, latestRuns, runState, type DfRun } from './devicefarm-data'
+import { consoleUrl, groupOf, latestRuns, projectOf, runState, type DfRun } from './devicefarm-data'
 
 const ARN = 'arn:aws:devicefarm:us-west-2:123456789012:run:proj-1/run-'
 
@@ -26,6 +26,24 @@ describe('groupOf', () => {
     expect(groupOf('1-feature/MTX-1-a', 'feature/MTX-2-b')).toBeNull()
     expect(groupOf('1-feature/MTX-1-a-2', 'feature/MTX-1-a')).toBeNull()
     expect(groupOf('feature/MTX-1-a', 'feature/MTX-1-a')).toBeNull()
+  })
+})
+
+describe('projectOf', () => {
+  it('names the project after the remote repo, so extra checkouts share it', () => {
+    const remote = 'git@bitbucket.org:mendrixmobile/mendrix-mobile-next.git'
+    expect(projectOf('/dev/mendrix-mobile-next-2', remote)).toBe('mendrix-mobile-next')
+    expect(
+      projectOf(
+        '/dev/mendrix-mobile-next-3',
+        `https://bitbucket.org/mendrixmobile/mendrix-mobile-next`
+      )
+    ).toBe('mendrix-mobile-next')
+  })
+
+  it('falls back to the folder name without a remote it can read', () => {
+    expect(projectOf('/dev/mendrix-mobile-cordova', null)).toBe('mendrix-mobile-cordova')
+    expect(projectOf('/dev/some-repo', 'file:///tmp/x')).toBe('some-repo')
   })
 })
 

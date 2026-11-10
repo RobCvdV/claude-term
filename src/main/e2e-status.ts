@@ -4,14 +4,13 @@ import {
   ListRunsCommand,
   type Run
 } from '@aws-sdk/client-device-farm'
-import { basename } from 'path'
 import type { E2eRun, GitInfo, TabId, TabStatus } from '../shared/types'
-import { DF_REGION, latestRuns } from './devicefarm-data'
+import { DF_REGION, latestRuns, projectOf } from './devicefarm-data'
 import { loginShellEnv } from './shell-env'
 
 /**
  * Background poller for e2e runs on AWS Device Farm. A repo takes part when a
- * Device Farm project carries its folder's name; its branch picks the runs.
+ * Device Farm project carries its repo's name (any checkout of it); its branch picks the runs.
  * One listing per project per sweep, shared by every tab on it.
  */
 
@@ -100,7 +99,7 @@ export class E2ePoller {
           ...snap.extraRepos.map((r) => ({ root: r.root, cwd: r.root, git: r.git }))
         ]
         for (const { root, cwd, git } of repos) {
-          const project = basename(cwd)
+          const project = projectOf(cwd, git?.remoteUrl)
           if (git?.branch && projects.has(project)) {
             wanted.push({ tabId: snap.tabId, root, project, branch: git.branch })
           } else {
@@ -128,7 +127,7 @@ export class E2ePoller {
     return this.client
   }
 
-  /** Project name → ARN; project names are the repos' folder names. */
+  /** Project name → ARN; project names are the repo names. */
   private async projectArns(client: DeviceFarmClient): Promise<Map<string, string>> {
     if (this.projects && Date.now() - this.projects.at < PROJECTS_TTL_MS) return this.projects.arns
     const arns = new Map<string, string>()

@@ -1,6 +1,8 @@
 /** Turning AWS Device Farm runs into a branch's e2e groups. Pure — the poller
  *  fetches, this decides. */
 
+import { basename } from 'path'
+import { parseRemote } from '../shared/repo-links'
 import type { E2eRun, E2eState } from '../shared/types'
 
 /** The fields of a Device Farm `Run` this reads. */
@@ -38,6 +40,13 @@ export function groupOf(name: string, branch: string): { group: string; build?: 
   if (/^\d+$/.test(group)) group = `Group ${group}`
   const build = /#\d+/.exec(after)?.[0]
   return build ? { group, build } : { group }
+}
+
+/** The Device Farm project a checkout belongs to: named after its repo, so a
+ *  second checkout (`mendrix-mobile-next-2`) finds the same project. The
+ *  folder name stands in when there is no remote. */
+export function projectOf(cwd: string, remoteUrl: string | null | undefined): string {
+  return (remoteUrl && parseRemote(remoteUrl)?.repo) || basename(cwd)
 }
 
 /** Device Farm marks a run SKIPPED even when one of its tests failed, so the
