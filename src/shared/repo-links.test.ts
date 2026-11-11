@@ -13,6 +13,12 @@ describe('parseRemote', () => {
   it('reads ssh and https bitbucket remotes', () => {
     const expected = { host: 'bitbucket', owner: 'mendrixmobile', repo: 'mendrix-mobile-next' }
     expect(parseRemote('git@bitbucket.org:mendrixmobile/mendrix-mobile-next.git')).toEqual(expected)
+    expect(parseRemote('git@ssh.bitbucket.org:mendrixmobile/mendrix-mobile-next.git')).toEqual(
+      expected
+    )
+    expect(
+      parseRemote('ssh://git@ssh.bitbucket.org/mendrixmobile/mendrix-mobile-next.git')
+    ).toEqual(expected)
     expect(parseRemote('https://bitbucket.org/mendrixmobile/mendrix-mobile-next')).toEqual(expected)
     expect(
       parseRemote('https://user@bitbucket.org/mendrixmobile/mendrix-mobile-next.git/')

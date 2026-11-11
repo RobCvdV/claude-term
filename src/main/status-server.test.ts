@@ -302,14 +302,14 @@ describe('firstRemoteUrl (real git)', () => {
     }
 
     const withOrigin = make('a', [
-      ['BitBucket', 'git@bitbucket.org:x/other.git'],
-      ['origin', 'git@bitbucket.org:x/a.git']
+      ['BitBucket', 'git@example.com:x/other.git'],
+      ['origin', 'git@example.com:x/a.git']
     ])
-    const namedOnly = make('b', [['BitBucket', 'git@bitbucket.org:x/b.git']])
+    const namedOnly = make('b', [['BitBucket', 'git@example.com:x/b.git']])
     const bare = make('c', [])
 
-    expect(await firstRemoteUrl(withOrigin)).toBe('git@bitbucket.org:x/a.git')
-    expect(await firstRemoteUrl(namedOnly)).toBe('git@bitbucket.org:x/b.git')
+    expect(await firstRemoteUrl(withOrigin)).toBe('git@example.com:x/a.git')
+    expect(await firstRemoteUrl(namedOnly)).toBe('git@example.com:x/b.git')
     expect(await firstRemoteUrl(bare)).toBeNull()
   })
 })
