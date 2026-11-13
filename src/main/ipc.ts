@@ -57,6 +57,7 @@ import { PromptQueue, tabCanTakeInput } from './companion/prompt-queue'
 import { PushSender } from './companion/push-sender'
 import { ScreenRequests } from './screen-requests'
 import { logUiBridge } from './ui-bridge-log'
+import { speaksForTab } from './mod-key-owner'
 import { handleModRequest } from './companion/mod-requests'
 import { logCompanion } from './companion/companion-log'
 import { CompanionHub } from './companion/hub'
@@ -317,10 +318,22 @@ export function createServices(windows: TerminalWindows): AppServices {
 
   status.parkHook = (tabId, evt, res) => parked.tryPark(tabId, evt, res)
   status.onHook = (tabId, evt) => parked.noteHook(tabId, evt)
+  const ignoredKeyEvents = new Map<string, string>()
   status.onModEvent = (tabId, event) => {
     // progress events would bury the keyboard trail this log is for
     // a heartbeat repeats what the log already says
     if (!PROGRESS_EVENTS.has(String(event.kind)) && !event.beat) logUiBridge(tabId, 'mod', event)
+    const isKeyOwnerEvent = event.kind === 'keys' || event.kind === 'session.end'
+    if (isKeyOwnerEvent && !speaksForTab(event.session_id, status.snapshot(tabId)?.sessionId)) {
+      // once per session and state, so a background agent's heartbeats stay visible but quiet
+      const key = `${tabId}:${String(event.session_id)}`
+      const seen = `${event.kind}:${String(event.state ?? '')}`
+      if (ignoredKeyEvents.get(key) !== seen) {
+        ignoredKeyEvents.set(key, seen)
+        logUiBridge(tabId, 'mod', { ...event, ignored: 'not the foreground session' })
+      }
+      return
+    }
     if (event.kind === 'keys') {
       send('tab:uiKeys', tabId, event.state, event.text ?? null)
       parked.noteKeys(tabId, String(event.state))
