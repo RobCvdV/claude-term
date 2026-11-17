@@ -5,6 +5,7 @@ import type {
   ActivityReport,
   BookedWorklog,
   BookResult,
+  BranchChoice,
   BranchGroup,
   BranchHistoryEntry,
   BranchSwitchResult,
@@ -152,14 +153,14 @@ export interface ClaudeTermApi {
   grammarWasm(): Promise<Uint8Array | null>
   listCommands(tabId: TabId): Promise<SlashCommand[]>
   searchFiles(tabId: TabId, query: string): Promise<string[]>
-  /** local git branches matching `query` (substring match), for /switch */
-  listBranches(tabId: TabId, query: string): Promise<string[]>
+  /** local branches of the tab's repo and its added repos matching `query`, for /switch */
+  listBranches(tabId: TabId, query: string): Promise<BranchChoice[]>
   /** directories under cwd matching `query` (single level), for /add-dir */
   listDirs(tabId: TabId, query: string): Promise<string[]>
   /** package.json scripts (root + one level deep) matching `query`, for /npm */
   listNpmScripts(tabId: TabId, query: string): Promise<NpmScript[]>
-  /** run `git switch <branch>` in the tab's cwd, or in one of the tab's other
-   *  workspace repos when `root` is given (status-bar branch menu) */
+  /** run `git switch <branch>` in the tab's cwd (`repo:branch` targets an added
+   *  repo), or in one of the tab's other workspace repos when `root` is given */
   switchBranch(tabId: TabId, branch: string, root?: string): Promise<BranchSwitchResult>
   /** local branches of every workspace repo, grouped by folder (branch menu) */
   listWorkspaceBranches(tabId: TabId): Promise<BranchGroup[]>

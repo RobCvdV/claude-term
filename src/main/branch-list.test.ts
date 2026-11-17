@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
+import {
+  isWorkspaceRoot,
+  resolveSwitchTarget,
+  workspaceBranchChoices,
+  workspaceBranchGroups
+} from './branch-list'
 import type { TabStatus } from '../shared/types'
 
 function status(over: Partial<TabStatus> = {}): TabStatus {
@@ -81,5 +86,51 @@ describe('workspaceBranchGroups', () => {
 
   it('returns [] for a null status', async () => {
     expect(await workspaceBranchGroups(null, lister({}))).toEqual([])
+  })
+})
+
+describe('workspaceBranchChoices', () => {
+  const lister = (branches: Record<string, string[]>) => (cwd: string) =>
+    Promise.resolve((branches[cwd] ?? []).map((name) => ({ name, mine: false })))
+  const list = lister({ '/dev/cordova': ['main', 'bugfix/MTX-2-b'], '/dev/mmxlib': ['MTX-2-c'] })
+
+  it('lists the tab repo bare and extra repos as repo:branch', async () => {
+    const keys = (await workspaceBranchChoices(status(), '/dev/cordova', list, '')).map(
+      (c) => c.key
+    )
+    expect(keys).toEqual(['main', 'bugfix/MTX-2-b', 'mmxlib:MTX-2-c'])
+  })
+
+  it('filters on the whole key, so a repo name or ticket number finds it', async () => {
+    const byRepo = await workspaceBranchChoices(status(), '/dev/cordova', list, 'mmx')
+    expect(byRepo).toEqual([
+      { key: 'mmxlib:MTX-2-c', branch: 'MTX-2-c', root: '/dev/mmxlib', repo: 'mmxlib' }
+    ])
+    const byTicket = await workspaceBranchChoices(status(), '/dev/cordova', list, 'MTX-2')
+    expect(byTicket.map((c) => c.key)).toEqual(['bugfix/MTX-2-b', 'mmxlib:MTX-2-c'])
+  })
+
+  it('keeps extra repos visible unfiltered when the tab repo has many branches', async () => {
+    const many = Array.from({ length: 40 }, (_, i) => `b${i}`)
+    const busy = lister({ '/dev/cordova': many, '/dev/mmxlib': ['MTX-2-c'] })
+    const keys = (await workspaceBranchChoices(status(), '/dev/cordova', busy, '')).map(
+      (c) => c.key
+    )
+    expect(keys).toContain('mmxlib:MTX-2-c')
+  })
+})
+
+describe('resolveSwitchTarget', () => {
+  it('sends repo:branch to the extra repo, anything else to cwd', () => {
+    expect(resolveSwitchTarget(status(), '/dev/cordova', 'mmxlib:main')).toEqual({
+      root: '/dev/mmxlib',
+      branch: 'main',
+      repo: 'mmxlib'
+    })
+    expect(resolveSwitchTarget(status(), '/dev/cordova', ' feature/x ')).toEqual({
+      root: '/dev/cordova',
+      branch: 'feature/x'
+    })
+    expect(resolveSwitchTarget(null, '/dev/cordova', 'mmxlib:main').root).toBe('/dev/cordova')
   })
 })

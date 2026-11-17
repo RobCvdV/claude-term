@@ -1,4 +1,6 @@
-import type { BranchGroup, BranchRef, TabStatus } from '../shared/types'
+import type { BranchChoice, BranchGroup, BranchRef, TabStatus } from '../shared/types'
+import { nameOf, splitFolderArg } from '../shared/status-folders'
+import { rankByQuery } from './completions'
 
 const strip = (p: string): string => p.replace(/\/+$/, '')
 
@@ -27,4 +29,54 @@ export function workspaceBranchGroups(
   return Promise.all(
     workspaceRepos(status).map(async (r) => ({ ...r, branches: await list(r.root) }))
   )
+}
+
+/** The tab's extra git repos other than `cwd`, as name-matchable folders. */
+function extraRepoFolders(status: TabStatus | null, cwd: string): { path: string; name: string }[] {
+  return (status?.extraRepos ?? [])
+    .filter((r) => strip(r.root) !== strip(cwd))
+    .map((r) => ({ path: r.root, name: nameOf(r.root) }))
+}
+
+/** `/switch` picks across the workspace: `cwd`'s branches bare, each extra
+ *  repo's as `repo:branch`. */
+export async function workspaceBranchChoices(
+  status: TabStatus | null,
+  cwd: string,
+  list: (cwd: string) => Promise<BranchRef[]>,
+  query: string
+): Promise<BranchChoice[]> {
+  const groups = await Promise.all([
+    list(cwd).then((refs) => refs.map((b) => ({ key: b.name, branch: b.name, root: cwd }))),
+    ...extraRepoFolders(status, cwd).map((f) =>
+      list(f.path).then((refs) =>
+        refs.map((b) => ({
+          key: `${f.name}:${b.name}`,
+          branch: b.name,
+          root: f.path,
+          repo: f.name
+        }))
+      )
+    )
+  ])
+  // unfiltered: each repo gets a share, or a busy tab repo hides the others
+  const share = query.trim() ? Infinity : Math.max(5, Math.floor(30 / groups.length))
+  return rankByQuery(
+    groups.flatMap((g) => g.slice(0, share)),
+    (c) => c.key,
+    query
+  )
+}
+
+/** Where a `/switch` argument points: `repo:branch` into an extra repo, else `cwd`.
+ *  Git ref names can't contain `:`, so the prefix is never part of a branch. */
+export function resolveSwitchTarget(
+  status: TabStatus | null,
+  cwd: string,
+  arg: string
+): { root: string; branch: string; repo?: string } {
+  const folders = extraRepoFolders(status, cwd)
+  const hit = splitFolderArg(arg, folders)
+  if (!hit) return { root: cwd, branch: arg.trim() }
+  return { root: hit.path, branch: hit.rest.trim(), repo: nameOf(hit.path) }
 }

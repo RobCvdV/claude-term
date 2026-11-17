@@ -588,6 +588,9 @@ export interface NpmScript {
   dir: string
   name: string
   command: string
+  /** an added folder's display name and path; absent for the tab's own folder */
+  repo?: string
+  root?: string
 }
 
 /** Result of an in-app `git switch` triggered by the `/switch` command. */
@@ -603,6 +606,19 @@ export interface BranchHistoryEntry {
 export interface BranchSwitchResult {
   ok: boolean
   error?: string
+  /** display name of the added folder switched, when not the tab's own repo */
+  repo?: string
+  /** the branch alone, without a `repo:` prefix */
+  branch?: string
+}
+
+/** A `/switch` pick: `key` is the branch, `repo:branch` in an added folder. */
+export interface BranchChoice {
+  key: string
+  branch: string
+  root: string
+  /** display name of the added folder; absent for the tab's own repo */
+  repo?: string
 }
 
 /** Local branches of one workspace repo, for the status bar's branch menu. */

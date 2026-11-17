@@ -1,4 +1,5 @@
 import type { NpmScript, SlashCommand, TabId } from '../../shared/types'
+import { scriptKey } from '../../shared/npm-script'
 import { getSpellConfig, setSpellConfig, type SpellConfig, type SpellLang } from './spell'
 
 // App-local commands: intercepted in the prompt box and handled inside the app,
@@ -32,6 +33,19 @@ const completeDir: ArgCompleter = async (tabId, query) => {
   return dirs.map((d) => ({ label: d, value: d, isDir: true }))
 }
 
+/** completeDir, with the tab's added folders offered as starting points too. */
+const completeWorkspaceDir: ArgCompleter = async (tabId, query) => {
+  const [local, extras] = await Promise.all([
+    completeDir(tabId, query),
+    query.includes('/') ? [] : window.claudeTerm.extraDirs(tabId)
+  ])
+  const q = query.trim().toLowerCase()
+  const roots = extras
+    .filter((f) => f.name.toLowerCase().includes(q))
+    .map((f) => ({ label: `${f.name}/`, value: `${f.path}/`, detail: f.path, isDir: true }))
+  return [...local, ...roots]
+}
+
 export interface AppCommand {
   name: string
   description: string
@@ -51,7 +65,7 @@ export const APP_COMMANDS: AppCommand[] = [
     name: 'add-file',
     description: 'Create a file (any text format) and open it in the docs editor',
     hint: '<folder/name>',
-    complete: completeDir,
+    complete: completeWorkspaceDir,
     run: async ({ tabId, arg, setError, editDoc }) => {
       const res = await window.claudeTerm.createDoc(tabId, arg)
       // null = the "create the folder too?" question was declined; leave the
@@ -99,13 +113,13 @@ export const APP_COMMANDS: AppCommand[] = [
   },
   {
     name: 'switch',
-    description: 'Switch git branch (filter by name or ticket number)',
-    hint: '<branch>',
+    description: 'Switch git branch, here or in an added repo (repo:branch)',
+    hint: '<[repo:]branch>',
     runOnPick: true,
     validate: (arg) => arg.trim().length > 0,
     complete: async (tabId, query) => {
-      const branches = await window.claudeTerm.listBranches(tabId, query)
-      return branches.map((b) => ({ label: b, value: b }))
+      const choices = await window.claudeTerm.listBranches(tabId, query)
+      return choices.map((c) => ({ label: c.key, value: c.key, detail: c.repo && c.root }))
     },
     run: async ({ tabId, arg, setError }) => {
       const res = await window.claudeTerm.switchBranch(tabId, arg)
@@ -113,10 +127,11 @@ export const APP_COMMANDS: AppCommand[] = [
         setError(res.error || 'git switch failed')
         return false
       }
+      const where = res.repo ? `the added repo \`${res.repo}\`` : 'this repo'
       // notify only (no /clear): let claude know its file view may be stale
       window.claudeTerm.submitPrompt(
         tabId,
-        `FYI: I switched this repo to branch \`${arg}\`. Files you read earlier may have changed — re-read before editing.`,
+        `FYI: I switched ${where} to branch \`${res.branch ?? arg}\`. Files you read earlier may have changed — re-read before editing.`,
         0
       )
       return true
@@ -124,22 +139,22 @@ export const APP_COMMANDS: AppCommand[] = [
   },
   {
     name: 'npm',
-    description: 'Run an npm script (root package.json or one folder deep)',
-    hint: '<script>',
+    description: 'Run an npm script (one folder deep, added folders as repo:script)',
+    hint: '<[repo:]script>',
     runOnPick: true,
     validate: (arg) => arg.trim().length > 0,
     complete: async (tabId, query) => {
       const scripts = await window.claudeTerm.listNpmScripts(tabId, query)
       return scripts.map((s) => {
-        const key = s.dir ? `${s.dir}/${s.name}` : s.name
+        const key = scriptKey(s)
         return { label: key, value: key, detail: s.command, lineText: npmRunLine(s) }
       })
     },
     run: async ({ tabId, arg }) => {
-      // hand-typed arg: first token may be a "dir/script" key; the rest is params
+      // hand-typed arg: first token may be a "[repo:][dir/]script" key; the rest is params
       const [head, ...params] = arg.trim().split(/\s+/)
       const scripts = await window.claudeTerm.listNpmScripts(tabId, head)
-      const hit = scripts.find((s) => (s.dir ? `${s.dir}/${s.name}` : s.name) === head)
+      const hit = scripts.find((s) => scriptKey(s) === head)
       const base = hit ? npmRunLine(hit).trimEnd() : `!npm run ${head}`
       window.claudeTerm.submitPrompt(tabId, [base, ...params].join(' '), 0)
       return true
@@ -169,7 +184,8 @@ export const APP_COMMANDS: AppCommand[] = [
 
 /** The runnable `!npm …` line for a script (trailing space invites params). */
 function npmRunLine(s: NpmScript): string {
-  const prefix = s.dir ? `--prefix ${quoteArg(s.dir)} ` : ''
+  const dir = [s.root, s.dir].filter(Boolean).join('/')
+  const prefix = dir ? `--prefix ${quoteArg(dir)} ` : ''
   return `!npm ${prefix}run ${quoteArg(s.name)} `
 }
 

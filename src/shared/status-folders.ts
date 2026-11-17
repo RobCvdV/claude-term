@@ -91,3 +91,17 @@ export function matchExtraDir(arg: string, extras: readonly FolderChip[]): strin
   )
   return byName.length === 1 ? byName[0].path : null
 }
+
+/**
+ * `name:rest` aimed at one of `folders` (matched like matchExtraDir). Null when
+ * there is no prefix or it names no folder — e.g. an npm script `test:unit`.
+ */
+export function splitFolderArg(
+  arg: string,
+  folders: readonly FolderChip[]
+): { path: string; rest: string } | null {
+  const m = /^([^:/\s]+):(.*)$/.exec(arg.trim())
+  if (!m) return null
+  const path = matchExtraDir(m[1], folders)
+  return path ? { path, rest: m[2] } : null
+}

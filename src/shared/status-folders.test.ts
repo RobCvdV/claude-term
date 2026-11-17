@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addedFolders, matchExtraDir, statusFolders } from './status-folders'
+import { addedFolders, matchExtraDir, splitFolderArg, statusFolders } from './status-folders'
 import type { StatuslinePayload, TabStatus } from '../../shared/types'
 
 const status = (overrides: Partial<TabStatus>): TabStatus => ({
@@ -181,5 +181,23 @@ describe('matchExtraDir', () => {
       { path: '/b/ui', name: 'ui' }
     ]
     expect(matchExtraDir('ui', twins)).toBe(null)
+  })
+})
+
+describe('splitFolderArg', () => {
+  const extras = [{ path: '/dev/mendrix-mobile-mmxlib', name: 'mmxlib' }]
+
+  it('splits a folder-name prefix off the rest', () => {
+    expect(splitFolderArg('mmxlib:feature/MTX-1-a', extras)).toEqual({
+      path: '/dev/mendrix-mobile-mmxlib',
+      rest: 'feature/MTX-1-a'
+    })
+    expect(splitFolderArg('mendrix-mobile-mmxlib:test:unit', extras)?.rest).toBe('test:unit')
+  })
+
+  it('leaves args whose prefix names no folder alone', () => {
+    expect(splitFolderArg('test:unit', extras)).toBe(null)
+    expect(splitFolderArg('feature/x', extras)).toBe(null)
+    expect(splitFolderArg('app/x:y', extras)).toBe(null)
   })
 })

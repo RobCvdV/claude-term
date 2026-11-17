@@ -202,10 +202,14 @@ function Guide(): React.JSX.Element {
           <code>!npm run …</code> to add params — <code>/add-file</code> completes folders and
           creates the file you name at the end (<code>/add-file docs/plan.md</code>, any extension
           or none; folders in the path that don&apos;t exist yet are created once you confirm),
-          opening it in the docs editor, and <code>/add-dir</code> completes directories —{' '}
-          <code>/remove-dir</code> takes one back out of the tab, completing the extra folders it
-          currently has (the folder chip&apos;s right-click menu does the same). When Claude shows a
-          grayed-out suggested next prompt in the terminal, <b>Tab</b> in the empty box runs it.
+          opening it in the docs editor. All three reach the tab&apos;s added folders too:{' '}
+          <code>/switch</code> and <code>/npm</code> list them as <code>repo:branch</code> /{' '}
+          <code>repo:script</code> (type the folder name to narrow to it), and{' '}
+          <code>/add-file</code> offers each added folder as a starting point. And{' '}
+          <code>/add-dir</code> completes directories — <code>/remove-dir</code> takes one back out
+          of the tab, completing the extra folders it currently has (the folder chip&apos;s
+          right-click menu does the same). When Claude shows a grayed-out suggested next prompt in
+          the terminal, <b>Tab</b> in the empty box runs it.
         </p>
       </section>
       <section>
