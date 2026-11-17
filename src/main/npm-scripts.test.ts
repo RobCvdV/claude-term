@@ -50,4 +50,14 @@ describe('listNpmScripts', () => {
     const empty = mkdtempSync(join(tmpdir(), 'npm-scripts-empty-'))
     expect(listNpmScripts(empty, '')).toEqual([])
   })
+
+  it("adds added folders' scripts after the tab's own, keyed repo:script", () => {
+    const extra = makeProject()
+    const scripts = listNpmScripts(makeProject(), 'lib:', 30, [{ path: extra, name: 'lib' }])
+    expect(scripts.map((s) => [s.repo, s.root, s.dir, s.name])).toEqual([
+      ['lib', extra, '', 'dev'],
+      ['lib', extra, '', 'build'],
+      ['lib', extra, 'app', 'start']
+    ])
+  })
 })

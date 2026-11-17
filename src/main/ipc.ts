@@ -67,8 +67,13 @@ import { Pairing } from './companion/pairing'
 import { CompanionServer } from './companion/server'
 import { reachableAddress } from './companion/bind-address'
 import { StatusServer } from './status-server'
-import { listBranches, listBranchRefs, listCommands, listDirs, searchFiles } from './completions'
-import { isWorkspaceRoot, workspaceBranchGroups } from './branch-list'
+import { listBranchRefs, listCommands, listDirs, searchFiles } from './completions'
+import {
+  isWorkspaceRoot,
+  resolveSwitchTarget,
+  workspaceBranchChoices,
+  workspaceBranchGroups
+} from './branch-list'
 import { listNpmScripts } from './npm-scripts'
 import { switchBranch } from './git-actions'
 import { jobIdForRefusedResume, resolveRevive, warmLiveAgents } from './agents'
@@ -1213,7 +1218,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   ipcMain.handle('completions:branches', (_e, tabId: TabId, query: string) => {
     const cwd = status.getCwd(tabId)
-    return cwd ? listBranches(cwd, query) : []
+    return cwd ? workspaceBranchChoices(status.snapshot(tabId), cwd, listBranchRefs, query) : []
   })
 
   ipcMain.handle('completions:dirs', (_e, tabId: TabId, query: string) => {
@@ -1223,17 +1228,22 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   ipcMain.handle('completions:npmScripts', (_e, tabId: TabId, query: string) => {
     const cwd = status.getCwd(tabId)
-    return cwd ? listNpmScripts(cwd, query) : []
+    return cwd ? listNpmScripts(cwd, query, 30, extraDirsOf(tabId)) : []
   })
 
-  ipcMain.handle('git:switch', (_e, tabId: TabId, branch: string, root?: string) => {
+  ipcMain.handle('git:switch', async (_e, tabId: TabId, branch: string, root?: string) => {
     // `root` targets one of the tab's OTHER workspace repos (branch menu);
     // only folders the status bar actually points at are allowed
     if (root && !isWorkspaceRoot(status.snapshot(tabId), root)) {
       return { ok: false, error: 'not a workspace folder of this tab' }
     }
-    const dir = root ?? status.getCwd(tabId)
-    return dir ? switchBranch(dir, branch) : { ok: false, error: 'no working directory' }
+    if (root) return switchBranch(root, branch)
+    const cwd = status.getCwd(tabId)
+    if (!cwd) return { ok: false, error: 'no working directory' }
+    // no root: the /switch command, whose arg may be `repo:branch`
+    const target = resolveSwitchTarget(status.snapshot(tabId), cwd, branch)
+    const res = await switchBranch(target.root, target.branch)
+    return { ...res, branch: target.branch, repo: target.repo }
   })
 
   ipcMain.handle('branches:workspace', (_e, tabId: TabId) =>

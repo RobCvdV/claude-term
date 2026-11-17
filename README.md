@@ -82,6 +82,10 @@ You need the `claude` CLI on your `PATH`.
   | `/add-dir`    | add a folder to the session, completed one level at a time                |
   | `/remove-dir` | take an added folder back out of the tab                                  |
 
+  `/switch`, `/npm` and `/add-file` also reach the tab's added folders: branches and scripts
+  there complete as `repo:branch` / `repo:script` (`/switch mmxlib:main`), and `/add-file`
+  offers each added folder as a starting point.
+
 - `@` completes project files (git files, untracked included). `@../`, `@/` and `@~/` browse
   one folder level at a time.
 - `↑ ↓` walk your prompt history; `←` on an empty box opens Claude Code's agents overview.

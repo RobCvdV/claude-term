@@ -2,6 +2,9 @@ import { readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 
 import type { NpmScript } from '../shared/types'
+import { scriptKey } from '../shared/npm-script'
+import type { FolderChip } from '../shared/status-folders'
+import { rankByQuery } from './completions'
 
 const CACHE_TTL_MS = 10_000
 const cache = new Map<string, { at: number; scripts: NpmScript[] }>()
@@ -38,36 +41,25 @@ function collect(cwd: string): NpmScript[] {
   return out
 }
 
-function isSubsequence(needle: string, haystack: string): boolean {
-  let i = 0
-  for (let j = 0; j < haystack.length && i < needle.length; j++) {
-    if (haystack[j] === needle[i]) i++
-  }
-  return i === needle.length
+/** Scripts for the `/npm` picker: the tab's folder first, then each added
+ *  folder's (keyed `repo:…`), ranked like /switch. */
+export function listNpmScripts(
+  cwd: string,
+  query: string,
+  limit = 30,
+  extras: readonly FolderChip[] = []
+): NpmScript[] {
+  const all = [
+    ...scriptsOf(cwd),
+    ...extras.flatMap((f) => scriptsOf(f.path).map((s) => ({ ...s, repo: f.name, root: f.path })))
+  ]
+  return rankByQuery(all, scriptKey, query, limit)
 }
 
-export function scriptKey(s: NpmScript): string {
-  return s.dir ? `${s.dir}/${s.name}` : s.name
-}
-
-/** Scripts for the `/npm` picker, substring/subsequence-matched like /switch. */
-export function listNpmScripts(cwd: string, query: string, limit = 30): NpmScript[] {
-  const cached = cache.get(cwd)
-  const scripts = cached && Date.now() - cached.at < CACHE_TTL_MS ? cached.scripts : collect(cwd)
-  if (!cached || scripts !== cached.scripts) cache.set(cwd, { at: Date.now(), scripts })
-
-  const q = query.trim().toLowerCase()
-  if (!q) return scripts.slice(0, limit)
-
-  const scored: Array<{ s: NpmScript; score: number }> = []
-  for (const s of scripts) {
-    const key = scriptKey(s).toLowerCase()
-    let score = -1
-    if (key.startsWith(q)) score = 0
-    else if (key.includes(q)) score = 1
-    else if (isSubsequence(q, key)) score = 2
-    if (score >= 0) scored.push({ s, score })
-  }
-  scored.sort((a, b) => a.score - b.score)
-  return scored.slice(0, limit).map((e) => e.s)
+function scriptsOf(dir: string): NpmScript[] {
+  const cached = cache.get(dir)
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.scripts
+  const scripts = collect(dir)
+  cache.set(dir, { at: Date.now(), scripts })
+  return scripts
 }

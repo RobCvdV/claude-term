@@ -389,19 +389,27 @@ export async function listAllBranches(cwd: string): Promise<string[]> {
  * a prefix) so a bare ticket number like "10302" finds "feature/MTX-10302-foo".
  */
 export async function listBranches(cwd: string, query: string, limit = 30): Promise<string[]> {
-  const branches = await listAllBranches(cwd)
-  const q = query.trim().toLowerCase()
-  if (!q) return branches.slice(0, limit)
+  return rankByQuery(await listAllBranches(cwd), (b) => b, query, limit)
+}
 
-  const scored: Array<{ name: string; score: number }> = []
-  for (const name of branches) {
-    const lower = name.toLowerCase()
+/** Prefix matches first, then substring, then subsequence; stable otherwise. */
+export function rankByQuery<T>(
+  items: T[],
+  key: (item: T) => string,
+  query: string,
+  limit = 30
+): T[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return items.slice(0, limit)
+  const scored: Array<{ item: T; score: number }> = []
+  for (const item of items) {
+    const lower = key(item).toLowerCase()
     let score = -1
     if (lower.startsWith(q)) score = 0
     else if (lower.includes(q)) score = 1
     else if (isSubsequence(q, lower)) score = 2
-    if (score >= 0) scored.push({ name, score })
+    if (score >= 0) scored.push({ item, score })
   }
   scored.sort((a, b) => a.score - b.score)
-  return scored.slice(0, limit).map((s) => s.name)
+  return scored.slice(0, limit).map((s) => s.item)
 }
