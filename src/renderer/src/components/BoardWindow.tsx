@@ -20,7 +20,7 @@ import { useAppSettings } from '../use-app-settings'
 import { useMissionTabs } from '../use-mission-tabs'
 import { useNow } from '../use-now'
 import { activityLabel, dotFor, reviewVerdict } from '../work-status'
-import { CiChip, PrChip, TicketPill } from './mission-parts'
+import { ActionChip, CiChip, PrChip, TicketPill } from './mission-parts'
 
 interface Card {
   item: WorkItem
@@ -33,6 +33,15 @@ function ago(ms: number, now: number): string {
   const min = Math.floor((now - ms) / 60_000)
   if (min < 1) return 'just now'
   return min < 60 ? `${min}m ago` : `${Math.floor(min / 60)}h ago`
+}
+
+/** Where "▶ session" starts, for its tooltip. */
+function startTitle(item: WorkItem): string {
+  const [first] = item.starts
+  if (!first.sure) return 'Start a Claude session — pick the folder (right-click: same)'
+  const folder = first.root.split('/').pop()
+  const on = first.branch ? ` on ${first.branch}` : item.ticket ? ' on the ticket branch' : ''
+  return `Start a Claude session in ${folder}${on} (right-click: pick another folder)`
 }
 
 /** `owner/repo` → `repo`, for chips where the owner is noise. */
@@ -61,11 +70,15 @@ export function BoardWindow(): React.JSX.Element {
     return window.claudeTerm.onBoardUpdate(setBoard)
   }, [])
 
-  // "/" jumps to the filter, Escape clears it
+  // "/" jumps to the filter, Escape clears it; ⇧⌘E closes the board, ⌘E opens Mission control
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const inFilter = document.activeElement === filterRef.current
-      if (e.key === '/' && !inFilter && !e.metaKey && !e.ctrlKey) {
+      if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        if (e.shiftKey) window.claudeTerm.toggleBoard()
+        else window.claudeTerm.toggleMission()
+      } else if (e.key === '/' && !inFilter && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
         filterRef.current?.focus()
       } else if (e.key === 'Escape' && inFilter) {
@@ -96,7 +109,8 @@ export function BoardWindow(): React.JSX.Element {
     })
   }, [board.items, tabs, statuses])
 
-  const shown = cards.filter((c) => !view.hiddenKinds.includes(c.item.kind))
+  const kinds = cards.filter((c) => !view.hiddenKinds.includes(c.item.kind))
+  const shown = kinds.filter((c) => view.showHandedOff || !c.item.handedOff)
   const inContext = shown.filter((c) => view.context === 'all' || c.item.context === view.context)
   const filtered = inContext.filter((c) => matchesFilter(c.item, query))
   const lanes = BOARD_LANES.filter((l) => !view.hiddenLanes.includes(l.id))
@@ -162,6 +176,13 @@ export function BoardWindow(): React.JSX.Element {
                 {k.label}
               </button>
             ))}
+            <button
+              className={`range-btn ${view.showHandedOff ? 'active' : ''}`}
+              title="My PRs whose ticket is now on someone else's name"
+              onClick={() => setView({ showHandedOff: !view.showHandedOff })}
+            >
+              Handed off {kinds.filter((c) => c.item.handedOff).length}
+            </button>
           </span>
         </div>
         {board.errors.length > 0 && (
@@ -224,9 +245,14 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
         <span className="mission-branch">{head}</span>
         {item.ticket && <TicketPill ticket={item.ticket} />}
         {item.kind === 'issue' && <span className="mission-chip tone-dim">issue</span>}
+        {item.handedOff && (
+          <span className="mission-chip tone-dim" title="the ticket is on someone else's name">
+            → {item.handedOff}
+          </span>
+        )}
       </div>
       <div className="mission-topic">{item.title}</div>
-      {(item.prs.length > 0 || item.review) && (
+      {(item.prs.length > 0 || item.review || (!session && item.starts.length > 0)) && (
         <div className="mission-row mission-chips">
           {item.prs.map((pr) => (
             <span key={pr.url} className="board-pr">
@@ -239,6 +265,15 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
               {reviewVerdict(item.review).label}
               {item.review.author && <span className="dim"> · {item.review.author}</span>}
             </span>
+          )}
+          {!session && item.starts.length > 0 && (
+            <ActionChip
+              label="▶ session"
+              done="✓ started"
+              title={startTitle(item)}
+              run={() => window.claudeTerm.startFromCard(item.id, false)}
+              alt={() => window.claudeTerm.startFromCard(item.id, true)}
+            />
           )}
         </div>
       )}

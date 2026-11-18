@@ -328,7 +328,7 @@ export async function fetchMyIssues(): Promise<unknown> {
     method: 'POST',
     body: {
       jql: 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
-      fields: ['summary', 'status', 'assignee', 'issuetype', 'updated'],
+      fields: ['summary', 'status', 'assignee', 'issuetype', 'labels', 'updated'],
       maxResults: 100
     }
   })
@@ -402,6 +402,31 @@ export async function fetchTicket(key: string): Promise<TicketDetails> {
     assigneeId: issue.fields?.assignee?.accountId ?? null,
     status: issue.fields?.status?.name ?? ''
   }
+}
+
+/**
+ * Who has each ticket when it isn't me: the assignee's name, or "unassigned".
+ * Tickets on my name, and ones Jira can't find, are left out.
+ */
+export async function ticketsNotMine(keys: string[]): Promise<Map<string, string>> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const out = new Map<string, string>()
+  await Promise.all(
+    keys.map(async (key) => {
+      const res = await jiraFetch(
+        creds,
+        `/rest/api/3/issue/${encodeURIComponent(key)}?fields=assignee`
+      ).catch(() => null)
+      if (!res?.ok) return
+      const { fields } = (await res.json()) as {
+        fields?: { assignee?: { accountId?: string; displayName?: string } | null }
+      }
+      const who = fields?.assignee
+      if (who?.accountId !== creds.accountId) out.set(key, who?.displayName ?? 'unassigned')
+    })
+  )
+  return out
 }
 
 /** Put the ticket on my name and move it to Active; returns what failed. */

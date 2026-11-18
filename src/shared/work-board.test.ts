@@ -28,11 +28,14 @@ const item = (over: Partial<WorkItem> = {}): WorkItem => ({
     category: 'progress',
     summary: '',
     assignee: null,
-    type: 'Bug'
+    type: 'Bug',
+    labels: []
   },
   prs: [],
   review: null,
   updated: 0,
+  starts: [],
+  handedOff: null,
   ...over
 })
 

@@ -12,13 +12,13 @@ export function MissionWindow(): React.JSX.Element {
     document.title = WINDOW_KIND.mission
   }, [])
 
-  // ⌘E closes it again, as it does from a terminal window
+  // ⌘E closes it again, as it does from a terminal window; ⇧⌘E opens the Work board
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key === 'e') {
-        e.preventDefault()
-        window.claudeTerm.toggleMission()
-      }
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.key.toLowerCase() !== 'e') return
+      e.preventDefault()
+      if (e.shiftKey) window.claudeTerm.toggleBoard()
+      else window.claudeTerm.toggleMission()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

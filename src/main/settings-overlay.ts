@@ -113,17 +113,22 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
         `    "${realClaude}" --settings "$CLAUDE_TERM_SETTINGS" --plugin-dir '${mod}' "$@"\n` +
         `  fi\n` +
         `}\n` +
-        `# claude-term: auto-restore a persisted session on launch. Only one of\n` +
-        `# these vars is set, and only when restoring, so normal shells never fire.\n` +
+        `# claude-term: auto-restore a persisted session on launch, or start one with\n` +
+        `# a first prompt. Only one of these vars is set, so normal shells never fire.\n` +
         `# ATTACH: the session became a daemon-managed background agent; it can't\n` +
         `# be --resume'd while alive, so reconnect with 'claude attach'. This uses\n` +
         `# the real binary (not our wrapper) — attach takes no --settings.\n` +
         `if [[ -n "$CLAUDE_TERM_ATTACH" ]]; then\n` +
-        `  __cta="$CLAUDE_TERM_ATTACH"; unset CLAUDE_TERM_ATTACH CLAUDE_TERM_RESUME\n` +
+        `  __cta="$CLAUDE_TERM_ATTACH"; unset CLAUDE_TERM_ATTACH CLAUDE_TERM_RESUME CLAUDE_TERM_PROMPT\n` +
         `  "${realClaude}" attach "$__cta"; unset __cta\n` +
         `elif [[ -n "$CLAUDE_TERM_RESUME" ]]; then\n` +
-        `  __ctr="$CLAUDE_TERM_RESUME"; unset CLAUDE_TERM_RESUME\n` +
-        `  claude --resume "$__ctr"; unset __ctr\n` +
+        `  __ctr="$CLAUDE_TERM_RESUME"; __ctp="$CLAUDE_TERM_PROMPT"\n` +
+        `  unset CLAUDE_TERM_RESUME CLAUDE_TERM_PROMPT\n` +
+        `  if [[ -n "$__ctp" ]]; then claude --resume "$__ctr" "$__ctp"; else claude --resume "$__ctr"; fi\n` +
+        `  unset __ctr __ctp\n` +
+        `elif [[ -n "$CLAUDE_TERM_PROMPT" ]]; then\n` +
+        `  __ctp="$CLAUDE_TERM_PROMPT"; unset CLAUDE_TERM_PROMPT\n` +
+        `  claude "$__ctp"; unset __ctp\n` +
         `fi\n`
     )
     return { ZDOTDIR: zdotdir }

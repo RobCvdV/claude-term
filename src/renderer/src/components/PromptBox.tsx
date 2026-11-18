@@ -550,6 +550,9 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       findInTerminalRef.current()
     )
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => openMissionRef.current())
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE, () =>
+      window.claudeTerm.toggleBoard()
+    )
     // ⌘/ is Monaco's toggle-comment — rebind to the Quick How-To overlay
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => showHelpRef.current())
 

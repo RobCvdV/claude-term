@@ -6,7 +6,7 @@ import { githubRollupCi } from './ci-data'
 
 // Pure mapping and joining for the Work board — work-board.ts owns the I/O.
 
-export type BoardTicket = TicketStatus & { type: string; updated: number }
+export type BoardTicket = TicketStatus & { type: string; labels: string[]; updated: number }
 
 export interface SourcePr {
   pr: BoardPr
@@ -30,10 +30,10 @@ const time = (iso: string | undefined): number => (iso ? Date.parse(iso) || 0 : 
 
 interface RawJiraIssue {
   key?: string
-  fields?: { issuetype?: { name?: string }; updated?: string }
+  fields?: { issuetype?: { name?: string }; labels?: string[]; updated?: string }
 }
 
-/** `/search/jql` with fields summary,status,assignee,issuetype,updated. */
+/** `/search/jql` with fields summary,status,assignee,issuetype,labels,updated. */
 export function mapMyJiraIssues(body: unknown): BoardTicket[] {
   const out: BoardTicket[] = []
   for (const issue of (body as { issues?: RawJiraIssue[] }).issues ?? []) {
@@ -42,6 +42,7 @@ export function mapMyJiraIssues(body: unknown): BoardTicket[] {
     out.push({
       ...t,
       type: issue.fields?.issuetype?.name ?? '',
+      labels: issue.fields?.labels ?? [],
       updated: time(issue.fields?.updated)
     })
   }
@@ -198,7 +199,9 @@ export function joinWork(input: {
       ticket,
       prs: [],
       review: null,
-      updated
+      updated,
+      starts: [],
+      handedOff: null
     }
     byTicket.set(t.key, item)
     items.push(item)
@@ -222,7 +225,9 @@ export function joinWork(input: {
       ticket: null,
       prs: [src.pr],
       review: null,
-      updated: src.updated
+      updated: src.updated,
+      starts: [],
+      handedOff: null
     })
   }
 
@@ -237,7 +242,9 @@ export function joinWork(input: {
       ticket: null,
       prs: [],
       review: null,
-      updated: issue.updated
+      updated: issue.updated,
+      starts: [],
+      handedOff: null
     })
   }
 
@@ -254,7 +261,9 @@ export function joinWork(input: {
       ticket: null,
       prs: [],
       review,
-      updated: 0
+      updated: 0,
+      starts: [],
+      handedOff: null
     })
   }
 

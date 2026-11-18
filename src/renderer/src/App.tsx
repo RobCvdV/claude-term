@@ -371,17 +371,28 @@ export default function App(): React.JSX.Element {
     }
   }, [])
 
-  const openTab = useCallback(async (cwd?: string): Promise<void> => {
-    const tab = await window.claudeTerm.createTab(cwd)
-    setTabs((prev) => [...prev, tab])
-    setActiveId(tab.tabId)
-    const snapshot = await window.claudeTerm.statusSnapshot(tab.tabId)
-    setStatuses((prev) => ({ ...prev, [tab.tabId]: snapshot }))
-  }, [])
+  const openTab = useCallback(
+    async (cwd?: string, prompt?: string, resume?: string | null): Promise<void> => {
+      const tab = await window.claudeTerm.createTab(
+        cwd,
+        resume ?? undefined,
+        undefined,
+        undefined,
+        prompt
+      )
+      setTabs((prev) => [...prev, tab])
+      setActiveId(tab.tabId)
+      const snapshot = await window.claudeTerm.statusSnapshot(tab.tabId)
+      setStatuses((prev) => ({ ...prev, [tab.tabId]: snapshot }))
+    },
+    []
+  )
 
-  // "Open in New Tab…" picked in a folder chip's context menu
+  // "Open in New Tab…" in a folder chip's context menu, or a Work board card's session
   useEffect(() => {
-    return window.claudeTerm.onOpenFolderTab((dir) => void openTab(dir))
+    return window.claudeTerm.onOpenFolderTab(
+      (dir, prompt, resume) => void openTab(dir, prompt, resume)
+    )
   }, [openTab])
 
   // ⌘T opens a plain terminal in the home dir; ⌘O opens one in a chosen folder.
@@ -703,6 +714,9 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'e') {
         e.preventDefault()
         window.claudeTerm.toggleMission()
+      } else if (e.key.toLowerCase() === 'e' && e.shiftKey) {
+        e.preventDefault()
+        window.claudeTerm.toggleBoard()
       } else if (e.key.toLowerCase() === 'a' && e.shiftKey) {
         e.preventDefault()
         jumpAttention()
@@ -843,7 +857,12 @@ export default function App(): React.JSX.Element {
       shortcut: '⌘E',
       run: () => window.claudeTerm.openMission()
     },
-    { id: 'board', label: 'Work board', run: () => window.claudeTerm.toggleBoard() },
+    {
+      id: 'board',
+      label: 'Work board',
+      shortcut: '⇧⌘E',
+      run: () => window.claudeTerm.toggleBoard()
+    },
     { id: 'settings', label: 'Settings', shortcut: '⌘,', run: () => setShowSettings(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
     { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },

@@ -1,6 +1,14 @@
 import { homedir } from 'os'
-import type { BoardCi, ReviewItem, TabStatus, WorkBoardState, WorkContext } from '../shared/types'
-import { fetchMyIssues } from './jira-client'
+import type {
+  BoardCi,
+  BranchHistoryEntry,
+  ReviewItem,
+  TabStatus,
+  WorkBoardState,
+  WorkContext
+} from '../shared/types'
+import { fetchMyIssues, ticketsNotMine } from './jira-client'
+import { branchTicket } from '../shared/jira-labels'
 import { commitStatuses, myWorkspacePrs, recentWorkspaceRepos } from './bitbucket-prs'
 import { bitbucketViewer, gh } from './pr-list'
 import { bitbucketReposOf } from './review-queue'
@@ -16,6 +24,8 @@ import {
   type SourceIssue,
   type SourcePr
 } from './work-board-data'
+import { startsFor, type LocalRepo } from './work-start-data'
+import { localRepos } from './work-start'
 
 const POLL_MS = 5 * 60_000
 
@@ -35,12 +45,16 @@ export class WorkBoard {
   private state: WorkBoardState = { items: [], errors: [], sweptAt: null, sweeping: false }
   /** finished builds per commit never change; running ones are asked again */
   private builds = new Map<string, BoardCi | null>()
+  private repos: LocalRepo[] = []
+  /** ticket key → who has it, for my PRs whose ticket isn't on my name */
+  private handedOff = new Map<string, string>()
 
   constructor(
     private readonly deps: {
       contexts: () => WorkContext[]
       reviews: () => ReviewItem[]
       snapshots: () => TabStatus[]
+      history: () => BranchHistoryEntry[]
       isOpen: () => boolean
       onChange: (state: WorkBoardState) => void
     }
@@ -79,7 +93,7 @@ export class WorkBoard {
       }
     }
     const workspaces = [...new Set(contexts.flatMap((c) => c.bitbucketWorkspaces))]
-    const [tickets, bitbucket, github] = await Promise.all([
+    const [tickets, bitbucket, github, repos] = await Promise.all([
       contexts.some((c) => c.jira)
         ? attempt('Jira', async () => mapMyJiraIssues(await fetchMyIssues()))
         : [],
@@ -93,24 +107,50 @@ export class WorkBoard {
             )
             return mapGithubWork(JSON.parse(out))
           })
-        : { prs: [], issues: [] }
+        : { prs: [], issues: [] },
+      localRepos(this.seedRoots())
     ])
+    this.repos = repos
     this.sources = {
       tickets: tickets ?? this.sources.tickets,
       bitbucket: bitbucket ?? this.sources.bitbucket,
       github: github ?? this.sources.github
     }
+    const mine = new Set(this.sources.tickets.map((t) => t.key))
+    const orphans = [...this.sources.bitbucket, ...this.sources.github.prs]
+      .map((p) => branchTicket(p.pr.branch))
+      .filter((k): k is string => !!k && !mine.has(k))
+    if (orphans.length && contexts.some((c) => c.jira)) {
+      const others = await attempt('Jira assignees', () => ticketsNotMine([...new Set(orphans)]))
+      if (others) this.handedOff = others
+    }
     this.publish({ items: this.join(), errors, sweptAt: Date.now(), sweeping: false })
   }
 
   private join(): WorkBoardState['items'] {
+    const contexts = this.deps.contexts()
+    const history = this.deps.history()
     return joinWork({
-      contexts: this.deps.contexts(),
+      contexts,
       tickets: this.sources.tickets,
       prs: [...this.sources.bitbucket, ...this.sources.github.prs],
       issues: this.sources.github.issues,
       reviews: this.deps.reviews()
-    })
+    }).map((item) => ({
+      ...item,
+      starts: startsFor(item, this.repos, history, contexts),
+      handedOff:
+        item.kind === 'pr'
+          ? (this.handedOff.get(branchTicket(item.prs[0]?.branch ?? '') ?? '') ?? null)
+          : null
+    }))
+  }
+
+  /** Repos a card could start in: every folder a branch was used in, and open tabs'. */
+  private seedRoots(): string[] {
+    const roots = this.deps.history().map((e) => e.root)
+    for (const s of this.deps.snapshots()) roots.push(s.cwd, ...s.extraRepos.map((r) => r.root))
+    return [...new Set(roots)]
   }
 
   private async bitbucketPrs(workspaces: string[]): Promise<SourcePr[]> {
