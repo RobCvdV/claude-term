@@ -31,38 +31,47 @@ export function LinkChip({
   )
 }
 
-/** A small action inside a card: runs without selecting the card. */
+type ActionRun = () => Promise<{ ok: boolean; error?: string }>
+
+/** A small action inside a card: runs without selecting the card. `alt` runs on right-click. */
 export function ActionChip({
   label,
   title,
-  run
+  run,
+  alt,
+  done = '✓ moved'
 }: {
   label: string
   title: string
-  run: () => Promise<{ ok: boolean; error?: string }>
+  run: ActionRun
+  alt?: ActionRun
+  done?: string
 }): React.JSX.Element {
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const fire = (e: React.MouseEvent, action: ActionRun): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (phase === 'busy' || phase === 'done') return
+    setPhase('busy')
+    void action().then((r) => {
+      // ok=false without an error is a cancelled confirmation
+      setPhase(r.ok ? 'done' : r.error ? 'failed' : 'idle')
+      setError(r.error ?? null)
+    })
+  }
   return (
     <span
       role="button"
       className={`mission-action ${phase === 'done' ? 'tone-green' : phase === 'failed' ? 'tone-red' : ''}`}
       title={error ?? title}
-      onClick={(e) => {
-        e.stopPropagation()
-        if (phase === 'busy' || phase === 'done') return
-        setPhase('busy')
-        void run().then((r) => {
-          // ok=false without an error is a cancelled confirmation
-          setPhase(r.ok ? 'done' : r.error ? 'failed' : 'idle')
-          setError(r.error ?? null)
-        })
-      }}
+      onClick={(e) => fire(e, run)}
+      onContextMenu={alt ? (e) => fire(e, alt) : undefined}
     >
       {phase === 'busy'
         ? '…'
         : phase === 'done'
-          ? '✓ moved'
+          ? done
           : phase === 'failed'
             ? `${label} failed`
             : label}

@@ -24,7 +24,7 @@ integrations are tuned for MendriX work (MTX tickets).
 - **Live status bar** — activity, branch and ticket, PR review, CI, context use and rate limits.
 - **Mission control** (`⌘E`) — every tab and repo at a glance, with what needs you, in a window
   you can keep open beside your terminals.
-- **Work board** — your open Jira tickets, PRs, reviews and issues with their builds, in lanes by
+- **Work board** (`⇧⌘E`) — your open Jira tickets, PRs, reviews and issues with their builds, in lanes by
   whose move it is, per context (MendriX / Personal).
 - **Focus follows the conversation** — dialogs take the keyboard, finished turns hand it back.
 - **Undo a turn** — every prompt snapshots the repo; revert exactly what a turn wrote.
@@ -149,14 +149,19 @@ behind counts — plus your last prompt and a summary of Claude's latest reply.
 
 ### Work board
 
-Opened from Mission control's header or the ⌘K palette (no key of its own). It lists your open
+`⇧⌘E` opens and closes it (also Mission control's header or the ⌘K palette). It lists your open
 work across Jira (assigned to you, minus Deploy / Beta / Done), Bitbucket (`mendrix`,
 `mendrixmobile`) and GitHub, with each PR's build. A ticket's PRs join its card by branch name,
 and a card with an open session shows it — click to go there.
 
 - Tabs per context, lanes **Needs you / In progress / Waiting / To do**, and toggles to hide lanes
-  or item kinds; the choice is remembered.
+  or item kinds; the choice is remembered. **Handed off** (off by default) shows your PRs whose
+  ticket is now on someone else's name.
 - `/` focuses the filter (every word must match key, title, repo or status), `Esc` clears it.
+- **▶ session** opens a tab in a local clone, on the card's branch (a to-do ticket gets its branch
+  and moves to Active). It resumes the branch's last conversation, telling it only what is new,
+  or starts one asking Claude about the card. Right-click picks another clone; clones another tab
+  works in are skipped.
 - Contexts live in `workContexts` in the app's `app-settings.json`.
 
 ### Focus follows the conversation
@@ -277,6 +282,7 @@ The details are in [docs/companion.md](docs/companion.md).
 | `` ⌃` ``     | Next terminal window                 |
 | `⌘K`         | Command palette                      |
 | `⌘E`         | Open / close Mission control         |
+| `⇧⌘E`        | Open / close the Work board          |
 | `⌘,`         | Settings                             |
 | `⌘⇧A`        | Next tab waiting for input           |
 | `⌘F`         | Find in the conversation             |

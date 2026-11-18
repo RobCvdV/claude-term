@@ -843,11 +843,24 @@ export interface WorkItem {
   kind: BoardKind
   title: string
   url: string
-  ticket: (TicketStatus & { type: string }) | null
+  ticket: (TicketStatus & { type: string; labels: string[] }) | null
   prs: BoardPr[]
   review: ReviewItem | null
   /** epoch ms of the newest change */
   updated: number
+  /** local clones to start a session in, best first */
+  starts: BoardStart[]
+  /** my PR's ticket is on someone else's name ("unassigned" when no one's): who has it */
+  handedOff: string | null
+}
+
+/** A local clone a Work board card can start a session in. */
+export interface BoardStart {
+  root: string
+  /** branch to switch to; null = the ticket's branch (found or created), or stay put */
+  branch: string | null
+  /** start here on a click, without asking which clone */
+  sure: boolean
 }
 
 export interface WorkBoardState {
@@ -875,6 +888,8 @@ export interface BoardView {
   context: string
   hiddenLanes: BoardLane[]
   hiddenKinds: BoardKind[]
+  /** show PRs whose ticket I handed to someone else */
+  showHandedOff: boolean
 }
 
 /** "Complete with Claude" in a file window: the text around the cursor. */

@@ -499,7 +499,8 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
       cwd?: string,
       resume?: string,
       addedDirs?: string[],
-      removedDirs?: string[]
+      removedDirs?: string[],
+      prompt?: string
     ): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
       let dir = cwd && existsSync(cwd) ? cwd : homedir()
@@ -545,9 +546,9 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)
         } else if (target.mode === 'resume') {
-          await ptys.create(tabId, dir, resume)
+          await ptys.create(tabId, dir, resume, undefined, prompt)
         } else {
-          await ptys.create(tabId, dir)
+          await ptys.create(tabId, dir, undefined, undefined, prompt)
         }
         // Both revive paths self-report via statusline within ~1s, but seed the UI
         // now so the prompt box doesn't flicker in — and an attached bg agent
@@ -559,7 +560,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         // that launched it — synthesize activity until a real feed shows up
         if (target.mode === 'attach') status.markAttached(tabId, resume as string, target.jobId)
       } else {
-        await ptys.create(tabId, dir)
+        await ptys.create(tabId, dir, undefined, undefined, prompt)
       }
       return { tabId, cwd: dir, title: basename(dir) || dir }
     }

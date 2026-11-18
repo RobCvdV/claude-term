@@ -87,8 +87,15 @@ export class PtyManager {
    *   while the daemon keeps it alive (`--resume` errors "running as a
    *   background agent"); it must be attached. ipc.ts decides which to pass by
    *   consulting the live agent list. `resume` and `attach` are exclusive.
+   * @param prompt  first prompt: for a new `claude` session, or the resumed one
    */
-  async create(tabId: TabId, cwd: string, resume?: string, attach?: string): Promise<void> {
+  async create(
+    tabId: TabId,
+    cwd: string,
+    resume?: string,
+    attach?: string,
+    prompt?: string
+  ): Promise<void> {
     const [env, shell] = await Promise.all([loginShellEnv(), resolveShell()])
     const launcherEnv = await setupClaudeLauncher(shell)
     const { port, token } = this.getServerInfo()
@@ -112,6 +119,8 @@ export class PtyManager {
     // injection below. attach takes precedence over resume (mutually exclusive).
     if (attach && isZsh) spawnEnv.CLAUDE_TERM_ATTACH = attach
     else if (resume && isZsh) spawnEnv.CLAUDE_TERM_RESUME = resume
+    // the prompt travels in the env, so no shell quoting is involved
+    if (prompt) spawnEnv.CLAUDE_TERM_PROMPT = prompt
 
     const proc = pty.spawn(shell, ['-il'], {
       name: 'xterm-256color',
@@ -134,13 +143,20 @@ export class PtyManager {
       this.emit.exit(tabId, exitCode)
     })
 
-    if ((attach || resume) && !isZsh) {
+    if (prompt && !attach && !resume && !isZsh) {
+      setTimeout(() => {
+        const current = this.tabs.get(tabId)
+        if (current && !current.exited) current.proc.write('claude "$CLAUDE_TERM_PROMPT"\r')
+      }, RESUME_INJECT_MS)
+    } else if ((attach || resume) && !isZsh) {
       // attach bypasses our `claude` wrapper (which appends --settings): the
       // running agent already has its own settings, and `claude attach` rejects
       // extra flags. Resolve the real binary so the shim's PATH shadowing of
       // `claude` doesn't turn `claude attach` into `claude --settings … attach`.
       const realClaude = attach ? await resolveClaudePath() : null
-      const cmd = attach ? `"${realClaude}" attach ${attach}` : `claude --resume ${resume}`
+      const cmd = attach
+        ? `"${realClaude}" attach ${attach}`
+        : `claude --resume ${resume}${prompt ? ' "$CLAUDE_TERM_PROMPT"' : ''}`
       setTimeout(() => {
         const current = this.tabs.get(tabId)
         if (current && !current.exited) current.proc.write(`${cmd}\r`)

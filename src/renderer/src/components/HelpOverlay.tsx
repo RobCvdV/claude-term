@@ -56,6 +56,9 @@ function HowTo(): React.JSX.Element {
           run an action
         </Keys>
         <Keys k="⌘E">Mission control window — every tab at a glance; ⌘E again closes it</Keys>
+        <Keys k="⇧⌘E">
+          Work board window — your open tickets, PRs and reviews; ⇧⌘E again closes it
+        </Keys>
         <Keys k="⌘,">
           Settings — notifications, polling, integrations and the app&apos;s switches
         </Keys>
@@ -282,11 +285,14 @@ function Guide(): React.JSX.Element {
       <section>
         <h3>Work board</h3>
         <p>
-          Opened from Mission control&apos;s header or the ⌘K palette (no key of its own): your open
-          Jira tickets, PRs, reviews and GitHub issues with their builds, in lanes by whose move it
-          is, with a tab per context (MendriX, Personal). Lane and kind toggles are remembered;{' '}
+          <b>⇧⌘E</b> (also Mission control&apos;s header or the ⌘K palette) opens it: your open Jira
+          tickets, PRs, reviews and GitHub issues with their builds, in lanes by whose move it is,
+          with a tab per context (MendriX, Personal). Lane and kind toggles are remembered, and PRs
+          whose ticket you handed to someone else stay hidden unless <b>Handed off</b> is on;{' '}
           <b>/</b> focuses the filter and <b>Esc</b> clears it. A card with an open session shows it
-          — click to go there.
+          — click to go there. <b>▶ session</b> opens a tab in a local clone on the card&apos;s
+          branch, resuming the branch&apos;s last conversation or starting one about the card;
+          right-click it to pick another clone.
         </p>
       </section>
       <section>

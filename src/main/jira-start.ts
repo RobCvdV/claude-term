@@ -31,12 +31,14 @@ async function baseRef(cwd: string, remote: string[]): Promise<string | null> {
 /**
  * "Start branch" on a to-do ticket: switch `cwd` to the ticket's branch
  * (creating it off the default branch when there is none), then put the ticket
- * on my name in Active. The branch decides success; Jira hiccups are warnings.
+ * on my name in Active (unless `claim` is off). The branch decides success;
+ * Jira hiccups are warnings.
  */
 export async function startTicket(
   cwd: string,
   key: string,
-  root: string | null
+  root: string | null,
+  claim = true
 ): Promise<StartTicketResult> {
   try {
     const ticket = await fetchTicket(key)
@@ -59,8 +61,8 @@ export async function startTicket(
       await git(cwd, ['switch', '-c', branch, ...(base ? ['--no-track', base] : [])])
       created = true
     }
-    const warnings = await claimTicket(ticket)
-    forgetTicket(ticket.key)
+    const warnings = claim ? await claimTicket(ticket) : []
+    if (claim) forgetTicket(ticket.key)
     const prompt = startPrompt({
       key: ticket.key,
       summary: ticket.summary,

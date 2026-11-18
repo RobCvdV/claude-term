@@ -71,7 +71,9 @@ export interface ClaudeTermApi {
     cwd?: string,
     resume?: string,
     addedDirs?: string[],
-    removedDirs?: string[]
+    removedDirs?: string[],
+    /** start claude in the new tab with this first prompt (with `resume`: sent to the resumed one) */
+    prompt?: string
   ): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
   /** Drop every tab main still holds for this window. A renderer calls it as it
@@ -92,7 +94,7 @@ export interface ClaudeTermApi {
     dir: string
   ): Promise<{ ok: true; dir: string } | { ok: false; error: string }>
   /** "Open in New Tab…" was picked in the folder context menu */
-  onOpenFolderTab(cb: (dir: string) => void): () => void
+  onOpenFolderTab(cb: (dir: string, prompt?: string, resume?: string | null) => void): () => void
   /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
   listPrs(tabId: TabId): Promise<PrGroup[]>
   /** to-do tickets of every workspace repo that has Jira labels */
@@ -262,6 +264,8 @@ export interface ClaudeTermApi {
   /** sweep Jira / Bitbucket / GitHub now */
   refreshBoard(): void
   onBoardUpdate(cb: (state: WorkBoardState) => void): () => void
+  /** a new tab on the card's branch with claude asked about it; `pick` asks which clone */
+  startFromCard(itemId: string, pick: boolean): Promise<{ ok: boolean; error?: string }>
   /** every terminal window's tabs, for the Mission control window */
   missionTabs(): Promise<MissionTabs>
   onMissionTabs(cb: (tabs: MissionTabs) => void): () => void
@@ -328,8 +332,8 @@ function subscribe<Args extends unknown[]>(
 const api: ClaudeTermApi = {
   platform: process.platform,
   boot: () => ipcRenderer.invoke('window:boot'),
-  createTab: (cwd, resume, addedDirs, removedDirs) =>
-    ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs),
+  createTab: (cwd, resume, addedDirs, removedDirs, prompt) =>
+    ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs, prompt),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   resetTabs: () => ipcRenderer.invoke('tab:reset'),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
@@ -429,6 +433,7 @@ const api: ClaudeTermApi = {
   boardState: () => ipcRenderer.invoke('board:state'),
   refreshBoard: () => ipcRenderer.send('board:refresh'),
   onBoardUpdate: (cb) => subscribe('board:update', cb),
+  startFromCard: (itemId, pick) => ipcRenderer.invoke('board:start', itemId, pick),
   missionTabs: () => ipcRenderer.invoke('mission:tabs'),
   onMissionTabs: (cb) => subscribe('mission:tabs', cb),
   selectGlobalTab: (index) => ipcRenderer.send('tabs:selectGlobal', index),
