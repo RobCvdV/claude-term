@@ -3,7 +3,6 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type { WindowBounds } from '../shared/types'
-import { WINDOW_KIND } from '../shared/window-titles'
 import { bringForward, showWindow } from './background-mode'
 import { usableBounds } from './window-order'
 
@@ -15,30 +14,41 @@ interface Saved {
 
 const SAVE_DELAY_MS = 500
 
+/** Which panel: its title and the query string the renderer picks it by. */
+export interface PanelKind {
+  title: string
+  query: string
+}
+
 /**
- * Mission control in a window of its own: one for the whole app, listing the
- * tabs of every terminal window. It stays open beside them until closed, and
- * keeps the size and place it was given.
+ * An app-wide panel in a window of its own (Mission control, the Work board):
+ * one per app, beside the terminal windows until closed. It keeps the size
+ * and place it was given, and opens again on launch if it was open at quit.
  */
-export class MissionWindow {
+export class PanelWindow {
   private win: BrowserWindow | null = null
   private saveTimer: NodeJS.Timeout | null = null
 
   constructor(
+    private readonly kind: PanelKind,
     private readonly file: () => string,
-    /** a quit is closing every window: the mission window stays "open" */
+    /** a quit is closing every window: the panel stays "open" */
     private readonly quitting: () => boolean
   ) {}
 
+  isOpen(): boolean {
+    return !!this.win && !this.win.isDestroyed()
+  }
+
   toggle(): void {
-    if (this.win && !this.win.isDestroyed()) this.win.close()
+    if (this.isOpen()) this.win!.close()
     else this.open()
   }
 
   /** Open it, or bring it forward; `inactive` (a launch) leaves the keys alone. */
   open(inactive = false): void {
-    if (this.win && !this.win.isDestroyed()) {
-      bringForward(this.win)
+    if (this.isOpen()) {
+      bringForward(this.win!)
       return
     }
     const bounds = usableBounds(
@@ -52,7 +62,7 @@ export class MissionWindow {
       minWidth: 360,
       minHeight: 240,
       show: false,
-      title: WINDOW_KIND.mission,
+      title: this.kind.title,
       autoHideMenuBar: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
@@ -74,7 +84,7 @@ export class MissionWindow {
       if (/^https?:\/\//i.test(details.url)) void shell.openExternal(details.url)
       return { action: 'deny' }
     })
-    const query = '?mission=1'
+    const query = this.kind.query
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       void win.loadURL(process.env['ELECTRON_RENDERER_URL'] + query)
     } else {
@@ -97,7 +107,7 @@ export class MissionWindow {
   }
 
   send(channel: string, ...args: unknown[]): void {
-    if (this.win && !this.win.isDestroyed()) this.win.webContents.send(channel, ...args)
+    if (this.isOpen()) this.win!.webContents.send(channel, ...args)
   }
 
   private scheduleSave(win: BrowserWindow): void {

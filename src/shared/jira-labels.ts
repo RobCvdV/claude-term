@@ -34,3 +34,10 @@ export function todoSearchUrl(labels: string[]): string {
 export function ticketUrl(key: string): string {
   return `${JIRA_SITE}/browse/${key}`
 }
+
+const BRANCH_TICKET_RE = /^(?:[^/]*\/)?([A-Z][A-Z0-9]+-\d+)(?:-.*)?$/
+
+/** The ticket key a branch is named after (`bugfix/MTX-1-foo` → `MTX-1`). */
+export function branchTicket(branch: string): string | null {
+  return BRANCH_TICKET_RE.exec(branch)?.[1] ?? null
+}

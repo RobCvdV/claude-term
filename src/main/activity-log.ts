@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import { basename, join } from 'path'
 import type { ActivityBucket, ActivityDay, ActivityReport } from '../shared/types'
 import { isWorkPath } from '../shared/work-projects'
+import { branchTicket } from '../shared/jira-labels'
 import { coverageByDate, readCoverage, type DayCoverage, type DaySpan } from './worklog-coverage'
 
 /**
@@ -32,7 +33,6 @@ const BREAK_TOLERANCE_SEC = 30 * 60
 const MIN_TAIL_SEC = 10 * 60
 // Same shape statusline-command.sh uses: optional "prefix/" then TICKET, then
 // optional "-description". Captures the ticket id (e.g. MTX-10302).
-const TICKET_RE = /^(?:[^/]*\/)?([A-Z]+-\d+)(?:-.*)?$/
 
 interface RawEvent {
   ts: number
@@ -59,8 +59,7 @@ interface Bucketed {
 function classify(cwd: string, branch: string): Bucketed {
   const b = (branch || '').trim()
   const project = basename(cwd || '') || 'unknown'
-  const m = b.match(TICKET_RE)
-  const ticket = m ? m[1] : null
+  const ticket = branchTicket(b)
   // Ticket work aggregates across repos under one key; non-ticket work is kept
   // distinct per project+branch so personal/main-branch time isn't merged.
   const key = ticket ?? `${project}:${b || '—'}`

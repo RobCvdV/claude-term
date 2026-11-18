@@ -43,7 +43,9 @@ import {
 import { readyToMerge, tooFarBehind } from '../../../shared/work-rules'
 import { e2eSummary } from '../../../shared/e2e'
 import { useAppSettings } from '../use-app-settings'
+import { useNow } from '../use-now'
 import { nameOf, statusFolders, type FolderChip } from '../../../shared/status-folders'
+import { currentModelAlias, EFFORT_CHOICES, MODEL_CHOICES, type Choice } from '../model-choices'
 
 interface Props {
   status: TabStatus | null
@@ -188,6 +190,60 @@ function FolderMenu({
               }}
             >
               {f.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** A status-bar chip that drops down a list of choices on click; picking one
+ *  closes the list and hands the value to `onPick`. */
+function ChoiceMenu({
+  className,
+  title,
+  chip,
+  choices,
+  current,
+  onPick
+}: {
+  className: string
+  title: string
+  chip: React.ReactNode
+  choices: Choice[]
+  current: string | null
+  onPick: (value: string) => void
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ left: 0, bottom: 0 })
+  const anchor = useRef<HTMLSpanElement>(null)
+  useDismiss(open, anchor, () => setOpen(false))
+
+  const toggle = (): void => {
+    if (open) return setOpen(false)
+    const r = anchor.current?.getBoundingClientRect()
+    if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top })
+    setOpen(true)
+  }
+
+  return (
+    <span ref={anchor} className="choice-menu">
+      <span className={`${className} choice-chip`} title={title} onClick={toggle}>
+        {chip}
+      </span>
+      {open && (
+        <div className="folder-dropdown" style={{ left: pos.left, bottom: pos.bottom }}>
+          {choices.map((c) => (
+            <button
+              key={c.value}
+              className={c.value === current ? 'choice-current' : undefined}
+              onClick={() => {
+                setOpen(false)
+                onPick(c.value)
+              }}
+            >
+              {c.label}
             </button>
           ))}
         </div>
@@ -736,11 +792,7 @@ function fmtElapsed(sinceMs: number, now: number): string {
 }
 
 export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Element {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
+  const now = useNow()
 
   const settings = useAppSettings()
   const payload = status?.payload
@@ -944,12 +996,38 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
             +{payload.cost.total_lines_added ?? 0}/−{payload.cost.total_lines_removed ?? 0}
           </span>
         )}
-      {payload?.model?.display_name && (
-        <span className="model">
-          {payload.model.display_name}
-          {payload.effort?.level ? ` (${payload.effort.level})` : ''}
-        </span>
-      )}
+      {payload?.model?.display_name &&
+        (tabId ? (
+          <span className="model">
+            <ChoiceMenu
+              className="model"
+              title="Switch model"
+              chip={payload.model.display_name}
+              choices={MODEL_CHOICES}
+              current={currentModelAlias(payload.model.id)}
+              onPick={(v) => window.claudeTerm.submitPrompt(tabId, `/model ${v}`, 0)}
+            />
+            {payload.effort?.level && (
+              <>
+                {' ('}
+                <ChoiceMenu
+                  className="model"
+                  title="Set effort level"
+                  chip={payload.effort.level}
+                  choices={EFFORT_CHOICES}
+                  current={payload.effort.level}
+                  onPick={(v) => window.claudeTerm.submitPrompt(tabId, `/effort ${v}`, 0)}
+                />
+                {')'}
+              </>
+            )}
+          </span>
+        ) : (
+          <span className="model">
+            {payload.model.display_name}
+            {payload.effort?.level ? ` (${payload.effort.level})` : ''}
+          </span>
+        ))}
       {usedPct != null && <span className={`ctx ${ctxClass}`}>{usedPct}%</span>}
       {showCost && <span className="dim">${payload!.cost!.total_cost_usd!.toFixed(2)}</span>}
       {rl5?.used_percentage != null && rl5.resets_at != null && (

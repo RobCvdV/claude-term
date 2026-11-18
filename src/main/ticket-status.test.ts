@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { branchTicket } from './ticket-status'
+import { branchTicket } from '../shared/jira-labels'
 
 describe('branchTicket', () => {
   it('takes the ticket key from a branch name', () => {

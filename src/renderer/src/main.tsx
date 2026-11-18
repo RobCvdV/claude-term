@@ -5,16 +5,19 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { DocsWindow } from './components/DocsWindow'
 import { MissionWindow } from './components/MissionWindow'
+import { BoardWindow } from './components/BoardWindow'
 
 // One renderer bundle serves every window: the main app, the detached file
-// viewer/editor (?docs=1) and Mission control (?mission=1). The main process
-// picks by query string when it loads index.html.
+// viewer/editor (?docs=1), Mission control (?mission=1) and the Work board
+// (?board=1). The main process picks by query string when it loads index.html.
 const params = new URLSearchParams(location.search)
 const window_ =
   params.get('docs') === '1' ? (
     <DocsWindow />
   ) : params.get('mission') === '1' ? (
     <MissionWindow />
+  ) : params.get('board') === '1' ? (
+    <BoardWindow />
   ) : (
     <App />
   )

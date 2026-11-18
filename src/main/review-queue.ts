@@ -8,6 +8,18 @@ import { loginShellEnv } from './shell-env'
 
 const POLL_MS = 5 * 60_000
 
+/** The Bitbucket repos the tabs have open, keyed `owner/repo`. */
+export function bitbucketReposOf(snapshots: readonly TabStatus[]): Map<string, RepoRef> {
+  const repos = new Map<string, RepoRef>()
+  for (const snap of snapshots) {
+    for (const git of [snap.git, ...snap.extraRepos.map((r) => r.git)]) {
+      const repo = git?.remoteUrl ? parseRemote(git.remoteUrl) : null
+      if (repo?.host === 'bitbucket') repos.set(`${repo.owner}/${repo.repo}`, repo)
+    }
+  }
+  return repos
+}
+
 /**
  * Open PRs waiting on my review: one Bitbucket request per repo the tabs have
  * open, one GitHub search in total. Polls every 5 minutes while enabled and a
@@ -55,13 +67,7 @@ export class ReviewQueue {
     if (!force && !this.isActive()) return
     this.sweeping = true
     try {
-      const repos = new Map<string, RepoRef>()
-      for (const snap of this.snapshots()) {
-        for (const git of [snap.git, ...snap.extraRepos.map((r) => r.git)]) {
-          const repo = git?.remoteUrl ? parseRemote(git.remoteUrl) : null
-          if (repo?.host === 'bitbucket') repos.set(`${repo.owner}/${repo.repo}`, repo)
-        }
-      }
+      const repos = bitbucketReposOf(this.snapshots())
       const found: ReviewItem[] = []
       let failed = false
       for (const [name, repo] of repos) {

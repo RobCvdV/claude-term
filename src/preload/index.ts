@@ -40,6 +40,7 @@ import type {
   MissionTab,
   MissionTabs,
   TabInfo,
+  WorkBoardState,
   TabStatus,
   VolumeOp,
   VolumeState,
@@ -255,6 +256,12 @@ export interface ClaudeTermApi {
   /** ⌘E: open the Mission control window, or close it */
   toggleMission(): void
   openMission(): void
+  /** open the Work board window, or close it */
+  toggleBoard(): void
+  boardState(): Promise<WorkBoardState>
+  /** sweep Jira / Bitbucket / GitHub now */
+  refreshBoard(): void
+  onBoardUpdate(cb: (state: WorkBoardState) => void): () => void
   /** every terminal window's tabs, for the Mission control window */
   missionTabs(): Promise<MissionTabs>
   onMissionTabs(cb: (tabs: MissionTabs) => void): () => void
@@ -418,6 +425,10 @@ const api: ClaudeTermApi = {
   activateGlobalTab: (tabId) => ipcRenderer.send('tabs:activateGlobal', tabId),
   toggleMission: () => ipcRenderer.send('mission:toggle'),
   openMission: () => ipcRenderer.send('mission:open'),
+  toggleBoard: () => ipcRenderer.send('board:toggle'),
+  boardState: () => ipcRenderer.invoke('board:state'),
+  refreshBoard: () => ipcRenderer.send('board:refresh'),
+  onBoardUpdate: (cb) => subscribe('board:update', cb),
   missionTabs: () => ipcRenderer.invoke('mission:tabs'),
   onMissionTabs: (cb) => subscribe('mission:tabs', cb),
   selectGlobalTab: (index) => ipcRenderer.send('tabs:selectGlobal', index),

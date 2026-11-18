@@ -124,3 +124,50 @@ export function forBranch(listing: BbListing, branch: string): { values: unknown
     )
   }
 }
+
+/** My open PRs across a whole workspace — one call instead of one per repo. */
+export function myWorkspacePrs(workspace: string, accountId: string): Promise<unknown> {
+  return bitbucketGet(
+    `/workspaces/${workspace}/pullrequests/${encodeURIComponent(accountId)}`,
+    new URLSearchParams({
+      state: 'OPEN',
+      pagelen: String(PAGE),
+      fields: [
+        'values.id',
+        'values.title',
+        'values.draft',
+        'values.comment_count',
+        'values.updated_on',
+        'values.links.html.href',
+        'values.participants.approved',
+        'values.participants.state',
+        'values.source.branch.name',
+        'values.source.commit.hash',
+        'values.destination.repository.full_name'
+      ].join(',')
+    })
+  )
+}
+
+/** Build statuses reported on a commit (Jenkins, CircleCI, Pipelines). */
+export function commitStatuses(fullRepo: string, hash: string): Promise<unknown> {
+  return bitbucketGet(
+    `/repositories/${fullRepo}/commit/${hash}/statuses`,
+    new URLSearchParams({
+      pagelen: '20',
+      sort: '-updated_on',
+      fields: 'values.state,values.name,values.url'
+    })
+  )
+}
+
+/** A few recently active repos of a workspace, to find my account id in. */
+export async function recentWorkspaceRepos(workspace: string): Promise<RepoRef[]> {
+  const body = (await bitbucketGet(
+    `/repositories/${workspace}`,
+    new URLSearchParams({ sort: '-updated_on', pagelen: '5', fields: 'values.slug' })
+  )) as { values?: { slug?: string }[] }
+  return (body.values ?? [])
+    .filter((v) => v.slug)
+    .map((v) => ({ host: 'bitbucket', owner: workspace, repo: v.slug! }))
+}

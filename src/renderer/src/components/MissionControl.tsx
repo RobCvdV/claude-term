@@ -11,20 +11,21 @@ import type {
 } from '../../../shared/types'
 import { nameOf } from '../../../shared/status-folders'
 import { isTrunkBranch } from '../../../shared/repo-links'
-import { ticketUrl } from '../../../shared/jira-labels'
 import {
-  ciLabel,
-  ciTone,
+  activityLabel,
+  CI_NAMES,
+  dotFor,
   e2eDot,
   e2eRunLabel,
   e2eTone,
-  prReviewLabel,
-  prTone,
-  ticketTone
+  moveTo,
+  reviewVerdict
 } from '../work-status'
 import { e2eSummary } from '../../../shared/e2e'
 import { readyToMerge, ticketDrift, ticketStage, tooFarBehind } from '../../../shared/work-rules'
 import { useAppSettings } from '../use-app-settings'
+import { ActionChip, CiChip, LinkChip, PrChip, TicketPill } from './mission-parts'
+import { useNow } from '../use-now'
 
 interface Props {
   tabs: TabInfo[]
@@ -33,104 +34,6 @@ interface Props {
   activeId: TabId | null
   onSelectTab: (tabId: TabId) => void
 }
-
-function dotFor(status: TabStatus | null | undefined): string {
-  if (status?.activity === 'exited') return 'dot exited'
-  if (!status?.claudeActive) return 'dot terminal'
-  const map: Partial<Record<ActivityState, string>> = {
-    busy: 'dot busy',
-    'needs-attention': 'dot attention',
-    idle: 'dot idle'
-  }
-  return map[status.activity] ?? 'dot idle'
-}
-
-function activityLabel(status: TabStatus | null, now: number): string {
-  if (!status?.claudeActive) return status?.activity === 'exited' ? 'exited' : 'terminal'
-  if (status.activity === 'busy') {
-    if (!status.busySince) return 'working'
-    const secs = Math.max(0, Math.floor((now - status.busySince) / 1000))
-    const m = Math.floor(secs / 60)
-    return m > 0 ? `working ${m}m${String(secs % 60).padStart(2, '0')}s` : `working ${secs}s`
-  }
-  if (status.activity === 'needs-attention') return 'needs input'
-  return status.activity
-}
-
-const CI_NAMES: Record<CiInfo['provider'], string> = {
-  jenkins: 'Jenkins',
-  circleci: 'CircleCI',
-  actions: 'Actions'
-}
-
-/** A chip inside a card that opens its link instead of selecting the card. */
-function LinkChip({
-  url,
-  className,
-  title,
-  children
-}: {
-  url: string
-  className: string
-  title?: string
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <span
-      role="link"
-      className={`mission-chip ${className}`}
-      title={title}
-      onClick={(e) => {
-        e.stopPropagation()
-        window.open(url)
-      }}
-    >
-      {children}
-    </span>
-  )
-}
-
-/** A small action inside a card: runs without selecting the card. */
-function ActionChip({
-  label,
-  title,
-  run
-}: {
-  label: string
-  title: string
-  run: () => Promise<{ ok: boolean; error?: string }>
-}): React.JSX.Element {
-  const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle')
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <span
-      role="button"
-      className={`mission-action ${phase === 'done' ? 'tone-green' : phase === 'failed' ? 'tone-red' : ''}`}
-      title={error ?? title}
-      onClick={(e) => {
-        e.stopPropagation()
-        if (phase === 'busy' || phase === 'done') return
-        setPhase('busy')
-        void run().then((r) => {
-          // ok=false without an error is a cancelled confirmation
-          setPhase(r.ok ? 'done' : r.error ? 'failed' : 'idle')
-          setError(r.error ?? null)
-        })
-      }}
-    >
-      {phase === 'busy'
-        ? '…'
-        : phase === 'done'
-          ? '✓ moved'
-          : phase === 'failed'
-            ? `${label} failed`
-            : label}
-    </span>
-  )
-}
-
-const moveTo = (key: string, stage: 'review' | 'deploy') => () =>
-  window.claudeTerm.jiraMove(key, stage)
 
 /** One repo's line: branch (Jira status), PR review, CI, local git counts,
  *  and what to do next — ready to merge, too far behind, a lagging ticket. */
@@ -158,15 +61,7 @@ function RepoWork({
       <div className="mission-row mission-branch-row">
         {label && <span className="mission-repo">{label}</span>}
         <span className="mission-branch">{git.branch}</span>
-        {ticket && (
-          <LinkChip
-            url={ticketUrl(ticket.key)}
-            className={`mission-pill ${ticketTone(ticket)}`}
-            title={`${ticket.key}: ${ticket.summary}${ticket.assignee ? ` — ${ticket.assignee}` : ''}`}
-          >
-            {ticket.status}
-          </LinkChip>
-        )}
+        {ticket && <TicketPill ticket={ticket} />}
       </div>
       {(ticket?.summary || pr?.title) && (
         <div className="mission-topic">{ticket?.summary || pr?.title}</div>
@@ -181,10 +76,7 @@ function RepoWork({
             <span className="mission-chip mission-ready">✓ ready to merge</span>
           ))}
         {pr ? (
-          <LinkChip url={pr.url} className={prTone(pr)} title={pr.title}>
-            ● PR #{pr.number} {prReviewLabel(pr)}
-            {pr.comments ? <span className="dim"> · {pr.comments} 💬</span> : null}
-          </LinkChip>
+          <PrChip pr={pr} />
         ) : git.mergedPr ? (
           <LinkChip url={git.mergedPr.url} className="tone-blue">
             PR #{git.mergedPr.number} merged
@@ -194,19 +86,11 @@ function RepoWork({
           !isTrunkBranch(git.branch) && <span className="mission-chip tone-dim">no PR</span>
         )}
         {ci && (
-          <LinkChip
-            url={ci.url}
-            className={ciTone(ci)}
+          <CiChip
+            ci={ci}
+            name={CI_NAMES[ci.provider]}
             title={`${CI_NAMES[ci.provider]}${ci.detail ? ` ${ci.detail}` : ''}`}
-          >
-            <span className={ci.state === 'running' ? 'ci-running' : undefined}>●</span>{' '}
-            {CI_NAMES[ci.provider]} {ciLabel(ci)}
-            {ci.state === 'running' && ci.progress != null && (
-              <span className="mission-bar">
-                <span style={{ width: `${ci.progress}%` }} />
-              </span>
-            )}
-          </LinkChip>
+          />
         )}
         {(git.changed > 0 || git.unpushed > 0 || git.behind > 0) && (
           <span
@@ -334,12 +218,7 @@ export function MissionControl({
   activeId,
   onSelectTab
 }: Props): React.JSX.Element {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-
+  const now = useNow()
   const settings = useAppSettings()
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   useEffect(() => {
@@ -390,6 +269,13 @@ export function MissionControl({
             ))}
             {todo > 0 && <span className="tone-magenta">{todo} to review</span>}
           </span>
+          <button
+            className="range-btn mission-board-link"
+            title="Open work across Jira, Bitbucket and GitHub"
+            onClick={() => window.claudeTerm.toggleBoard()}
+          >
+            Work board
+          </button>
         </div>
         {waiting.length > 0 && (
           <div className="mission-reviews">
@@ -405,21 +291,7 @@ export function MissionControl({
                 <span className="pr-number">#{r.number}</span>
                 <span className="mission-review-title">{r.title}</span>
                 {r.author && <span className="dim">{r.author}</span>}
-                <span
-                  className={
-                    r.myVerdict === 'approved'
-                      ? 'tone-green'
-                      : r.myVerdict === 'changes'
-                        ? 'tone-orange'
-                        : 'tone-magenta'
-                  }
-                >
-                  {r.myVerdict === 'approved'
-                    ? 'you approved'
-                    : r.myVerdict === 'changes'
-                      ? 'you asked for changes'
-                      : 'to review'}
-                </span>
+                <span className={reviewVerdict(r).tone}>{reviewVerdict(r).label}</span>
               </button>
             ))}
           </div>

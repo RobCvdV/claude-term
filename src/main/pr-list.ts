@@ -49,7 +49,7 @@ export async function listOpenPrs(cwd: string, repo: RepoRef): Promise<PrInfo[]>
   return fetching
 }
 
-function gh(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+export function gh(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('gh', args, { cwd, env, timeout: 15_000, encoding: 'utf8' }, (err, stdout, stderr) =>
       err ? reject(new Error(stderr || err.message)) : resolve(stdout)

@@ -24,6 +24,8 @@ integrations are tuned for MendriX work (MTX tickets).
 - **Live status bar** — activity, branch and ticket, PR review, CI, context use and rate limits.
 - **Mission control** (`⌘E`) — every tab and repo at a glance, with what needs you, in a window
   you can keep open beside your terminals.
+- **Work board** — your open Jira tickets, PRs, reviews and issues with their builds, in lanes by
+  whose move it is, per context (MendriX / Personal).
 - **Focus follows the conversation** — dialogs take the keyboard, finished turns hand it back.
 - **Undo a turn** — every prompt snapshots the repo; revert exactly what a turn wrote.
 - **File window** — plans, docs, config and the project tree, with Finder-style keys and a
@@ -103,7 +105,8 @@ Left to right:
 - **Git** — branch (linked to the repo; the MTX ticket linked to Jira), a dot for the ticket's
   Jira status (opt-in in Settings), and changed / ahead / behind counts. Click `~N` to
   [undo a turn](#undo-a-turn).
-- **Model** and reasoning effort.
+- **Model** and reasoning effort — click either for a dropdown to switch (sent as `/model` /
+  `/effort`).
 - **Context** use — orange from 60%, red from 78%.
 - **Rate limits** — 5-hour and 7-day windows with time to reset. Hover for a burn forecast;
   they turn orange early when the current pace runs out before the reset.
@@ -143,6 +146,18 @@ behind counts — plus your last prompt and a summary of Claude's latest reply.
 - **⚠** flags a ticket lagging its branch, with a one-click move where the next stage is obvious.
   Every move asks first.
 - **Waiting on your review** lists other people's open PRs that name you.
+
+### Work board
+
+Opened from Mission control's header or the ⌘K palette (no key of its own). It lists your open
+work across Jira (assigned to you, minus Deploy / Beta / Done), Bitbucket (`mendrix`,
+`mendrixmobile`) and GitHub, with each PR's build. A ticket's PRs join its card by branch name,
+and a card with an open session shows it — click to go there.
+
+- Tabs per context, lanes **Needs you / In progress / Waiting / To do**, and toggles to hide lanes
+  or item kinds; the choice is remembered.
+- `/` focuses the filter (every word must match key, title, repo or status), `Esc` clears it.
+- Contexts live in `workContexts` in the app's `app-settings.json`.
 
 ### Focus follows the conversation
 
