@@ -87,6 +87,13 @@ export function createTerm(tabId: TabId, size?: { cols: number; rows: number }):
     scrollback: 10_000,
     allowProposedApi: true,
     macOptionIsMeta: true,
+    // OSC 8 hyperlinks: xterm's default confirm()s and then window.open()s a
+    // blank page, which the window-open handler denies — so open them ourselves
+    linkHandler: {
+      activate: (event, uri) => {
+        if (event.metaKey || event.ctrlKey) void window.claudeTerm.openExternal(uri)
+      }
+    },
     theme: {
       background: '#1a1b1e',
       foreground: '#d4d4d8',

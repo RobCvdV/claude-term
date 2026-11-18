@@ -94,7 +94,8 @@ import {
 import { insideAny, listTree } from './file-tree'
 import { findFiles } from './file-find'
 import { searchContents } from './content-search'
-import { MissionWindow } from './mission-window'
+import { PanelWindow } from './panel-window'
+import { WINDOW_KIND } from '../shared/window-titles'
 import { resolveFileLink } from './file-link'
 import { fileAtHead } from './git-diff'
 import { gitMarks } from './git-marks'
@@ -169,7 +170,11 @@ export interface AppServices {
   pairing: Pairing
   hub: CompanionHub
   screens: ScreenRequests
-  mission: MissionWindow
+  mission: PanelWindow
+  /** the Work board: open work across Jira, Bitbucket and GitHub */
+  board: PanelWindow
+  /** send to every app-wide panel (Mission control, Work board) */
+  sendPanels: (channel: string, ...args: unknown[]) => void
   /** Drop the wake lock — called on the way out. */
   releaseSleepBlocker: () => void
 }
@@ -381,10 +386,20 @@ export function createServices(windows: TerminalWindows): AppServices {
     () => appSettings().behindThreshold,
     recentlyMovedByUs
   )
-  const mission = new MissionWindow(
+  const mission = new PanelWindow(
+    { title: WINDOW_KIND.mission, query: '?mission=1' },
     () => join(app.getPath('userData'), 'mission-window.json'),
     () => windows.quitting
   )
+  const board = new PanelWindow(
+    { title: WINDOW_KIND.board, query: '?board=1' },
+    () => join(app.getPath('userData'), 'board-window.json'),
+    () => windows.quitting
+  )
+  const sendPanels = (channel: string, ...args: unknown[]): void => {
+    mission.send(channel, ...args)
+    board.send(channel, ...args)
+  }
 
   status.onUpdate = (tabStatus) => {
     // A statusline arrived → the tab has a real session rendering, so a
@@ -395,7 +410,7 @@ export function createServices(windows: TerminalWindows): AppServices {
       rate.record(tabStatus.payload)
     }
     windows.sendForTab(tabStatus.tabId, 'status:update', tabStatus)
-    mission.send('status:update', tabStatus)
+    sendPanels('status:update', tabStatus)
     hub.publishStatus(tabStatus)
     work.observe(tabStatus)
     updateSleepBlocker()
@@ -440,6 +455,8 @@ export function createServices(windows: TerminalWindows): AppServices {
   return {
     desktop,
     mission,
+    board,
+    sendPanels,
     ptys,
     status,
     rate,
@@ -914,6 +931,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   )
   ipcMain.on('mission:toggle', () => services.mission.toggle())
   ipcMain.on('mission:open', () => services.mission.open())
+  ipcMain.on('board:toggle', () => services.board.toggle())
   ipcMain.handle('mission:tabs', (): MissionTabs => windows.missionTabs())
   ipcMain.on('tabs:activateGlobal', (_e, tabId: TabId) => windows.activate(tabId))
   ipcMain.on('tabs:selectGlobal', (_e, index: number) => windows.selectGlobal(index))

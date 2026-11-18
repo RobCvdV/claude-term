@@ -17,6 +17,7 @@ import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
 import { setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
+import { WorkBoard } from './work-board'
 import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
 import { bringForward, inBackground, keepBackgroundRendering, showWindow } from './background-mode'
@@ -93,7 +94,8 @@ const reviews = new ReviewQueue(
   () => appSettings().reviewQueue,
   (items, added) => {
     windows.broadcast('reviews:update', items)
-    services.mission.send('reviews:update', items)
+    services.sendPanels('reviews:update', items)
+    board.rejoin()
     for (const pr of added) {
       services.desktop.notify({
         kind: 'reviewRequested',
@@ -105,6 +107,15 @@ const reviews = new ReviewQueue(
     }
   }
 )
+
+// my open work across Jira, Bitbucket and GitHub, for the Work board
+const board = new WorkBoard({
+  contexts: () => appSettings().workContexts,
+  reviews: () => reviews.list(),
+  snapshots: () => services.status.allSnapshots(),
+  isOpen: () => services.board.isOpen(),
+  onChange: (state) => services.board.send('board:update', state)
+})
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
 // unless the env var is set, so normal runs are unaffected. Must be set before
@@ -194,15 +205,24 @@ app.whenReady().then(async () => {
     allClosed: () => {
       closeAllDocsWindows()
       services.mission.closeForQuit()
+      services.board.closeForQuit()
     }
   }
-  windows.onTabsChanged = () => services.mission.send('mission:tabs', windows.missionTabs())
+  windows.onTabsChanged = () => services.sendPanels('mission:tabs', windows.missionTabs())
   onAppSettings((s) => {
     windows.broadcast('app:settingsChanged', s)
-    services.mission.send('app:settingsChanged', s)
+    services.sendPanels('app:settingsChanged', s)
   })
   ipcMain.handle('update:pending', () => pendingUpdate())
   ipcMain.handle('reviews:list', () => reviews.list())
+  ipcMain.handle('board:state', () => board.get())
+  ipcMain.on('board:refresh', () => board.refresh())
+  let contexts = JSON.stringify(appSettings().workContexts)
+  onAppSettings((s) => {
+    if (JSON.stringify(s.workContexts) === contexts) return
+    contexts = JSON.stringify(s.workContexts)
+    board.refresh()
+  })
   let reviewsOn = appSettings().reviewQueue
   onAppSettings((s) => {
     if (s.reviewQueue !== reviewsOn) reviews.refresh()
@@ -210,9 +230,11 @@ app.whenReady().then(async () => {
   })
   openStartupWindows(ipc.loadSession())
   services.mission.restore()
+  services.board.restore()
   ciPoller.start()
   e2ePoller.start()
   reviews.start()
+  board.start()
 
   // Background auto-update: check on launch + daily, download silently, and let
   // the user install on their say-so (renderer pill → 'update:install'). The

@@ -10,7 +10,9 @@ export const WINDOW_KIND = {
   /** the detached viewer/editor (docs, settings, the file tree) */
   files: 'File editor',
   /** every tab at a glance, in a window of its own */
-  mission: 'Mission control'
+  mission: 'Mission control',
+  /** open work across Jira, Bitbucket and GitHub */
+  board: 'Work board'
 } as const
 
 /** `Kind — part — part`, dropping the parts that are empty. */

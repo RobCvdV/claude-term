@@ -1,4 +1,5 @@
 import type { TicketStatus } from '../shared/types'
+import { branchTicket } from '../shared/jira-labels'
 
 /** Jira status of a branch's ticket, cache-only like the PR lookup: a stale
  *  entry refreshes in the background and the next git poll shows the result. */
@@ -6,12 +7,6 @@ import type { TicketStatus } from '../shared/types'
 const TTL_MS = 180_000
 /** not connected / offline: ask rarely */
 const TTL_ERROR_MS = 120_000
-
-const TICKET_RE = /^(?:[^/]*\/)?([A-Z][A-Z0-9]+-\d+)(?:-.*)?$/
-
-export function branchTicket(branch: string): string | null {
-  return TICKET_RE.exec(branch)?.[1] ?? null
-}
 
 type Fetcher = (key: string) => Promise<TicketStatus | null>
 

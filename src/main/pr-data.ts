@@ -81,13 +81,31 @@ interface GhBranchPr {
   comments?: unknown[]
 }
 
-/** `gh pr list --head <branch> --json url,number,title,isDraft,reviewDecision,latestReviews,comments`.
- *  reviewDecision is empty on repos without required reviews — then the
- *  latest review per reviewer decides. */
+/** `gh pr list --head <branch> --json url,number,title,isDraft,reviewDecision,latestReviews,comments`. */
 export function githubBranchPr(json: string): BranchPr | null {
   const row = (JSON.parse(json) as GhBranchPr[])[0]
-  if (!row?.url || row.number == null) return null
-  const states = (row.latestReviews ?? []).map((r) => r.state)
+  if (!row) return null
+  return githubPr({
+    ...row,
+    reviewStates: (row.latestReviews ?? []).map((r) => r.state),
+    comments: row.comments?.length ?? null
+  })
+}
+
+/** A GitHub PR's review state, from either the CLI or the GraphQL shape.
+ *  reviewDecision is empty on repos without required reviews — then the
+ *  latest review per reviewer decides. */
+export function githubPr(row: {
+  url?: string
+  number?: number
+  title?: string
+  isDraft?: boolean
+  reviewDecision?: string | null
+  reviewStates: (string | undefined)[]
+  comments: number | null
+}): BranchPr | null {
+  if (!row.url || row.number == null) return null
+  const states = row.reviewStates
   const approvals = states.filter((s) => s === 'APPROVED').length
   let review: PrReview = 'pending'
   if (row.reviewDecision === 'APPROVED') review = 'approved'
@@ -103,7 +121,7 @@ export function githubBranchPr(json: string): BranchPr | null {
     review,
     approvals,
     draft: !!row.isDraft,
-    comments: row.comments?.length ?? null
+    comments: row.comments
   }
 }
 

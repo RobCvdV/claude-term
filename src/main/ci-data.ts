@@ -1,4 +1,4 @@
-import type { CiState } from '../shared/types'
+import type { BoardCi, CiState } from '../shared/types'
 
 /** Map raw CI provider responses to a CiState. Pure, no I/O. */
 
@@ -75,3 +75,32 @@ export function jobProgress(
 const CIRCLE_PENDING = new Set(['running', 'queued', 'not_running', 'blocked', 'on_hold'])
 export const circleJobDone = (s: string | undefined): boolean => !!s && !CIRCLE_PENDING.has(s)
 export const actionsJobDone = (s: string | undefined): boolean => s === 'completed'
+
+/** Bitbucket commit statuses (Jenkins, CircleCI, Pipelines all report here):
+ *  any failure wins, then anything still running, then all passed. */
+export function bitbucketStatusesCi(body: unknown): BoardCi | null {
+  const rows = (
+    (body as { values?: { state?: string; name?: string; url?: string }[] }).values ?? []
+  ).filter((r) => r.state && r.url)
+  if (!rows.length) return null
+  const pick = (state: string): (typeof rows)[number] | undefined =>
+    rows.find((r) => r.state === state)
+  const failed = pick('FAILED') ?? pick('STOPPED')
+  const running = pick('INPROGRESS')
+  const row = failed ?? running ?? rows[0]
+  const state: CiState = failed ? 'failed' : running ? 'running' : 'success'
+  return { state, url: row.url!, name: row.name || 'build' }
+}
+
+/** GitHub's statusCheckRollup state for a PR's head commit. */
+export function githubRollupCi(state: string | null | undefined, prUrl: string): BoardCi | null {
+  if (!state) return null
+  const map: Record<string, CiState> = {
+    SUCCESS: 'success',
+    FAILURE: 'failed',
+    ERROR: 'failed',
+    PENDING: 'running',
+    EXPECTED: 'running'
+  }
+  return { state: map[state] ?? 'unknown', url: `${prUrl}/checks`, name: 'checks' }
+}

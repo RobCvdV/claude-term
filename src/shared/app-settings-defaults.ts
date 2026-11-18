@@ -23,7 +23,18 @@ export const SETTINGS_DEFAULTS: AppSettings = {
     readyToMerge: true,
     reviewRequested: true,
     needsInput: false
-  }
+  },
+  workContexts: [
+    {
+      id: 'mendrix',
+      name: 'MendriX',
+      jira: { excludeStatuses: ['Deploy', 'Beta', 'Done'] },
+      bitbucketWorkspaces: ['mendrix', 'mendrixmobile'],
+      github: false
+    },
+    { id: 'personal', name: 'Personal', jira: null, bitbucketWorkspaces: [], github: true }
+  ],
+  board: { context: 'all', hiddenLanes: [], hiddenKinds: [] }
 }
 
 /** Apply a patch; `notify` merges per key so one switch never resets the rest. */

@@ -1,4 +1,14 @@
-import type { BranchPr, CiInfo, E2eRun, E2eState, GitInfo, TicketStatus } from '../../shared/types'
+import type {
+  ActivityState,
+  BranchPr,
+  CiInfo,
+  E2eRun,
+  E2eState,
+  GitInfo,
+  ReviewItem,
+  TabStatus,
+  TicketStatus
+} from '../../shared/types'
 import { ticketStage, type TicketStage } from '../../shared/work-rules'
 
 /** Labels and colour classes for PR review, CI and Jira status — shared by the
@@ -33,13 +43,13 @@ export function branchPrLabel(git: GitInfo): string {
   return git.mergedPr ? `#${git.mergedPr.number} merged` : 'no PR for this branch'
 }
 
-export function ciLabel(ci: CiInfo): string {
+export function ciLabel(ci: Pick<CiInfo, 'state' | 'progress'>): string {
   if (ci.state === 'running') return ci.progress != null ? `running ${ci.progress}%` : 'running'
   if (ci.state === 'held') return 'on hold'
   return ci.state === 'success' ? 'passed' : ci.state
 }
 
-export function ciTone(ci: CiInfo): string {
+export function ciTone(ci: Pick<CiInfo, 'state'>): string {
   return ci.state === 'success'
     ? 'tone-green'
     : ci.state === 'failed'
@@ -98,4 +108,45 @@ const STAGE_TONES: Record<TicketStage, string> = {
 
 export function ticketTone(t: TicketStatus): string {
   return STAGE_TONES[ticketStage(t)]
+}
+
+export function dotFor(status: TabStatus | null | undefined): string {
+  if (status?.activity === 'exited') return 'dot exited'
+  if (!status?.claudeActive) return 'dot terminal'
+  const map: Partial<Record<ActivityState, string>> = {
+    busy: 'dot busy',
+    'needs-attention': 'dot attention',
+    idle: 'dot idle'
+  }
+  return map[status.activity] ?? 'dot idle'
+}
+
+export function activityLabel(status: TabStatus | null, now: number): string {
+  if (!status?.claudeActive) return status?.activity === 'exited' ? 'exited' : 'terminal'
+  if (status.activity === 'busy') {
+    if (!status.busySince) return 'working'
+    const secs = Math.max(0, Math.floor((now - status.busySince) / 1000))
+    const m = Math.floor(secs / 60)
+    return m > 0 ? `working ${m}m${String(secs % 60).padStart(2, '0')}s` : `working ${secs}s`
+  }
+  if (status.activity === 'needs-attention') return 'needs input'
+  return status.activity
+}
+
+export const CI_NAMES: Record<CiInfo['provider'], string> = {
+  jenkins: 'Jenkins',
+  circleci: 'CircleCI',
+  actions: 'Actions'
+}
+
+/** A chip inside a card that opens its link instead of selecting the card. */
+
+export const moveTo = (key: string, stage: 'review' | 'deploy') => () =>
+  window.claudeTerm.jiraMove(key, stage)
+
+/** What I already said on a PR I was asked to review. */
+export function reviewVerdict(r: ReviewItem): { label: string; tone: string } {
+  if (r.myVerdict === 'approved') return { label: 'you approved', tone: 'tone-green' }
+  if (r.myVerdict === 'changes') return { label: 'you asked for changes', tone: 'tone-orange' }
+  return { label: 'to review', tone: 'tone-magenta' }
 }

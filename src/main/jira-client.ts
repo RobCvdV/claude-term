@@ -320,6 +320,22 @@ export async function fetchTodos(labels: string[]): Promise<{ todos: JiraTodo[];
   }
 }
 
+/** My open issues (any project, not Done), for the Work board — raw `/search/jql` body. */
+export async function fetchMyIssues(): Promise<unknown> {
+  const creds = readCreds()
+  if (!creds) throw new Error(NOT_CONNECTED)
+  const res = await jiraFetch(creds, '/rest/api/3/search/jql', {
+    method: 'POST',
+    body: {
+      jql: 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
+      fields: ['summary', 'status', 'assignee', 'issuetype', 'updated'],
+      maxResults: 100
+    }
+  })
+  if (!res.ok) throw new Error(await errorText(res))
+  return res.json()
+}
+
 /** Status of one ticket for the status bar; null when Jira doesn't know it. */
 export async function fetchTicketStatus(key: string): Promise<TicketStatus | null> {
   const creds = readCreds()

@@ -38,9 +38,7 @@ describe('work-status', () => {
   })
 
   it('labels running CI with progress', () => {
-    expect(ciLabel({ provider: 'jenkins', state: 'running', url: '', progress: 45 })).toBe(
-      'running 45%'
-    )
-    expect(ciLabel({ provider: 'jenkins', state: 'success', url: '' })).toBe('passed')
+    expect(ciLabel({ state: 'running', progress: 45 })).toBe('running 45%')
+    expect(ciLabel({ state: 'success' })).toBe('passed')
   })
 })

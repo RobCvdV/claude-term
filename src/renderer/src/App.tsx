@@ -843,6 +843,7 @@ export default function App(): React.JSX.Element {
       shortcut: '⌘E',
       run: () => window.claudeTerm.openMission()
     },
+    { id: 'board', label: 'Work board', run: () => window.claudeTerm.toggleBoard() },
     { id: 'settings', label: 'Settings', shortcut: '⌘,', run: () => setShowSettings(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
     { id: 'companion', label: 'Phones — pair or revoke…', run: () => setShowCompanion(true) },

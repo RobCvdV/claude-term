@@ -280,6 +280,16 @@ function Guide(): React.JSX.Element {
         </p>
       </section>
       <section>
+        <h3>Work board</h3>
+        <p>
+          Opened from Mission control&apos;s header or the ⌘K palette (no key of its own): your open
+          Jira tickets, PRs, reviews and GitHub issues with their builds, in lanes by whose move it
+          is, with a tab per context (MendriX, Personal). Lane and kind toggles are remembered;{' '}
+          <b>/</b> focuses the filter and <b>Esc</b> clears it. A card with an open session shows it
+          — click to go there.
+        </p>
+      </section>
+      <section>
         <h3>Settings &amp; notifications</h3>
         <p>
           <b>⌘,</b> (also <b>claude-term → Settings…</b>) holds the app&apos;s switches. Changes
@@ -302,17 +312,19 @@ function Guide(): React.JSX.Element {
           Left to right: activity dot (busy timer, needs-input, idle), the tab&apos;s folder plus
           every other folder the session works in, git branch (ticket linked to Jira, branch to the
           repo) with a dot for the ticket&apos;s Jira status (hover it for the name; switch it on in
-          Settings) and changed/ahead/behind counts, the model and its reasoning effort, context
-          usage (orange from 60%, red from 78%), and the 5-hour / 7-day rate-limit windows with
-          time-to-reset — hover them for a burn forecast, and they turn orange early when the
-          current pace hits 100% before the reset. On the right: plan / roadmap / docs / settings
-          editor windows for the project, CI links (Jenkins for TMS repos, CircleCI, GitHub Actions)
-          with a live build-state dot (and progress while building), <b>E2E</b> — the branch&apos;s
-          AWS Device Farm test groups as one dot, progress and done-count, with each group in its
-          dropdown (needs <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> in
-          your shell; projects are matched by repo name, any checkout), the Jira to-do and open-PRs
-          dropdowns (they open on a right-click, never on hover), Releases (GitHub) or Downloads (a
-          Bitbucket repo with files there), notification volume, and the clock.
+          Settings) and changed/ahead/behind counts, the model and its reasoning effort (click
+          either to pick another — they are separate dropdowns, sent as <code>/model</code> /{' '}
+          <code>/effort</code>), context usage (orange from 60%, red from 78%), and the 5-hour /
+          7-day rate-limit windows with time-to-reset — hover them for a burn forecast, and they
+          turn orange early when the current pace hits 100% before the reset. On the right: plan /
+          roadmap / docs / settings editor windows for the project, CI links (Jenkins for TMS repos,
+          CircleCI, GitHub Actions) with a live build-state dot (and progress while building),{' '}
+          <b>E2E</b> — the branch&apos;s AWS Device Farm test groups as one dot, progress and
+          done-count, with each group in its dropdown (needs <code>AWS_ACCESS_KEY_ID</code> and{' '}
+          <code>AWS_SECRET_ACCESS_KEY</code> in your shell; projects are matched by repo name, any
+          checkout), the Jira to-do and open-PRs dropdowns (they open on a right-click, never on
+          hover), Releases (GitHub) or Downloads (a Bitbucket repo with files there), notification
+          volume, and the clock.
         </p>
       </section>
       <section>

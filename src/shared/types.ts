@@ -787,6 +787,8 @@ export interface AppSettings {
    *  token from the keychain, which can prompt endlessly on some macOS setups */
   jiraTicketStatus: boolean
   notify: NotifySettings
+  workContexts: WorkContext[]
+  board: BoardView
 }
 
 /** Which services the app can reach — tokens come from the login shell, Jira's
@@ -811,6 +813,68 @@ export interface ReviewItem {
   author: string
   /** what I already said on it, if anything */
   myVerdict: 'approved' | 'changes' | null
+}
+
+/** A Work board column, from what the item waits on. */
+export type BoardLane = 'needs-you' | 'in-progress' | 'waiting' | 'todo'
+export type BoardKind = 'ticket' | 'pr' | 'issue' | 'review'
+
+/** A PR's combined pipeline state, for a Work board card. */
+export interface BoardCi {
+  state: CiState
+  url: string
+  /** what ran, e.g. "BugfixBuild #9" */
+  name: string
+}
+
+/** One of my open PRs, on any host. */
+export interface BoardPr extends BranchPr {
+  /** owner/repo */
+  repo: string
+  branch: string
+  ci: BoardCi | null
+}
+
+/** One card on the Work board: a ticket with its PRs, or a PR, issue or review on its own. */
+export interface WorkItem {
+  id: string
+  /** WorkContext id */
+  context: string
+  kind: BoardKind
+  title: string
+  url: string
+  ticket: (TicketStatus & { type: string }) | null
+  prs: BoardPr[]
+  review: ReviewItem | null
+  /** epoch ms of the newest change */
+  updated: number
+}
+
+export interface WorkBoardState {
+  items: WorkItem[]
+  /** sources that failed on the last sweep */
+  errors: string[]
+  sweptAt: number | null
+  sweeping: boolean
+}
+
+/** A group of work sources, one Work board tab — e.g. the job vs personal projects. */
+export interface WorkContext {
+  id: string
+  name: string
+  /** Jira issues assigned to me, minus statuses starting with one of these */
+  jira: { excludeStatuses: string[] } | null
+  bitbucketWorkspaces: string[]
+  /** GitHub PRs and issues of the gh CLI's login */
+  github: boolean
+}
+
+/** What the Work board shows; remembered across launches. */
+export interface BoardView {
+  /** WorkContext id, or 'all' */
+  context: string
+  hiddenLanes: BoardLane[]
+  hiddenKinds: BoardKind[]
 }
 
 /** "Complete with Claude" in a file window: the text around the cursor. */
