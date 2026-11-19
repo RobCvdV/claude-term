@@ -156,12 +156,14 @@ export function reviewVerdict(r: ReviewItem): { label: string; tone: string } {
 export function startChip(item: WorkItem): { label: string; title: string } {
   const plan = item.plan
   const folder = (root: string): string => root.split('/').pop() ?? root
-  const right = ' (right-click: every clone, or a new worktree)'
+  const right = ' — s (right-click or S: every clone, or a new worktree)'
   if (!plan) return { label: '▶ session', title: `Start or resume a Claude session${right}` }
-  if (plan.kind === 'goto') return { label: '→ tab', title: 'Go to the tab already on this branch' }
+  if (plan.kind === 'goto') {
+    return { label: '→ tab', title: 'Go to the tab already on this branch — s' }
+  }
   if (plan.kind === 'choose') {
     const why = plan.why ? `The usual clone is busy: ${plan.why}. ` : ''
-    return { label: '▶ choose…', title: `${why}Pick a clone or a new worktree` }
+    return { label: '▶ choose…', title: `${why}Pick a clone or a new worktree — s` }
   }
   const tab = plan.takeover ? ' · idle tab' : ''
   const where = `${folder(plan.root)}${plan.takeover ? ', in its idle tab' : ', in a new tab'}`

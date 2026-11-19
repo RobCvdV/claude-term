@@ -2873,6 +2873,12 @@ body.rail-resizing {
   display: contents;
 }
 
+/* the card the board's keys act on */
+.board-card.board-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 /* long repo names and build labels shorten instead of widening the lane */
 .board-card .mission-chip {
   max-width: 100%;

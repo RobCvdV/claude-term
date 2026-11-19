@@ -125,6 +125,16 @@ function HowTo(): React.JSX.Element {
         <Keys k="⌥⌘L">Select the open file in the tree</Keys>
       </section>
       <section>
+        <h3>Work board</h3>
+        <Keys k="↑ ↓ ← →">Pick a card (j k h l too) — Esc lets go</Keys>
+        <Keys k="↵">Go to its tab, or open it</Keys>
+        <Keys k="s">▶ session — ⇧S picks the clone, or a new worktree</Keys>
+        <Keys k="m">Merge its approved, green PR</Keys>
+        <Keys k="t">Move its ticket to where its PRs say</Keys>
+        <Keys k="o">Open it in the browser</Keys>
+        <Keys k="/">Filter — Esc clears it</Keys>
+      </section>
+      <section>
         <h3>Status bar</h3>
         <Keys k="click">
           Folder chip opens Finder — (+N) lists the session&apos;s other folders
@@ -289,15 +299,16 @@ function Guide(): React.JSX.Element {
           tickets, PRs, reviews and GitHub issues with their builds, in lanes by whose move it is,
           with a tab per context (MendriX, Personal). Lane and kind toggles are remembered, and PRs
           whose ticket you handed to someone else stay hidden unless <b>Handed off</b> is on;{' '}
-          <b>/</b> focuses the filter and <b>Esc</b> clears it. A card with an open session shows it
-          — click to go there. <b>merge</b> on an approved, green PR merges it after a confirmation
-          and offers to move the ticket to Deploy; <b>→ Peer review</b> / <b>→ Deploy</b> fix a
-          ticket that lags its PRs, and ⚠ flags an unmerged PR whose ticket already moved on.{' '}
-          <b>▶ session</b> puts a local clone on the card&apos;s branch and resumes its last
-          conversation or starts one about the card; the chip says which, and whether it takes over
-          a clone&apos;s idle tab. When that clone is busy, or on right-click, a menu shows every
-          clone&apos;s state plus <b>New worktree</b>; <b>Worktrees</b> in the header removes them
-          again.
+          <b>/</b> focuses the filter and <b>Esc</b> clears it; the arrows (or <b>j k h l</b>) pick
+          a card for the keys in the cheat sheet, and the lanes sort newest or most urgent first. A
+          card with an open session shows it — click to go there. <b>merge</b> on an approved, green
+          PR merges it after a confirmation and offers to move the ticket to Deploy;{' '}
+          <b>→ Peer review</b> / <b>→ Deploy</b> fix a ticket that lags its PRs, and ⚠ flags an
+          unmerged PR whose ticket already moved on. <b>▶ session</b> puts a local clone on the
+          card&apos;s branch and resumes its last conversation or starts one about the card; the
+          chip says which, and whether it takes over a clone&apos;s idle tab. When that clone is
+          busy, or on right-click, a menu shows every clone&apos;s state plus <b>New worktree</b>;{' '}
+          <b>Worktrees</b> in the header removes them again.
         </p>
       </section>
       <section>

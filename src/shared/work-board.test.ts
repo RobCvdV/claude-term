@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { BoardPr, GitInfo, TabStatus, WorkItem } from './types'
-import { boardDrift, laneOf, matchesFilter, mergeable, sessionFor } from './work-board'
+import {
+  boardDrift,
+  laneOf,
+  matchesFilter,
+  mergeable,
+  sessionFor,
+  stepSelection,
+  urgency
+} from './work-board'
 
 const pr = (over: Partial<BoardPr> = {}): BoardPr => ({
   url: 'https://bitbucket.org/ws/repo/pull-requests/5',
@@ -149,5 +157,34 @@ describe('boardDrift', () => {
     const warned = item({ kind: 'pr', prs: [pr()], warning: 'already in Deploy' })
     expect(boardDrift(warned)).toBe(null)
     expect(laneOf(warned, null)).toBe('needs-you')
+  })
+})
+
+describe('urgency', () => {
+  it('ranks a waiting session over a warning over a red build over changes over a merge', () => {
+    const red = { state: 'failed' as const, url: '', name: '' }
+    expect(urgency(item(), session('x', { activity: 'needs-attention' }))).toBe(6)
+    expect(urgency(item({ warning: 'w' }), null)).toBe(5)
+    expect(urgency(item({ prs: [pr({ ci: red })] }), null)).toBe(4)
+    expect(urgency(item({ prs: [pr({ review: 'changes' })] }), null)).toBe(3)
+    expect(
+      urgency(item({ kind: 'pr', ticket: null, prs: [pr({ review: 'approved' })] }), null)
+    ).toBe(2)
+    expect(urgency(item({ prs: [pr()] }), null)).toBe(1)
+    expect(urgency(item(), null)).toBe(0)
+  })
+})
+
+describe('stepSelection', () => {
+  const cols = [['a', 'b', 'c'], [], ['d']]
+  it('starts at the first card and moves within and across lanes', () => {
+    expect(stepSelection(cols, null, 'down')).toBe('a')
+    expect(stepSelection(cols, 'a', 'down')).toBe('b')
+    expect(stepSelection(cols, 'c', 'down')).toBe('c')
+    expect(stepSelection(cols, 'a', 'up')).toBe('a')
+    expect(stepSelection(cols, 'c', 'right')).toBe('d')
+    expect(stepSelection(cols, 'd', 'left')).toBe('a')
+    expect(stepSelection(cols, 'd', 'right')).toBe('d')
+    expect(stepSelection(cols, 'gone', 'up')).toBe('a')
   })
 })

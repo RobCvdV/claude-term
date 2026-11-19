@@ -39,13 +39,16 @@ export function ActionChip({
   title,
   run,
   alt,
-  done = '✓ moved'
+  done = '✓ moved',
+  hotkey
 }: {
   label: string
   title: string
   run: ActionRun
   alt?: ActionRun
   done?: string
+  /** a key the Work board maps to this chip */
+  hotkey?: string
 }): React.JSX.Element {
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +71,7 @@ export function ActionChip({
   return (
     <span
       role="button"
+      data-hotkey={hotkey}
       className={`mission-action ${phase === 'done' ? 'tone-green' : phase === 'failed' ? 'tone-red' : ''}`}
       title={error ?? title}
       onClick={(e) => fire(e, run)}

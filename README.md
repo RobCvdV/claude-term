@@ -158,6 +158,8 @@ and a card with an open session shows it — click to go there.
   or item kinds; the choice is remembered. **Handed off** (off by default) shows your PRs whose
   ticket is now on someone else's name.
 - `/` focuses the filter (every word must match key, title, repo or status), `Esc` clears it.
+- Lanes sort newest first or most urgent first (a waiting session, a warning, a red build,
+  requested changes, a PR to merge).
 - **merge** on an approved, green PR merges it (after a confirmation) and offers to move its
   ticket to Deploy. A ticket lagging its PRs gets **→ Peer review** / **→ Deploy**, and a PR whose
   ticket already moved on to Deploy, Beta or Done is flagged ⚠ as possibly missing changes.
@@ -313,6 +315,18 @@ The details are in [docs/companion.md](docs/companion.md).
 | `Esc`    | To Claude Code, and focus the terminal    |
 | `⌘L`     | Focus the prompt box                      |
 | `⌘.`     | Spelling fixes                            |
+
+### Work board
+
+| Keys                 | Action                                       |
+| -------------------- | -------------------------------------------- |
+| `↑ ↓ ← →`, `j k h l` | Pick a card; `Esc` lets go                   |
+| `↵`                  | Go to its tab, or open it                    |
+| `s` / `⇧S`           | ▶ session / pick the clone or a new worktree |
+| `m`                  | Merge its approved, green PR                 |
+| `t`                  | Move its ticket to where its PRs say         |
+| `o`                  | Open it in the browser                       |
+| `/`                  | Filter; `Esc` clears it                      |
 
 ### File window
 

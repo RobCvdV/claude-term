@@ -16,7 +16,10 @@ import {
   laneOf,
   matchesFilter,
   mergeable,
-  sessionFor
+  sessionFor,
+  stepSelection,
+  urgency,
+  type BoardStep
 } from '../../../shared/work-board'
 import { useAppSettings } from '../use-app-settings'
 import { useMissionTabs } from '../use-mission-tabs'
@@ -75,6 +78,7 @@ export function BoardWindow(): React.JSX.Element {
   })
   const [query, setQuery] = useState('')
   const [wtError, setWtError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
 
   // re-plan ▶ session when a tab moves, changes branch or goes busy/idle
   const plansFor = planKey(statuses)
@@ -136,6 +140,72 @@ export function BoardWindow(): React.JSX.Element {
   const filtered = inContext.filter((c) => matchesFilter(c.item, query))
   const lanes = BOARD_LANES.filter((l) => !view.hiddenLanes.includes(l.id))
   const contexts = [{ id: 'all', name: 'All' }, ...settings.workContexts]
+  const columns = lanes.map((lane) => {
+    const laneCards = filtered.filter((c) => c.lane === lane.id)
+    return view.sort === 'urgent'
+      ? [...laneCards].sort(
+          (a, b) =>
+            urgency(b.item, b.session) - urgency(a.item, a.session) ||
+            b.item.updated - a.item.updated
+        )
+      : laneCards
+  })
+
+  // j/k/h/l or the arrows pick a card; its actions run by key, through the card's own chips
+  useEffect(() => {
+    const steps: Record<string, BoardStep> = {
+      ArrowDown: 'down',
+      j: 'down',
+      ArrowUp: 'up',
+      k: 'up',
+      ArrowLeft: 'left',
+      h: 'left',
+      ArrowRight: 'right',
+      l: 'right'
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (document.activeElement === filterRef.current) return
+      const step = steps[e.key]
+      if (step) {
+        e.preventDefault()
+        setSelected(
+          stepSelection(
+            columns.map((c) => c.map((x) => x.item.id)),
+            selected,
+            step
+          )
+        )
+        return
+      }
+      if (e.key === 'Escape') return setSelected(null)
+      const card = selected ? document.querySelector(`[data-card="${CSS.escape(selected)}"]`) : null
+      if (!card) return
+      const chip = (key: string): HTMLElement | null =>
+        card.querySelector<HTMLElement>(`[data-hotkey="${key}"]`)
+      if (e.key === 'Enter') (card as HTMLElement).click()
+      else if (e.key === 's') chip('s')?.click()
+      else if (e.key === 'S')
+        chip('s')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+      else if (e.key === 'm') chip('m')?.click()
+      else if (e.key === 't') chip('t')?.click()
+      else if (e.key === 'o') {
+        const item = board.items.find((i) => i.id === selected)
+        if (item) window.open(item.url)
+      } else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  useEffect(() => {
+    if (selected) {
+      document
+        .querySelector(`[data-card="${CSS.escape(selected)}"]`)
+        ?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selected])
 
   return (
     <div className="mission-window">
@@ -225,6 +295,15 @@ export function BoardWindow(): React.JSX.Element {
               Handed off {kinds.filter((c) => c.item.handedOff).length}
             </button>
           </span>
+          <span className="activity-range board-range">
+            <button
+              className="range-btn active"
+              title="Order within a lane — newest change first, or most pressing first"
+              onClick={() => setView({ sort: view.sort === 'urgent' ? 'newest' : 'urgent' })}
+            >
+              {view.sort === 'urgent' ? 'Most urgent first' : 'Newest first'}
+            </button>
+          </span>
         </div>
         {(board.errors.length > 0 || wtError) && (
           <div className="board-errors tone-orange">
@@ -239,15 +318,21 @@ export function BoardWindow(): React.JSX.Element {
             gridTemplateColumns: `repeat(${Math.max(lanes.length, 1)}, minmax(220px, 1fr))`
           }}
         >
-          {lanes.map((lane) => {
-            const laneCards = filtered.filter((c) => c.lane === lane.id)
+          {lanes.map((lane, i) => {
+            const laneCards = columns[i]
             return (
               <section key={lane.id} className="board-lane">
                 <div className="board-lane-title">
                   {lane.label} <span className="dim">{laneCards.length}</span>
                 </div>
                 {laneCards.map((c) => (
-                  <BoardCard key={c.item.id} card={c} now={now} />
+                  <BoardCard
+                    key={c.item.id}
+                    card={c}
+                    now={now}
+                    selected={c.item.id === selected}
+                    onSelect={() => setSelected(c.item.id)}
+                  />
                 ))}
               </section>
             )
@@ -258,7 +343,17 @@ export function BoardWindow(): React.JSX.Element {
   )
 }
 
-function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Element {
+function BoardCard({
+  card,
+  now,
+  selected,
+  onSelect
+}: {
+  card: Card
+  now: number
+  selected: boolean
+  onSelect: () => void
+}): React.JSX.Element {
   const { item, session, tab } = card
   const drift = boardDrift(item)
   const head =
@@ -270,11 +365,14 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
         : item.url.replace(/^https:\/\/github\.com\//, '').replace('/issues/', ' #'))
   return (
     <button
-      className={`mission-card board-card ${card.lane === 'needs-you' ? 'mission-alert' : ''}`}
-      title={session ? 'go to the session' : item.url}
-      onClick={() =>
-        session ? window.claudeTerm.activateGlobalTab(session.tabId) : window.open(item.url)
-      }
+      className={`mission-card board-card ${card.lane === 'needs-you' ? 'mission-alert' : ''} ${selected ? 'board-selected' : ''}`}
+      data-card={item.id}
+      title={session ? 'go to the session (Enter)' : `${item.url} (Enter)`}
+      onClick={() => {
+        onSelect()
+        if (session) window.claudeTerm.activateGlobalTab(session.tabId)
+        else window.open(item.url)
+      }}
     >
       {session && (
         <div className="mission-row">
@@ -303,8 +401,9 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
               {mergeable(pr) && (
                 <ActionChip
                   label="merge"
+                  hotkey="m"
                   done="✓ merged"
-                  title={`merge #${pr.number} (asks first)`}
+                  title={`merge #${pr.number} (asks first) — m`}
                   run={() => window.claudeTerm.mergeFromCard(item.id, pr.url)}
                 />
               )}
@@ -319,6 +418,7 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
           {!session && item.starts.length > 0 && (
             <ActionChip
               {...startChip(item)}
+              hotkey="s"
               done="✓ started"
               run={() => window.claudeTerm.startFromCard(item.id, false)}
               alt={() => window.claudeTerm.startFromCard(item.id, true)}
@@ -336,7 +436,8 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
           <span>⚠ {drift.text}</span>
           <ActionChip
             label={drift.moveTo === 'review' ? '→ Peer review' : '→ Deploy'}
-            title={`move ${item.ticket?.key} on the board (asks first)`}
+            hotkey="t"
+            title={`move ${item.ticket?.key} on the board (asks first) — t`}
             run={() => window.claudeTerm.moveFromCard(item.id)}
           />
         </div>

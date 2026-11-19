@@ -924,7 +924,11 @@ export interface BoardView {
   hiddenKinds: BoardKind[]
   /** show PRs whose ticket I handed to someone else */
   showHandedOff: boolean
+  /** order within a lane */
+  sort: BoardSort
 }
+
+export type BoardSort = 'newest' | 'urgent'
 
 /** "Complete with Claude" in a file window: the text around the cursor. */
 export interface CompletionRequest {
