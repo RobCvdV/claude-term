@@ -37,6 +37,7 @@ const item = (over: Partial<WorkItem> = {}): WorkItem => ({
   starts: [],
   handedOff: null,
   warning: null,
+  plan: null,
   ...over
 })
 

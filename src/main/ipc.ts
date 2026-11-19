@@ -132,6 +132,7 @@ import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
 import type {
   JiraTodoGroup,
+  TabLaunch,
   PrGroup,
   PrInfo,
   ProjectChanges,
@@ -326,6 +327,11 @@ export function createServices(windows: TerminalWindows): AppServices {
     // progress events would bury the keyboard trail this log is for
     // a heartbeat repeats what the log already says
     if (!PROGRESS_EVENTS.has(String(event.kind)) && !event.beat) logUiBridge(tabId, 'mod', event)
+    // the foreground session's /clear: its successor speaks for the tab from now on
+    if (event.kind === 'session.switch' && typeof event.from === 'string') {
+      status.switchSession(tabId, event.from, String(event.session_id))
+      return
+    }
     const isKeyOwnerEvent = event.kind === 'keys' || event.kind === 'session.end'
     if (isKeyOwnerEvent && !speaksForTab(event.session_id, status.snapshot(tabId)?.sessionId)) {
       // once per session and state, so a background agent's heartbeats stay visible but quiet
@@ -493,7 +499,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
       resume?: string,
       addedDirs?: string[],
       removedDirs?: string[],
-      prompt?: string
+      launch?: TabLaunch
     ): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
       let dir = cwd && existsSync(cwd) ? cwd : homedir()
@@ -539,9 +545,9 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)
         } else if (target.mode === 'resume') {
-          await ptys.create(tabId, dir, resume, undefined, prompt)
+          await ptys.create(tabId, dir, resume, undefined, launch)
         } else {
-          await ptys.create(tabId, dir, undefined, undefined, prompt)
+          await ptys.create(tabId, dir, undefined, undefined, launch)
         }
         // Both revive paths self-report via statusline within ~1s, but seed the UI
         // now so the prompt box doesn't flicker in — and an attached bg agent
@@ -553,7 +559,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         // that launched it — synthesize activity until a real feed shows up
         if (target.mode === 'attach') status.markAttached(tabId, resume as string, target.jobId)
       } else {
-        await ptys.create(tabId, dir, undefined, undefined, prompt)
+        await ptys.create(tabId, dir, undefined, undefined, launch)
       }
       return { tabId, cwd: dir, title: basename(dir) || dir }
     }

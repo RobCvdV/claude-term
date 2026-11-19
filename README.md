@@ -163,11 +163,14 @@ and a card with an open session shows it — click to go there.
   ticket already moved on to Deploy, Beta or Done is flagged ⚠ as possibly missing changes.
 - **▶ session** puts a local clone on the card's branch (a to-do ticket gets its branch and moves
   to Active) and resumes the branch's last conversation, telling it only what is new, or starts one
-  asking Claude about the card. A clone whose own tab sits idle with nothing to commit is taken
-  over in that tab. When the usual clone is busy (a working tab, or uncommitted changes) — or on
-  right-click — a menu shows every clone's state, plus **New worktree**, which checks the branch
-  out under `.worktrees/` next to the repo.
-- Contexts live in `workContexts` in the app's `app-settings.json`.
+  asking Claude about the card. The chip says which (`↻ resume`, `▶ new`, `· idle tab` when it
+  takes over a clone's idle tab with nothing to commit, `▶ choose…` when the usual clone is busy).
+  Right-click shows every clone's state, plus **New worktree**, which checks the branch out under
+  `.worktrees/` next to the repo and first runs `worktreeSetup[<repo>]` (e.g. `npm ci`) in the tab
+  when set. **Worktrees** in the header removes them again; those whose branch is gone upstream, or
+  whose ticket left your work, are marked done.
+- Contexts live in `workContexts`, worktree setup commands in `worktreeSetup`, both in the app's
+  `app-settings.json`.
 
 ### Focus follows the conversation
 

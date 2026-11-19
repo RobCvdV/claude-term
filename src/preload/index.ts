@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  TabLaunch,
   CompanionInfo,
   PairingInfo,
   ActivityReport,
@@ -72,8 +73,8 @@ export interface ClaudeTermApi {
     resume?: string,
     addedDirs?: string[],
     removedDirs?: string[],
-    /** start claude in the new tab with this first prompt (with `resume`: sent to the resumed one) */
-    prompt?: string
+    /** a setup command, then claude with this first prompt (with `resume`: sent to the resumed one) */
+    launch?: TabLaunch
   ): Promise<TabInfo>
   closeTab(tabId: TabId): Promise<void>
   /** Drop every tab main still holds for this window. A renderer calls it as it
@@ -94,7 +95,7 @@ export interface ClaudeTermApi {
     dir: string
   ): Promise<{ ok: true; dir: string } | { ok: false; error: string }>
   /** "Open in New Tab…" was picked in the folder context menu */
-  onOpenFolderTab(cb: (dir: string, prompt?: string, resume?: string | null) => void): () => void
+  onOpenFolderTab(cb: (dir: string, launch?: TabLaunch, resume?: string | null) => void): () => void
   /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
   listPrs(tabId: TabId): Promise<PrGroup[]>
   /** to-do tickets of every workspace repo that has Jira labels */
@@ -270,6 +271,10 @@ export interface ClaudeTermApi {
   mergeFromCard(itemId: string, prUrl: string): Promise<{ ok: boolean; error?: string }>
   /** move a card's ticket to where its PRs say it belongs (asks first) */
   moveFromCard(itemId: string): Promise<{ ok: boolean; error?: string }>
+  /** tabs changed: recompute what ▶ session would do per card */
+  replanBoard(): void
+  /** the worktree menu: remove the ones ▶ session made */
+  boardWorktrees(): Promise<{ ok: boolean; error?: string }>
   /** every terminal window's tabs, for the Mission control window */
   missionTabs(): Promise<MissionTabs>
   onMissionTabs(cb: (tabs: MissionTabs) => void): () => void
@@ -336,8 +341,8 @@ function subscribe<Args extends unknown[]>(
 const api: ClaudeTermApi = {
   platform: process.platform,
   boot: () => ipcRenderer.invoke('window:boot'),
-  createTab: (cwd, resume, addedDirs, removedDirs, prompt) =>
-    ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs, prompt),
+  createTab: (cwd, resume, addedDirs, removedDirs, launch) =>
+    ipcRenderer.invoke('tab:create', cwd, resume, addedDirs, removedDirs, launch),
   closeTab: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   resetTabs: () => ipcRenderer.invoke('tab:reset'),
   restartTab: (tabId) => ipcRenderer.invoke('tab:restart', tabId),
@@ -440,6 +445,8 @@ const api: ClaudeTermApi = {
   startFromCard: (itemId, pick) => ipcRenderer.invoke('board:start', itemId, pick),
   mergeFromCard: (itemId, prUrl) => ipcRenderer.invoke('board:merge', itemId, prUrl),
   moveFromCard: (itemId) => ipcRenderer.invoke('board:move', itemId),
+  replanBoard: () => ipcRenderer.send('board:replan'),
+  boardWorktrees: () => ipcRenderer.invoke('board:worktrees'),
   missionTabs: () => ipcRenderer.invoke('mission:tabs'),
   onMissionTabs: (cb) => subscribe('mission:tabs', cb),
   selectGlobalTab: (index) => ipcRenderer.send('tabs:selectGlobal', index),

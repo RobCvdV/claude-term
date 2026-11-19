@@ -3,6 +3,7 @@ import type {
   BoardCi,
   BranchHistoryEntry,
   ReviewItem,
+  StartPlan,
   TabStatus,
   WorkBoardState,
   WorkContext
@@ -15,6 +16,7 @@ import { bitbucketReposOf } from './review-queue'
 import { loginShellEnv } from './shell-env'
 import { bitbucketStatusesCi } from './ci-data'
 import {
+  excludedStatus,
   GITHUB_WORK_QUERY,
   joinWork,
   mapBitbucketMyPrs,
@@ -25,7 +27,7 @@ import {
   type SourcePr
 } from './work-board-data'
 import { startsFor, type LocalRepo } from './work-start-data'
-import { localRepos } from './work-start'
+import { lastSessionOn, listWorktrees, localRepos, planStart } from './work-start'
 
 const POLL_MS = 5 * 60_000
 
@@ -42,12 +44,23 @@ interface Sources {
  */
 export class WorkBoard {
   private sources: Sources = { tickets: [], bitbucket: [], github: { prs: [], issues: [] } }
-  private state: WorkBoardState = { items: [], errors: [], sweptAt: null, sweeping: false }
+  private state: WorkBoardState = {
+    items: [],
+    worktrees: [],
+    errors: [],
+    sweptAt: null,
+    sweeping: false
+  }
   /** finished builds per commit never change; running ones are asked again */
   private builds = new Map<string, BoardCi | null>()
   private repos: LocalRepo[] = []
   /** ticket key → who has it, for my PRs whose ticket isn't on my name */
   private handedOff = new Map<string, string>()
+  private plans = new Map<string, StartPlan | null>()
+  /** `root\nbranch` → a conversation to resume there; cleared each sweep */
+  private resumable = new Map<string, boolean>()
+  private planning: Promise<void> | null = null
+  private planAgain = false
 
   constructor(
     private readonly deps: {
@@ -77,6 +90,58 @@ export class WorkBoard {
   /** Reviews or settings changed: rebuild the cards without fetching. */
   rejoin(): void {
     this.publish({ items: this.join() })
+  }
+
+  /** Tabs changed: work out again what ▶ session would do, and which worktrees are in use. */
+  replan(): void {
+    if (this.planning) {
+      this.planAgain = true
+      return
+    }
+    this.planning = this.plan()
+      .catch(() => {})
+      .finally(() => {
+        this.planning = null
+        if (this.planAgain) {
+          this.planAgain = false
+          this.replan()
+        }
+      })
+  }
+
+  private async plan(): Promise<void> {
+    const snaps = this.deps.snapshots()
+    const open = new Set(snaps.map((s) => s.sessionId).filter((id): id is string => !!id))
+    const resumable = async (root: string, branch: string): Promise<boolean> => {
+      const key = `${root}\n${branch}`
+      if (!this.resumable.has(key)) {
+        this.resumable.set(key, !!(await lastSessionOn(root, branch, open)))
+      }
+      return this.resumable.get(key)!
+    }
+    const items = this.join()
+    const plans = await Promise.all(
+      items.map((i) => planStart(i, snaps, resumable).catch(() => null))
+    )
+    this.plans = new Map(items.map((item, n) => [item.id, plans[n]]))
+    const prs = [...this.sources.bitbucket, ...this.sources.github.prs]
+    const worktrees = await listWorktrees(
+      this.repos,
+      snaps,
+      new Set(prs.map((p) => p.pr.branch)),
+      this.activeTickets()
+    )
+    this.publish({ items: this.join(), worktrees })
+  }
+
+  /** My tickets still on the board (not past Deploy / Beta / Done). */
+  private activeTickets(): Set<string> {
+    const jira = this.deps.contexts().find((c) => c.jira)?.jira
+    return new Set(
+      this.sources.tickets
+        .filter((t) => !jira || !excludedStatus(t.status, jira.excludeStatuses))
+        .map((t) => t.key)
+    )
   }
 
   private async sweep(): Promise<void> {
@@ -124,7 +189,9 @@ export class WorkBoard {
       const others = await attempt('Jira assignees', () => ticketsNotMine([...new Set(orphans)]))
       if (others) this.handedOff = others
     }
+    this.resumable.clear()
     this.publish({ items: this.join(), errors, sweptAt: Date.now(), sweeping: false })
+    this.replan()
   }
 
   private join(): WorkBoardState['items'] {
@@ -142,7 +209,8 @@ export class WorkBoard {
       handedOff:
         item.kind === 'pr'
           ? (this.handedOff.get(branchTicket(item.prs[0]?.branch ?? '') ?? '') ?? null)
-          : null
+          : null,
+      plan: this.plans.get(item.id) ?? null
     }))
   }
 

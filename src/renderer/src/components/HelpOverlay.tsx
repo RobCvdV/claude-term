@@ -294,9 +294,10 @@ function Guide(): React.JSX.Element {
           and offers to move the ticket to Deploy; <b>→ Peer review</b> / <b>→ Deploy</b> fix a
           ticket that lags its PRs, and ⚠ flags an unmerged PR whose ticket already moved on.{' '}
           <b>▶ session</b> puts a local clone on the card&apos;s branch and resumes its last
-          conversation or starts one about the card — in the clone&apos;s own tab when that sits
-          idle with nothing to commit. When that clone is busy, or on right-click, a menu shows
-          every clone&apos;s state plus <b>New worktree</b>.
+          conversation or starts one about the card; the chip says which, and whether it takes over
+          a clone&apos;s idle tab. When that clone is busy, or on right-click, a menu shows every
+          clone&apos;s state plus <b>New worktree</b>; <b>Worktrees</b> in the header removes them
+          again.
         </p>
       </section>
       <section>

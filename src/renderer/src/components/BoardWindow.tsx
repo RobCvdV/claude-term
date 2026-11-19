@@ -21,7 +21,7 @@ import {
 import { useAppSettings } from '../use-app-settings'
 import { useMissionTabs } from '../use-mission-tabs'
 import { useNow } from '../use-now'
-import { activityLabel, dotFor, reviewVerdict } from '../work-status'
+import { activityLabel, dotFor, reviewVerdict, startChip } from '../work-status'
 import { ActionChip, CiChip, PrChip, TicketPill } from './mission-parts'
 
 interface Card {
@@ -37,13 +37,23 @@ function ago(ms: number, now: number): string {
   return min < 60 ? `${min}m ago` : `${Math.floor(min / 60)}h ago`
 }
 
-/** Where "▶ session" starts, for its tooltip. */
-function startTitle(item: WorkItem): string {
-  const [first] = item.starts
-  if (!first.sure) return 'Start a Claude session — pick the folder (right-click: same)'
-  const folder = first.root.split('/').pop()
-  const on = first.branch ? ` on ${first.branch}` : item.ticket ? ' on the ticket branch' : ''
-  return `Start a Claude session in ${folder}${on} (right-click: pick another folder)`
+/** What decides a ▶ plan: each tab's folders, branches and whether it is busy. */
+function planKey(statuses: Record<string, TabStatus | null>): string {
+  return Object.values(statuses)
+    .filter((s): s is TabStatus => !!s)
+    .map((s) =>
+      [
+        s.tabId,
+        s.cwd,
+        s.git?.branch,
+        s.claudeActive,
+        s.activity,
+        s.running?.length ?? 0,
+        ...s.extraRepos.map((r) => `${r.root}:${r.git.branch}`)
+      ].join('|')
+    )
+    .sort()
+    .join('\n')
 }
 
 /** `owner/repo` → `repo`, for chips where the owner is noise. */
@@ -58,11 +68,20 @@ export function BoardWindow(): React.JSX.Element {
   const { tabs, statuses } = useMissionTabs()
   const [board, setBoard] = useState<WorkBoardState>({
     items: [],
+    worktrees: [],
     errors: [],
     sweptAt: null,
     sweeping: false
   })
   const [query, setQuery] = useState('')
+  const [wtError, setWtError] = useState<string | null>(null)
+
+  // re-plan ▶ session when a tab moves, changes branch or goes busy/idle
+  const plansFor = planKey(statuses)
+  useEffect(() => {
+    const timer = setTimeout(() => window.claudeTerm.replanBoard(), 1500)
+    return () => clearTimeout(timer)
+  }, [plansFor])
   const filterRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -154,6 +173,26 @@ export function BoardWindow(): React.JSX.Element {
           >
             {board.sweeping ? 'updating…' : board.sweptAt ? `↻ ${ago(board.sweptAt, now)}` : '↻'}
           </button>
+          {board.worktrees.length > 0 && (
+            <button
+              className="range-btn"
+              title="Worktrees made by ▶ session — remove the ones you are done with"
+              onClick={() =>
+                void window.claudeTerm
+                  .boardWorktrees()
+                  .then((r) => setWtError(r.error ?? null))
+                  .catch((e: unknown) => setWtError(String(e)))
+              }
+            >
+              Worktrees {board.worktrees.length}
+              {board.worktrees.some((w) => w.stale) && (
+                <span className="tone-orange">
+                  {' '}
+                  · {board.worktrees.filter((w) => w.stale).length} done
+                </span>
+              )}
+            </button>
+          )}
         </div>
         <div className="board-toggles">
           <span className="activity-range board-range">
@@ -187,9 +226,9 @@ export function BoardWindow(): React.JSX.Element {
             </button>
           </span>
         </div>
-        {board.errors.length > 0 && (
+        {(board.errors.length > 0 || wtError) && (
           <div className="board-errors tone-orange">
-            {board.errors.map((e) => (
+            {[...board.errors, ...(wtError ? [`worktrees: ${wtError}`] : [])].map((e) => (
               <div key={e}>⚠ {e}</div>
             ))}
           </div>
@@ -279,9 +318,8 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
           )}
           {!session && item.starts.length > 0 && (
             <ActionChip
-              label="▶ session"
+              {...startChip(item)}
               done="✓ started"
-              title={startTitle(item)}
               run={() => window.claudeTerm.startFromCard(item.id, false)}
               alt={() => window.claudeTerm.startFromCard(item.id, true)}
             />

@@ -118,6 +118,10 @@ export async function setupClaudeLauncher(shell: string): Promise<Record<string,
         `# ATTACH: the session became a daemon-managed background agent; it can't\n` +
         `# be --resume'd while alive, so reconnect with 'claude attach'. This uses\n` +
         `# the real binary (not our wrapper) — attach takes no --settings.\n` +
+        `if [[ -n "$CLAUDE_TERM_SETUP" ]]; then\n` +
+        `  __cts="$CLAUDE_TERM_SETUP"; unset CLAUDE_TERM_SETUP\n` +
+        `  print -r -- "claude-term setup: $__cts"; eval "$__cts"; unset __cts\n` +
+        `fi\n` +
         `if [[ -n "$CLAUDE_TERM_ATTACH" ]]; then\n` +
         `  __cta="$CLAUDE_TERM_ATTACH"; unset CLAUDE_TERM_ATTACH CLAUDE_TERM_RESUME CLAUDE_TERM_PROMPT\n` +
         `  "${realClaude}" attach "$__cta"; unset __cta\n` +

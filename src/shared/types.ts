@@ -789,6 +789,8 @@ export interface AppSettings {
   notify: NotifySettings
   workContexts: WorkContext[]
   board: BoardView
+  /** repo name → command run in a new worktree's tab before claude, e.g. `npm ci` */
+  worktreeSetup: Record<string, string>
 }
 
 /** Which services the app can reach — tokens come from the login shell, Jira's
@@ -854,6 +856,33 @@ export interface WorkItem {
   handedOff: string | null
   /** something is off, e.g. an unmerged PR of a ticket already in Deploy */
   warning: string | null
+  /** what ▶ session would do on a click */
+  plan: StartPlan | null
+}
+
+/** What a new tab runs first: a setup command, then claude with a first prompt. */
+export interface TabLaunch {
+  prompt?: string
+  /** shell command run before claude, e.g. installing a fresh worktree's dependencies */
+  setup?: string
+}
+
+/** ▶ session's next move for a card. */
+export type StartPlan =
+  | { kind: 'resume' | 'new'; root: string; takeover: boolean }
+  | { kind: 'goto' }
+  /** the menu opens: no sure clone, or it is busy */
+  | { kind: 'choose'; why?: string }
+
+/** A worktree ▶ session made. */
+export interface BoardWorktree {
+  root: string
+  repo: string
+  branch: string
+  /** why it can go, or null while it is still in use for open work */
+  stale: string | null
+  dirty: boolean
+  inUse: boolean
 }
 
 /** A local clone a Work board card can start a session in. */
@@ -867,6 +896,7 @@ export interface BoardStart {
 
 export interface WorkBoardState {
   items: WorkItem[]
+  worktrees: BoardWorktree[]
   /** sources that failed on the last sweep */
   errors: string[]
   sweptAt: number | null

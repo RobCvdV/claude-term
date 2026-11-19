@@ -18,7 +18,7 @@ import { CiPoller } from './ci-status'
 import { setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
 import { WorkBoard } from './work-board'
-import { startFromCard } from './card-session'
+import { startFromCard, worktreeMenu } from './card-session'
 import { confirmAndMove, mergeFromCard, type ActionResult } from './board-actions'
 import { boardDrift } from '../shared/work-board'
 import { stopCompletionWorkers } from './claude-complete'
@@ -231,6 +231,12 @@ app.whenReady().then(async () => {
     status: services.status,
     refresh: () => board.refresh()
   }
+  ipcMain.on('board:replan', () => board.replan())
+  ipcMain.handle('board:worktrees', (e) =>
+    worktreeMenu(BrowserWindow.fromWebContents(e.sender), board.get().worktrees, () =>
+      board.replan()
+    )
+  )
   ipcMain.handle('board:start', (e, itemId: string, pick: boolean) =>
     startFromCard(cardDeps, BrowserWindow.fromWebContents(e.sender), itemId, pick)
   )

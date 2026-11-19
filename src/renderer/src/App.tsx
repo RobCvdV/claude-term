@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   BranchHistoryEntry,
+  TabLaunch,
   DocGroup,
   DocTarget,
   HandoffTarget,
@@ -372,13 +373,13 @@ export default function App(): React.JSX.Element {
   }, [])
 
   const openTab = useCallback(
-    async (cwd?: string, prompt?: string, resume?: string | null): Promise<void> => {
+    async (cwd?: string, launch?: TabLaunch, resume?: string | null): Promise<void> => {
       const tab = await window.claudeTerm.createTab(
         cwd,
         resume ?? undefined,
         undefined,
         undefined,
-        prompt
+        launch
       )
       setTabs((prev) => [...prev, tab])
       setActiveId(tab.tabId)
@@ -391,7 +392,7 @@ export default function App(): React.JSX.Element {
   // "Open in New Tab…" in a folder chip's context menu, or a Work board card's session
   useEffect(() => {
     return window.claudeTerm.onOpenFolderTab(
-      (dir, prompt, resume) => void openTab(dir, prompt, resume)
+      (dir, launch, resume) => void openTab(dir, launch, resume)
     )
   }, [openTab])
 

@@ -1,6 +1,6 @@
 import * as pty from 'node-pty'
 import { basename } from 'path'
-import type { TabId } from '../shared/types'
+import type { TabId, TabLaunch } from '../shared/types'
 import { loginShellEnv, resolveClaudePath, resolveShell } from './shell-env'
 import { buildSettingsOverlay, setupClaudeLauncher } from './settings-overlay'
 
@@ -87,15 +87,17 @@ export class PtyManager {
    *   while the daemon keeps it alive (`--resume` errors "running as a
    *   background agent"); it must be attached. ipc.ts decides which to pass by
    *   consulting the live agent list. `resume` and `attach` are exclusive.
-   * @param prompt  first prompt: for a new `claude` session, or the resumed one
+   * @param launch  setup command, and the first prompt for a new or resumed `claude`
    */
   async create(
     tabId: TabId,
     cwd: string,
     resume?: string,
     attach?: string,
-    prompt?: string
+    launch?: TabLaunch
   ): Promise<void> {
+    const prompt = launch?.prompt
+    const setup = launch?.setup
     const [env, shell] = await Promise.all([loginShellEnv(), resolveShell()])
     const launcherEnv = await setupClaudeLauncher(shell)
     const { port, token } = this.getServerInfo()
@@ -121,6 +123,7 @@ export class PtyManager {
     else if (resume && isZsh) spawnEnv.CLAUDE_TERM_RESUME = resume
     // the prompt travels in the env, so no shell quoting is involved
     if (prompt) spawnEnv.CLAUDE_TERM_PROMPT = prompt
+    if (setup) spawnEnv.CLAUDE_TERM_SETUP = setup
 
     const proc = pty.spawn(shell, ['-il'], {
       name: 'xterm-256color',
@@ -143,24 +146,29 @@ export class PtyManager {
       this.emit.exit(tabId, exitCode)
     })
 
-    if (prompt && !attach && !resume && !isZsh) {
-      setTimeout(() => {
-        const current = this.tabs.get(tabId)
-        if (current && !current.exited) current.proc.write('claude "$CLAUDE_TERM_PROMPT"\r')
-      }, RESUME_INJECT_MS)
-    } else if ((attach || resume) && !isZsh) {
+    if (!isZsh) {
       // attach bypasses our `claude` wrapper (which appends --settings): the
       // running agent already has its own settings, and `claude attach` rejects
       // extra flags. Resolve the real binary so the shim's PATH shadowing of
       // `claude` doesn't turn `claude attach` into `claude --settings … attach`.
       const realClaude = attach ? await resolveClaudePath() : null
-      const cmd = attach
+      const arg = prompt ? ' "$CLAUDE_TERM_PROMPT"' : ''
+      const run = attach
         ? `"${realClaude}" attach ${attach}`
-        : `claude --resume ${resume}${prompt ? ' "$CLAUDE_TERM_PROMPT"' : ''}`
-      setTimeout(() => {
-        const current = this.tabs.get(tabId)
-        if (current && !current.exited) current.proc.write(`${cmd}\r`)
-      }, RESUME_INJECT_MS)
+        : resume
+          ? `claude --resume ${resume}${arg}`
+          : prompt
+            ? `claude${arg}`
+            : ''
+      const cmd = [setup && !attach ? 'eval "$CLAUDE_TERM_SETUP"' : '', run]
+        .filter(Boolean)
+        .join('; ')
+      if (cmd) {
+        setTimeout(() => {
+          const current = this.tabs.get(tabId)
+          if (current && !current.exited) current.proc.write(`${cmd}\r`)
+        }, RESUME_INJECT_MS)
+      }
     }
   }
 
@@ -236,11 +244,11 @@ export class PtyManager {
   }
 
   /** Respawn a fresh shell in the same tab/cwd, optionally straight into claude. */
-  async restart(tabId: TabId, start?: { resume?: string; prompt?: string }): Promise<void> {
+  async restart(tabId: TabId, start?: TabLaunch & { resume?: string }): Promise<void> {
     const tab = this.tabs.get(tabId)
     if (!tab) return
     if (!tab.exited) tab.proc.kill()
-    await this.create(tabId, tab.cwd, start?.resume, undefined, start?.prompt)
+    await this.create(tabId, tab.cwd, start?.resume, undefined, start)
   }
 
   write(tabId: TabId, data: string): void {
