@@ -64,6 +64,7 @@ const ticket = (over: Partial<WorkItem> = {}): WorkItem => ({
   updated: 0,
   starts: [],
   handedOff: null,
+  warning: null,
   ...over
 })
 

@@ -185,11 +185,16 @@ export function joinWork(input: {
   const { contexts } = input
   const items: WorkItem[] = []
   const byTicket = new Map<string, WorkItem>()
+  /** my tickets already past the board's end (Deploy, Beta, Done) */
+  const passed = new Map<string, NonNullable<WorkItem['ticket']>>()
 
   const jiraCtx = contexts.find((c) => c.jira)
   for (const t of jiraCtx ? input.tickets : []) {
-    if (excludedStatus(t.status, jiraCtx!.jira!.excludeStatuses)) continue
     const { updated, ...ticket } = t
+    if (excludedStatus(t.status, jiraCtx!.jira!.excludeStatuses)) {
+      passed.set(t.key, ticket)
+      continue
+    }
     const item: WorkItem = {
       id: t.key,
       context: jiraCtx!.id,
@@ -201,17 +206,37 @@ export function joinWork(input: {
       review: null,
       updated,
       starts: [],
-      handedOff: null
+      handedOff: null,
+      warning: null
     }
     byTicket.set(t.key, item)
     items.push(item)
   }
 
   for (const src of input.prs) {
-    const owner = byTicket.get(branchTicket(src.pr.branch) ?? '')
+    const key = branchTicket(src.pr.branch) ?? ''
+    const owner = byTicket.get(key)
     if (owner) {
       owner.prs.push(src.pr)
       owner.updated = Math.max(owner.updated, src.updated)
+      continue
+    }
+    const ticket = passed.get(key)
+    if (ticket) {
+      items.push({
+        id: src.pr.url,
+        context: jiraCtx!.id,
+        kind: 'pr',
+        title: src.pr.title,
+        url: src.pr.url,
+        ticket,
+        prs: [src.pr],
+        review: null,
+        updated: src.updated,
+        starts: [],
+        handedOff: null,
+        warning: `${key} is already in ${ticket.status}, but this PR isn't merged — changes may be missing`
+      })
       continue
     }
     const ctx = contextFor(contexts, src.host, src.owner)
@@ -227,7 +252,8 @@ export function joinWork(input: {
       review: null,
       updated: src.updated,
       starts: [],
-      handedOff: null
+      handedOff: null,
+      warning: null
     })
   }
 
@@ -244,7 +270,8 @@ export function joinWork(input: {
       review: null,
       updated: issue.updated,
       starts: [],
-      handedOff: null
+      handedOff: null,
+      warning: null
     })
   }
 
@@ -263,7 +290,8 @@ export function joinWork(input: {
       review,
       updated: 0,
       starts: [],
-      handedOff: null
+      handedOff: null,
+      warning: null
     })
   }
 

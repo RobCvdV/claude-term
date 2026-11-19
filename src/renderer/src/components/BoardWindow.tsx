@@ -12,8 +12,10 @@ import { WINDOW_KIND } from '../../../shared/window-titles'
 import {
   BOARD_KINDS,
   BOARD_LANES,
+  boardDrift,
   laneOf,
   matchesFilter,
+  mergeable,
   sessionFor
 } from '../../../shared/work-board'
 import { useAppSettings } from '../use-app-settings'
@@ -219,6 +221,7 @@ export function BoardWindow(): React.JSX.Element {
 
 function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Element {
   const { item, session, tab } = card
+  const drift = boardDrift(item)
   const head =
     item.ticket?.key ??
     (item.review
@@ -258,6 +261,14 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
             <span key={pr.url} className="board-pr">
               <PrChip pr={pr} label={item.ticket ? repoName(pr.repo) : 'PR'} />
               {pr.ci && <CiChip ci={pr.ci} name={pr.ci.name} />}
+              {mergeable(pr) && (
+                <ActionChip
+                  label="merge"
+                  done="✓ merged"
+                  title={`merge #${pr.number} (asks first)`}
+                  run={() => window.claudeTerm.mergeFromCard(item.id, pr.url)}
+                />
+              )}
             </span>
           ))}
           {item.review && (
@@ -275,6 +286,21 @@ function BoardCard({ card, now }: { card: Card; now: number }): React.JSX.Elemen
               alt={() => window.claudeTerm.startFromCard(item.id, true)}
             />
           )}
+        </div>
+      )}
+      {item.warning && (
+        <div className="mission-row mission-drift">
+          <span>⚠ {item.warning}</span>
+        </div>
+      )}
+      {drift && (
+        <div className="mission-row mission-drift">
+          <span>⚠ {drift.text}</span>
+          <ActionChip
+            label={drift.moveTo === 'review' ? '→ Peer review' : '→ Deploy'}
+            title={`move ${item.ticket?.key} on the board (asks first)`}
+            run={() => window.claudeTerm.moveFromCard(item.id)}
+          />
         </div>
       )}
     </button>

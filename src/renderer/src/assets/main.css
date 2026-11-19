@@ -2873,6 +2873,13 @@ body.rail-resizing {
   display: contents;
 }
 
+/* long repo names and build labels shorten instead of widening the lane */
+.board-card .mission-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .mission-doing {
   color: var(--fg);
   font-size: 11.5px;

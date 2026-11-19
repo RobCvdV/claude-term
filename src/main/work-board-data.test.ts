@@ -185,7 +185,9 @@ describe('joinWork', () => {
     expect(byId['MTX-2']).toBeUndefined()
     expect(byId['MTX-3']).toBeUndefined()
     const pr6 = items.find((i) => i.prs[0]?.number === 6)
-    expect(pr6).toMatchObject({ kind: 'pr', context: 'mendrix' })
+    expect(pr6).toMatchObject({ kind: 'pr', context: 'mendrix', ticket: { key: 'MTX-2' } })
+    expect(pr6?.warning).toMatch(/^MTX-2 is already in Deploy, but this PR isn't merged/)
+    expect(byId['MTX-1'].warning).toBe(null)
   })
 
   it('puts GitHub PRs in the GitHub context and reviews by their host', () => {

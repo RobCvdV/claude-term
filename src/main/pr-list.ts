@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import { homedir } from 'os'
 import { BrowserWindow, dialog, Menu, shell } from 'electron'
 import type { PrInfo } from '../shared/types'
 import type { RepoRef } from '../shared/repo-links'
@@ -109,8 +110,14 @@ interface MergeInfo {
 // Push access and allowed merge methods change rarely — cache them for a day.
 const mergeInfoCache = new Map<string, { info: MergeInfo; expiresAt: number }>()
 
-async function githubMergeInfo(cwd: string, env: NodeJS.ProcessEnv): Promise<MergeInfo> {
-  const hit = mergeInfoCache.get(cwd)
+/** `slug` (owner/repo) asks about that repo instead of the one in `cwd`. */
+async function githubMergeInfo(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  slug?: string
+): Promise<MergeInfo> {
+  const key = slug ?? cwd
+  const hit = mergeInfoCache.get(key)
   if (hit && hit.expiresAt > Date.now()) return hit.info
   let info: MergeInfo = { canMerge: false, flag: '--squash' }
   try {
@@ -118,6 +125,7 @@ async function githubMergeInfo(cwd: string, env: NodeJS.ProcessEnv): Promise<Mer
       [
         'repo',
         'view',
+        ...(slug ? [slug] : []),
         '--json',
         'viewerPermission,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed'
       ],
@@ -137,7 +145,7 @@ async function githubMergeInfo(cwd: string, env: NodeJS.ProcessEnv): Promise<Mer
   } catch {
     // no gh auth / not a github repo → just no Merge item
   }
-  mergeInfoCache.set(cwd, { info, expiresAt: Date.now() + 24 * 3600_000 })
+  mergeInfoCache.set(key, { info, expiresAt: Date.now() + 24 * 3600_000 })
   return info
 }
 
@@ -239,4 +247,11 @@ async function confirmAndMerge(
       detail: err instanceof Error ? err.message : String(err)
     })
   }
+}
+
+/** Merge a GitHub PR by its URL, with the merge method the repo allows. */
+export async function mergeGithubPr(url: string, slug: string): Promise<void> {
+  const env = await loginShellEnv()
+  const { flag } = await githubMergeInfo(homedir(), env, slug)
+  await gh(['pr', 'merge', url, flag, '--delete-branch'], homedir(), env)
 }

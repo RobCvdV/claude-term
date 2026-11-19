@@ -290,9 +290,13 @@ function Guide(): React.JSX.Element {
           with a tab per context (MendriX, Personal). Lane and kind toggles are remembered, and PRs
           whose ticket you handed to someone else stay hidden unless <b>Handed off</b> is on;{' '}
           <b>/</b> focuses the filter and <b>Esc</b> clears it. A card with an open session shows it
-          — click to go there. <b>▶ session</b> opens a tab in a local clone on the card&apos;s
-          branch, resuming the branch&apos;s last conversation or starting one about the card;
-          right-click it to pick another clone.
+          — click to go there. <b>merge</b> on an approved, green PR merges it after a confirmation
+          and offers to move the ticket to Deploy; <b>→ Peer review</b> / <b>→ Deploy</b> fix a
+          ticket that lags its PRs, and ⚠ flags an unmerged PR whose ticket already moved on.{' '}
+          <b>▶ session</b> puts a local clone on the card&apos;s branch and resumes its last
+          conversation or starts one about the card — in the clone&apos;s own tab when that sits
+          idle with nothing to commit. When that clone is busy, or on right-click, a menu shows
+          every clone&apos;s state plus <b>New worktree</b>.
         </p>
       </section>
       <section>
