@@ -852,6 +852,8 @@ export interface WorkItem {
   starts: BoardStart[]
   /** my PR's ticket is on someone else's name ("unassigned" when no one's): who has it */
   handedOff: string | null
+  /** something is off, e.g. an unmerged PR of a ticket already in Deploy */
+  warning: string | null
 }
 
 /** A local clone a Work board card can start a session in. */

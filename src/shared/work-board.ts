@@ -1,5 +1,5 @@
-import type { BoardKind, BoardLane, TabStatus, WorkItem } from './types'
-import { ticketStage } from './work-rules'
+import type { BoardKind, BoardLane, BoardPr, TabStatus, WorkItem } from './types'
+import { ticketStage, type TicketStage } from './work-rules'
 import { branchTicket } from './jira-labels'
 
 export const BOARD_LANES: { id: BoardLane; label: string }[] = [
@@ -19,6 +19,7 @@ export const BOARD_KINDS: { id: BoardKind; label: string }[] = [
 /** Which column a card goes in: whose move it is, then how far along it is. */
 export function laneOf(item: WorkItem, session: TabStatus | null): BoardLane {
   if (session?.claudeActive && session.activity === 'needs-attention') return 'needs-you'
+  if (item.warning) return 'needs-you'
   if (item.review) return item.review.myVerdict ? 'waiting' : 'needs-you'
   const prs = item.prs
   if (prs.some((p) => p.review === 'changes' || p.ci?.state === 'failed')) return 'needs-you'
@@ -31,6 +32,28 @@ export function laneOf(item: WorkItem, session: TabStatus | null): BoardLane {
   if (stage === 'review' || stage === 'deploy' || stage === 'blocked') return 'waiting'
   if (session || prs.length > 0 || stage === 'active') return 'in-progress'
   return 'todo'
+}
+
+/** Approved, not a draft, build green (or none, or only an approval step left). */
+export function mergeable(pr: BoardPr): boolean {
+  if (pr.draft || pr.review !== 'approved') return false
+  return !pr.ci || pr.ci.state === 'success' || pr.ci.state === 'held'
+}
+
+/** The ticket's board column lags its PRs: say so, and where it should go. */
+export function boardDrift(
+  item: WorkItem
+): { text: string; moveTo: Extract<TicketStage, 'review' | 'deploy'> } | null {
+  const t = item.ticket
+  if (!t || item.warning) return null
+  const stage = ticketStage(t)
+  if ((stage === 'todo' || stage === 'active') && item.prs.some((p) => !p.draft)) {
+    return { text: `PR is open, ticket still ${t.status}`, moveTo: 'review' }
+  }
+  if (stage === 'review' && item.kind === 'ticket' && item.prs.length === 0) {
+    return { text: `no open PR left, ticket still ${t.status}`, moveTo: 'deploy' }
+  }
+  return null
 }
 
 /** Every word of the query appears in the card's key, title, status, repo or branch. */

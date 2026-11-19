@@ -266,6 +266,10 @@ export interface ClaudeTermApi {
   onBoardUpdate(cb: (state: WorkBoardState) => void): () => void
   /** a new tab on the card's branch with claude asked about it; `pick` asks which clone */
   startFromCard(itemId: string, pick: boolean): Promise<{ ok: boolean; error?: string }>
+  /** merge a card's approved, green PR (asks first) */
+  mergeFromCard(itemId: string, prUrl: string): Promise<{ ok: boolean; error?: string }>
+  /** move a card's ticket to where its PRs say it belongs (asks first) */
+  moveFromCard(itemId: string): Promise<{ ok: boolean; error?: string }>
   /** every terminal window's tabs, for the Mission control window */
   missionTabs(): Promise<MissionTabs>
   onMissionTabs(cb: (tabs: MissionTabs) => void): () => void
@@ -434,6 +438,8 @@ const api: ClaudeTermApi = {
   refreshBoard: () => ipcRenderer.send('board:refresh'),
   onBoardUpdate: (cb) => subscribe('board:update', cb),
   startFromCard: (itemId, pick) => ipcRenderer.invoke('board:start', itemId, pick),
+  mergeFromCard: (itemId, prUrl) => ipcRenderer.invoke('board:merge', itemId, prUrl),
+  moveFromCard: (itemId) => ipcRenderer.invoke('board:move', itemId),
   missionTabs: () => ipcRenderer.invoke('mission:tabs'),
   onMissionTabs: (cb) => subscribe('mission:tabs', cb),
   selectGlobalTab: (index) => ipcRenderer.send('tabs:selectGlobal', index),

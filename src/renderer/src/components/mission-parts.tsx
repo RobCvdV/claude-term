@@ -54,11 +54,16 @@ export function ActionChip({
     e.stopPropagation()
     if (phase === 'busy' || phase === 'done') return
     setPhase('busy')
-    void action().then((r) => {
-      // ok=false without an error is a cancelled confirmation
-      setPhase(r.ok ? 'done' : r.error ? 'failed' : 'idle')
-      setError(r.error ?? null)
-    })
+    void action()
+      .then((r) => {
+        // ok=false without an error is a cancelled confirmation
+        setPhase(r.ok ? 'done' : r.error ? 'failed' : 'idle')
+        setError(r.error ?? null)
+      })
+      .catch((err: unknown) => {
+        setPhase('failed')
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
   return (
     <span
@@ -73,7 +78,7 @@ export function ActionChip({
         : phase === 'done'
           ? done
           : phase === 'failed'
-            ? `${label} failed`
+            ? `⚠ ${error ?? `${label} failed`}`
             : label}
     </span>
   )

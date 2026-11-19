@@ -235,12 +235,12 @@ export class PtyManager {
     if (tab) tab.cwd = cwd
   }
 
-  /** Respawn a fresh shell in the same tab/cwd (after the shell exited). */
-  async restart(tabId: TabId): Promise<void> {
+  /** Respawn a fresh shell in the same tab/cwd, optionally straight into claude. */
+  async restart(tabId: TabId, start?: { resume?: string; prompt?: string }): Promise<void> {
     const tab = this.tabs.get(tabId)
     if (!tab) return
     if (!tab.exited) tab.proc.kill()
-    await this.create(tabId, tab.cwd)
+    await this.create(tabId, tab.cwd, start?.resume, undefined, start?.prompt)
   }
 
   write(tabId: TabId, data: string): void {

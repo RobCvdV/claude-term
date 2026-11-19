@@ -158,10 +158,15 @@ and a card with an open session shows it — click to go there.
   or item kinds; the choice is remembered. **Handed off** (off by default) shows your PRs whose
   ticket is now on someone else's name.
 - `/` focuses the filter (every word must match key, title, repo or status), `Esc` clears it.
-- **▶ session** opens a tab in a local clone, on the card's branch (a to-do ticket gets its branch
-  and moves to Active). It resumes the branch's last conversation, telling it only what is new,
-  or starts one asking Claude about the card. Right-click picks another clone; clones another tab
-  works in are skipped.
+- **merge** on an approved, green PR merges it (after a confirmation) and offers to move its
+  ticket to Deploy. A ticket lagging its PRs gets **→ Peer review** / **→ Deploy**, and a PR whose
+  ticket already moved on to Deploy, Beta or Done is flagged ⚠ as possibly missing changes.
+- **▶ session** puts a local clone on the card's branch (a to-do ticket gets its branch and moves
+  to Active) and resumes the branch's last conversation, telling it only what is new, or starts one
+  asking Claude about the card. A clone whose own tab sits idle with nothing to commit is taken
+  over in that tab. When the usual clone is busy (a working tab, or uncommitted changes) — or on
+  right-click — a menu shows every clone's state, plus **New worktree**, which checks the branch
+  out under `.worktrees/` next to the repo.
 - Contexts live in `workContexts` in the app's `app-settings.json`.
 
 ### Focus follows the conversation

@@ -1,5 +1,5 @@
-import { app, shell, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
-import { basename, join } from 'path'
+import { app, shell, BrowserWindow, dialog, ipcMain } from 'electron'
+import { join } from 'path'
 import { readFileSync, writeFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -12,13 +12,15 @@ import { installAppMenu, installCycleKey, installZoomKeys } from './menu'
 import { TerminalWindows } from './terminal-windows'
 import { windowsOf } from './window-order'
 import { appSettings, onAppSettings } from './app-settings'
-import type { BoardStart, WindowBounds, WorkItem } from '../shared/types'
+import type { WindowBounds, WorkItem } from '../shared/types'
 import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
 import { setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
 import { WorkBoard } from './work-board'
-import { prepareStart, tabsIn } from './work-start'
+import { startFromCard } from './card-session'
+import { confirmAndMove, mergeFromCard, type ActionResult } from './board-actions'
+import { boardDrift } from '../shared/work-board'
 import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
 import { bringForward, inBackground, keepBackgroundRendering, showWindow } from './background-mode'
@@ -118,51 +120,6 @@ const board = new WorkBoard({
   isOpen: () => services.board.isOpen(),
   onChange: (state) => services.board.send('board:update', state)
 })
-
-/** Which clone to start a card's session in, picked from a menu. */
-function pickStart(win: BrowserWindow | null, item: WorkItem): Promise<BoardStart | null> {
-  return new Promise((resolve) => {
-    if (!win) return resolve(null)
-    const snaps = services.status.allSnapshots()
-    const stay = item.ticket ? 'ticket branch' : 'current branch'
-    Menu.buildFromTemplate(
-      item.starts.map((s) => {
-        const busy = tabsIn(snaps, s.root).length > 0
-        return {
-          label: `${basename(s.root)} — ${s.branch ?? stay}${busy ? ' (in use by a tab)' : ''}`,
-          enabled: !busy,
-          click: () => resolve(s)
-        }
-      })
-      // on macOS the close callback can fire before the item's click
-    ).popup({ window: win, callback: () => setTimeout(() => resolve(null), 200) })
-  })
-}
-
-/** "▶ session" on a Work board card: a tab on the card's branch, resuming its last conversation or asking a new one about it. */
-async function startFromCard(
-  from: BrowserWindow | null,
-  itemId: string,
-  pick: boolean
-): Promise<{ ok: boolean; error?: string }> {
-  const item = board.get().items.find((i) => i.id === itemId)
-  if (!item?.starts.length) return { ok: false, error: 'no local clone of this repo found' }
-  const start = !pick && item.starts[0].sure ? item.starts[0] : await pickStart(from, item)
-  if (!start) return { ok: false }
-  const res = await prepareStart(item, start, services.status.allSnapshots())
-  if (!res.ok) return res
-  if ('tabId' in res) {
-    windows.activate(res.tabId)
-    return { ok: true }
-  }
-  const win = windows.focusedOrPrimary()
-  if (!win) return { ok: false, error: 'no terminal window' }
-  bringForward(win)
-  win.webContents.send('folder:openTab', res.cwd, res.prompt, res.resume)
-  return res.warnings.length
-    ? { ok: true, error: `Jira: ${res.warnings.join('; ')}` }
-    : { ok: true }
-}
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
 // unless the env var is set, so normal runs are unaffected. Must be set before
@@ -264,9 +221,36 @@ app.whenReady().then(async () => {
   ipcMain.handle('reviews:list', () => reviews.list())
   ipcMain.handle('board:state', () => board.get())
   ipcMain.on('board:refresh', () => board.refresh())
+  // the item and PR are looked up here: act only on what the board itself fetched
+  const boardItem = (id: string): WorkItem | undefined => board.get().items.find((i) => i.id === id)
+  const cardDeps = {
+    item: boardItem,
+    snapshots: () => services.status.allSnapshots(),
+    windows,
+    ptys: services.ptys,
+    status: services.status,
+    refresh: () => board.refresh()
+  }
   ipcMain.handle('board:start', (e, itemId: string, pick: boolean) =>
-    startFromCard(BrowserWindow.fromWebContents(e.sender), itemId, pick)
+    startFromCard(cardDeps, BrowserWindow.fromWebContents(e.sender), itemId, pick)
   )
+  const thenRefresh = (res: ActionResult): ActionResult => {
+    if (res.ok) board.refresh()
+    return res
+  }
+  ipcMain.handle('board:merge', async (e, itemId: string, prUrl: string) => {
+    const item = boardItem(itemId)
+    const pr = item?.prs.find((p) => p.url === prUrl)
+    if (!item || !pr) return { ok: false, error: 'that PR is no longer on the board' }
+    return thenRefresh(await mergeFromCard(BrowserWindow.fromWebContents(e.sender), item, pr))
+  })
+  ipcMain.handle('board:move', async (e, itemId: string) => {
+    const item = boardItem(itemId)
+    const drift = item && boardDrift(item)
+    if (!item?.ticket || !drift) return { ok: false, error: 'nothing to move' }
+    const win = BrowserWindow.fromWebContents(e.sender)
+    return thenRefresh(await confirmAndMove(win, item.ticket.key, drift.moveTo))
+  })
   let contexts = JSON.stringify(appSettings().workContexts)
   onAppSettings((s) => {
     if (JSON.stringify(s.workContexts) === contexts) return

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BoardPr, GitInfo, TabStatus, WorkItem } from './types'
-import { laneOf, matchesFilter, sessionFor } from './work-board'
+import { boardDrift, laneOf, matchesFilter, mergeable, sessionFor } from './work-board'
 
 const pr = (over: Partial<BoardPr> = {}): BoardPr => ({
   url: 'https://bitbucket.org/ws/repo/pull-requests/5',
@@ -36,6 +36,7 @@ const item = (over: Partial<WorkItem> = {}): WorkItem => ({
   updated: 0,
   starts: [],
   handedOff: null,
+  warning: null,
   ...over
 })
 
@@ -114,5 +115,38 @@ describe('sessionFor', () => {
     expect(sessionFor(item(), [session('bugfix/MTX-11-x')])).toBe(null)
     const byPr = { ...session('main'), git: git('main', pr().url) }
     expect(sessionFor(item({ ticket: null, prs: [pr()] }), [byPr])?.tabId).toBe('t1')
+  })
+})
+
+describe('mergeable', () => {
+  it('needs an approved, non-draft PR whose build is green, held or absent', () => {
+    expect(mergeable(pr({ review: 'approved' }))).toBe(true)
+    expect(mergeable(pr({ review: 'approved', ci: { state: 'held', url: '', name: '' } }))).toBe(
+      true
+    )
+    expect(mergeable(pr({ review: 'approved', ci: { state: 'running', url: '', name: '' } }))).toBe(
+      false
+    )
+    expect(mergeable(pr({ review: 'approved', draft: true }))).toBe(false)
+    expect(mergeable(pr())).toBe(false)
+  })
+})
+
+describe('boardDrift', () => {
+  it('moves an active ticket with an open PR to review', () => {
+    expect(boardDrift(item({ prs: [pr()] }))?.moveTo).toBe('review')
+    expect(boardDrift(item({ prs: [pr({ draft: true })] }))).toBe(null)
+  })
+
+  it('moves a ticket in review without open PRs to deploy', () => {
+    const review = { ...item().ticket!, status: 'Peer review' }
+    expect(boardDrift(item({ ticket: review }))?.moveTo).toBe('deploy')
+    expect(boardDrift(item({ ticket: review, prs: [pr()] }))).toBe(null)
+  })
+
+  it('a warned card needs you and offers no move', () => {
+    const warned = item({ kind: 'pr', prs: [pr()], warning: 'already in Deploy' })
+    expect(boardDrift(warned)).toBe(null)
+    expect(laneOf(warned, null)).toBe('needs-you')
   })
 })

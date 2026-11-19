@@ -115,21 +115,14 @@ import { disposeAll, disposeTab, type TabResources } from './tab-lifecycle'
 import { settingsAddedDirs } from './project-dirs'
 import { readLoggedWorklogs, saveWorklogPlan } from './worklog-store'
 import { recordCoverage } from './worklog-coverage'
-import {
-  bookWorklogs,
-  fetchBooked,
-  jiraConnect,
-  jiraDisconnect,
-  jiraStatus,
-  moveTicket
-} from './jira-client'
-import type { TicketStage } from '../shared/work-rules'
+import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } from './jira-client'
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { repoDownloads } from './downloads'
 import { fetchTodos } from './jira-client'
 import { startTicket } from './jira-start'
+import { confirmAndMove } from './board-actions'
 import { jiraLabelsFor, ticketUrl, todoSearchUrl } from '../shared/jira-labels'
 import { sessionDoing, sessionLastAsk } from './session-summary'
 import { searchConversation, conversationTurns } from './conversation-search'
@@ -947,31 +940,11 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   // Mission control's drift / ready-to-merge fix: move the ticket on the board,
   // after a confirmation — others watch that board too.
-  ipcMain.handle(
-    'jira:move',
-    async (e, key: string, stage: TicketStage): Promise<{ ok: boolean; error?: string }> => {
-      const win = BrowserWindow.fromWebContents(e.sender)
-      const label = stage === 'review' ? 'Peer review' : 'Deploy'
-      const opts = {
-        type: 'question' as const,
-        buttons: ['Cancel', `Move to ${label}`],
-        defaultId: 1,
-        cancelId: 0,
-        message: `Move ${key} to ${label}?`
-      }
-      const { response } = win
-        ? await dialog.showMessageBox(win, opts)
-        : await dialog.showMessageBox(opts)
-      if (response !== 1) return { ok: false }
-      try {
-        await moveTicket(key, stage)
-        status.refreshGitSoon()
-        return { ok: true }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      }
-    }
-  )
+  ipcMain.handle('jira:move', async (e, key: string, stage: 'review' | 'deploy') => {
+    const res = await confirmAndMove(BrowserWindow.fromWebContents(e.sender), key, stage)
+    if (res.ok) status.refreshGitSoon()
+    return res
+  })
   ipcMain.on('window:new', () => windows.createFresh())
   ipcMain.on('tabs:moveToMain', (e) => {
     const main = windows.mainWindowFor(BrowserWindow.fromWebContents(e.sender))
