@@ -9,13 +9,29 @@ const HEARTBEAT_MS = 5000
 let endpoint: string | null = null
 let requests: { base: string; query: string } | null = null
 let sessionId = ''
+/** the id a /clear or /resume ended: reports re-read the id until it moves on */
+let endedId: string | null = null
 let loopGen = 0
 const lastRender: Record<string, number> = {}
 /** Background tasks whose end has been reported (their rows redraw). */
 const endedTasks = new Set<string>()
 
+/** The session id after a /clear or /resume has moved the process on to a new one. */
+async function currentId($: Engine): Promise<string> {
+  if (endedId !== null) {
+    const ended = endedId
+    sessionId = String(await $.session.id())
+    if (sessionId !== ended) {
+      endedId = null
+      await report($, 'session.switch', { from: ended })
+    }
+  }
+  return sessionId
+}
+
 async function report($: Engine, kind: string, data: object = {}): Promise<void> {
   if (!endpoint) return
+  await currentId($)
   const body = JSON.stringify({ kind, session_id: sessionId, ...data })
   try {
     await within($, 500, $.http.fetch(endpoint, { method: 'POST', body }))
@@ -46,6 +62,7 @@ const reasks = new Map<
 /** A request claude-term answers (`/mod/<action>`); `{}` when it can't be reached. */
 async function call($: Engine, action: string, data: object): Promise<Record<string, unknown>> {
   if (!requests) return {}
+  await currentId($)
   try {
     const r = await $.http.fetch(`${requests.base}/mod/${action}?${requests.query}`, {
       method: 'POST',
@@ -177,6 +194,11 @@ export const register: Register = (on) => {
   })
 
   on('session.end', async ($, e, next) => {
+    // the process goes on under a new id, and no session.start follows
+    if (e.reason === 'clear' || e.reason === 'resume') {
+      endedId = e.sessionId
+      return next(e)
+    }
     loopGen++
     await report($, 'session.end')
     return next(e)

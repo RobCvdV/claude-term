@@ -21,7 +21,8 @@ The overlay is per session and never touches `~/.claude/settings.json`
   suppressed for app sessions.
 - `type: "http"` hooks — `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`,
   `Elicitation`, `SessionEnd` — drive the per-tab activity state. `SessionStart` / `SessionEnd`
-  show and hide the Claude UI.
+  show and hide the Claude UI, except a `SessionEnd` from `/clear` or `/resume`: the process goes
+  on under a new session id.
 - `PermissionRequest` and a matcher-scoped `PreToolUse` run on a long timeout. Those two can be
   _held open_, which is how a prompt gets answered from somewhere other than the terminal (see
   [companion.md](companion.md) and `src/main/companion/parked-prompts.ts`).

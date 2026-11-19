@@ -28,10 +28,10 @@ const persisted = (server: StatusServer, tabId: string): [boolean, string | null
 }
 
 /** Drive a hook the way an HTTP POST to /hook does. */
-const hook = (server: StatusServer, tabId: string, name: string): void =>
+const hook = (server: StatusServer, tabId: string, name: string, extra: object = {}): void =>
   (
     server as unknown as { handleHook: (t: string, e: { hook_event_name: string }) => void }
-  ).handleHook(tabId, { hook_event_name: name })
+  ).handleHook(tabId, { hook_event_name: name, ...extra })
 
 /** Drive a statusline the way an HTTP POST to /statusline does. */
 const statusline = (server: StatusServer, tabId: string, payload: StatuslinePayload): void =>
@@ -49,6 +49,25 @@ describe('StatusServer', () => {
     const { server, tabId } = withLiveTab()
     hook(server, tabId, 'SessionEnd')
     expect(persisted(server, tabId)).toEqual([false, 'sess-1'])
+  })
+
+  it('keeps the Claude UI through /clear, even when the old end arrives after the new start', () => {
+    const { server, tabId } = withLiveTab()
+    hook(server, tabId, 'SessionStart', { source: 'clear', session_id: 'sess-2' })
+    hook(server, tabId, 'SessionEnd', { reason: 'clear', session_id: 'sess-1' })
+    expect(server.snapshot(tabId)?.claudeActive).toBe(true)
+    hook(server, tabId, 'SessionEnd', { reason: 'resume' })
+    expect(server.snapshot(tabId)?.claudeActive).toBe(true)
+    hook(server, tabId, 'SessionEnd', { reason: 'prompt_input_exit' })
+    expect(server.snapshot(tabId)?.claudeActive).toBe(false)
+  })
+
+  it('moves the foreground session on after /clear, but only from the current one', () => {
+    const { server, tabId } = withLiveTab()
+    server.switchSession(tabId, 'bg-agent', 'sess-x')
+    expect(persisted(server, tabId)).toEqual([true, 'sess-1'])
+    server.switchSession(tabId, 'sess-1', 'sess-2')
+    expect(persisted(server, tabId)).toEqual([true, 'sess-2'])
   })
 
   // The regression. Quitting kills every PTY, and each dying session reports
