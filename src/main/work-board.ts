@@ -30,6 +30,8 @@ import { startsFor, type LocalRepo } from './work-start-data'
 import { lastSessionOn, listWorktrees, localRepos, planStart } from './work-start'
 
 const POLL_MS = 5 * 60_000
+/** a first baseline soon after launch, so changes notify from the next sweep on */
+const FIRST_SWEEP_MS = 30_000
 
 interface Sources {
   tickets: BoardTicket[]
@@ -69,14 +71,20 @@ export class WorkBoard {
       snapshots: () => TabStatus[]
       history: () => BranchHistoryEntry[]
       isOpen: () => boolean
+      /** sweep while the board is closed too */
+      watching: () => boolean
       onChange: (state: WorkBoardState) => void
+      /** fresh results of a sweep */
+      onSwept: (items: WorkBoardState['items']) => void
     }
   ) {}
 
   start(): void {
-    setInterval(() => {
-      if (this.deps.isOpen()) void this.sweep()
-    }, POLL_MS)
+    const tick = (): void => {
+      if (this.deps.isOpen() || this.deps.watching()) void this.sweep()
+    }
+    setTimeout(tick, FIRST_SWEEP_MS)
+    setInterval(tick, POLL_MS)
   }
 
   get(): WorkBoardState {
@@ -191,6 +199,7 @@ export class WorkBoard {
     }
     this.resumable.clear()
     this.publish({ items: this.join(), errors, sweptAt: Date.now(), sweeping: false })
+    this.deps.onSwept(this.state.items)
     this.replan()
   }
 

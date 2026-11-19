@@ -789,6 +789,8 @@ export interface AppSettings {
   notify: NotifySettings
   workContexts: WorkContext[]
   board: BoardView
+  /** keep sweeping the Work board while it is closed, to notify about work without a tab */
+  boardWatch: boolean
   /** repo name → command run in a new worktree's tab before claude, e.g. `npm ci` */
   worktreeSetup: Record<string, string>
 }

@@ -169,6 +169,8 @@ and a card with an open session shows it — click to go there.
   `.worktrees/` next to the repo and first runs `worktreeSetup[<repo>]` (e.g. `npm ci`) in the tab
   when set. **Worktrees** in the header removes them again; those whose branch is gone upstream, or
   whose ticket left your work, are marked done.
+- Builds, reviews and ticket moves on work without a tab notify like a tab's own, also while the
+  board is closed (Settings → Watch my open work in the background).
 - Contexts live in `workContexts`, worktree setup commands in `worktreeSetup`, both in the app's
   `app-settings.json`.
 

@@ -310,11 +310,13 @@ function Guide(): React.JSX.Element {
           and (off by default) a session needing input while the app is in the background — each
           with its own switch, plus one for all of them, &quot;only in the background&quot; and
           sound. The first look at a branch only sets a baseline, and tabs sharing a branch raise
-          one notification. Clicking one jumps to its tab. Also here: the Jira status lookup (off by
-          default — it reads the Jira token from the keychain), CI polling, the review list, the
-          behind-main threshold, window and tab behaviour, keep-awake, spell check, volume, and
-          which services have credentials — Jira connects here; the rest read tokens from your login
-          shell when the app starts.
+          one notification. Clicking one jumps to its tab.{' '}
+          <b>Watch my open work in the background</b> (on by default) does the same for Work board
+          items without a tab, sweeping every 5 minutes even while the board is closed; those open
+          the PR or ticket. Also here: the Jira status lookup (off by default — it reads the Jira
+          token from the keychain), CI polling, the review list, the behind-main threshold, window
+          and tab behaviour, keep-awake, spell check, volume, and which services have credentials —
+          Jira connects here; the rest read tokens from your login shell when the app starts.
         </p>
       </section>
       <section>
