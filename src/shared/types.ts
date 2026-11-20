@@ -311,7 +311,10 @@ export interface JiraTodo {
 export interface JiraTodoGroup {
   /** absolute path of the workspace folder */
   root: string
+  /** empty: no labels yet, so no list — the dropdown offers to set them */
   labels: string[]
+  /** the labels come from this folder's settings, not the built-in ones */
+  custom: boolean
   todos: JiraTodo[]
   /** the same search in Jira, for the "open in Jira" footer */
   searchUrl: string
@@ -452,6 +455,8 @@ export interface ChangedFile {
 export interface ProjectSettings {
   /** accent colour of a tab opened in this project (`/color` writes it here) */
   tabColor?: string
+  /** Jira labels of this folder's to-do list, instead of the built-in ones */
+  jiraLabels?: string[]
 }
 
 /** A change to a project's settings; null removes the key from the file. */
@@ -789,6 +794,10 @@ export interface AppSettings {
   notify: NotifySettings
   workContexts: WorkContext[]
   board: BoardView
+  /** keep sweeping the Work board while it is closed, to notify about work without a tab */
+  boardWatch: boolean
+  /** repo name → command run in a new worktree's tab before claude, e.g. `npm ci` */
+  worktreeSetup: Record<string, string>
 }
 
 /** Which services the app can reach — tokens come from the login shell, Jira's
@@ -854,6 +863,33 @@ export interface WorkItem {
   handedOff: string | null
   /** something is off, e.g. an unmerged PR of a ticket already in Deploy */
   warning: string | null
+  /** what ▶ session would do on a click */
+  plan: StartPlan | null
+}
+
+/** What a new tab runs first: a setup command, then claude with a first prompt. */
+export interface TabLaunch {
+  prompt?: string
+  /** shell command run before claude, e.g. installing a fresh worktree's dependencies */
+  setup?: string
+}
+
+/** ▶ session's next move for a card. */
+export type StartPlan =
+  | { kind: 'resume' | 'new'; root: string; takeover: boolean }
+  | { kind: 'goto' }
+  /** the menu opens: no sure clone, or it is busy */
+  | { kind: 'choose'; why?: string }
+
+/** A worktree ▶ session made. */
+export interface BoardWorktree {
+  root: string
+  repo: string
+  branch: string
+  /** why it can go, or null while it is still in use for open work */
+  stale: string | null
+  dirty: boolean
+  inUse: boolean
 }
 
 /** A local clone a Work board card can start a session in. */
@@ -867,6 +903,7 @@ export interface BoardStart {
 
 export interface WorkBoardState {
   items: WorkItem[]
+  worktrees: BoardWorktree[]
   /** sources that failed on the last sweep */
   errors: string[]
   sweptAt: number | null
@@ -892,7 +929,11 @@ export interface BoardView {
   hiddenKinds: BoardKind[]
   /** show PRs whose ticket I handed to someone else */
   showHandedOff: boolean
+  /** order within a lane */
+  sort: BoardSort
 }
+
+export type BoardSort = 'newest' | 'urgent'
 
 /** "Complete with Claude" in a file window: the text around the cursor. */
 export interface CompletionRequest {

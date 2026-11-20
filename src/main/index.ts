@@ -15,10 +15,11 @@ import { appSettings, onAppSettings } from './app-settings'
 import type { WindowBounds, WorkItem } from '../shared/types'
 import { closeAllDocsWindows } from './docs-window'
 import { CiPoller } from './ci-status'
-import { setTicketFetcher } from './ticket-status'
+import { recentlyMovedByUs, setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
 import { WorkBoard } from './work-board'
-import { startFromCard } from './card-session'
+import { BoardWatch } from './board-watch'
+import { startFromCard, worktreeMenu } from './card-session'
 import { confirmAndMove, mergeFromCard, type ActionResult } from './board-actions'
 import { boardDrift } from '../shared/work-board'
 import { stopCompletionWorkers } from './claude-complete'
@@ -111,6 +112,9 @@ const reviews = new ReviewQueue(
   }
 )
 
+// notifications for open work no tab watches
+const boardWatch = new BoardWatch((n) => services.desktop.notify(n), recentlyMovedByUs)
+
 // my open work across Jira, Bitbucket and GitHub, for the Work board
 const board = new WorkBoard({
   contexts: () => appSettings().workContexts,
@@ -118,7 +122,9 @@ const board = new WorkBoard({
   snapshots: () => services.status.allSnapshots(),
   history: () => services.branches.recent(200),
   isOpen: () => services.board.isOpen(),
-  onChange: (state) => services.board.send('board:update', state)
+  watching: () => appSettings().boardWatch,
+  onChange: (state) => services.board.send('board:update', state),
+  onSwept: (items) => boardWatch.observe(items, services.status.allSnapshots())
 })
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
@@ -231,6 +237,12 @@ app.whenReady().then(async () => {
     status: services.status,
     refresh: () => board.refresh()
   }
+  ipcMain.on('board:replan', () => board.replan())
+  ipcMain.handle('board:worktrees', (e) =>
+    worktreeMenu(BrowserWindow.fromWebContents(e.sender), board.get().worktrees, () =>
+      board.replan()
+    )
+  )
   ipcMain.handle('board:start', (e, itemId: string, pick: boolean) =>
     startFromCard(cardDeps, BrowserWindow.fromWebContents(e.sender), itemId, pick)
   )

@@ -89,3 +89,38 @@ export function sessionFor(item: WorkItem, sessions: readonly TabStatus[]): TabS
     ) ?? null
   )
 }
+
+/** How pressing a card is, for the "urgent" sort: a waiting session, then a warning, a red build, requested changes, a PR to merge, a ticket to move. */
+export function urgency(item: WorkItem, session: TabStatus | null): number {
+  if (session?.claudeActive && session.activity === 'needs-attention') return 6
+  if (item.warning) return 5
+  if (item.prs.some((p) => p.ci?.state === 'failed')) return 4
+  if (item.prs.some((p) => p.review === 'changes')) return 3
+  if (item.prs.some(mergeable)) return 2
+  return boardDrift(item) ? 1 : 0
+}
+
+export type BoardStep = 'up' | 'down' | 'left' | 'right'
+
+/**
+ * The card a key moves to, by id: up/down within a lane, left/right to the
+ * same row of the next lane that has cards. No selection yet: the first card.
+ */
+export function stepSelection(
+  columns: readonly (readonly string[])[],
+  current: string | null,
+  step: BoardStep
+): string | null {
+  const col = columns.findIndex((c) => current !== null && c.includes(current))
+  if (col < 0) return columns.find((c) => c.length)?.[0] ?? null
+  const row = columns[col].indexOf(current!)
+  if (step === 'up' || step === 'down') {
+    const next = row + (step === 'down' ? 1 : -1)
+    return columns[col][Math.max(0, Math.min(columns[col].length - 1, next))]
+  }
+  const dir = step === 'right' ? 1 : -1
+  for (let c = col + dir; c >= 0 && c < columns.length; c += dir) {
+    if (columns[c].length) return columns[c][Math.min(row, columns[c].length - 1)]
+  }
+  return current
+}

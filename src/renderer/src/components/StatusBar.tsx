@@ -611,6 +611,8 @@ function JiraMenu({
   const [groups, setGroups] = useState<JiraTodoGroup[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  /** the folder whose labels are being edited, and the draft */
+  const [editing, setEditing] = useState<{ root: string; text: string } | null>(null)
   const [pos, setPos] = useState({ right: 0, bottom: 0 })
   const anchor = useRef<HTMLSpanElement>(null)
 
@@ -618,8 +620,20 @@ function JiraMenu({
     const r = anchor.current?.getBoundingClientRect()
     if (r) setPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top })
     setOpen(true)
+    setEditing(null)
     if (!busy) setNote(null)
     void window.claudeTerm.jiraTodos(tabId).then(setGroups)
+  }
+
+  const saveLabels = async (root: string, text: string): Promise<void> => {
+    const labels = text
+      .split(',')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const ok = await window.claudeTerm.setJiraLabels(tabId, root, labels)
+    setEditing(null)
+    if (!ok) setNote(`Could not write ${nameOf(root)}/.claude/claude-term-settings.local.json`)
+    setGroups(await window.claudeTerm.jiraTodos(tabId))
   }
   useDismiss(open, anchor, () => setOpen(false))
 
@@ -689,13 +703,51 @@ function JiraMenu({
           ) : (
             groups.map((g) => (
               <Fragment key={g.root}>
-                {(multi || ticket) && (
-                  <div className="pr-group" title={g.root}>
+                <div className="pr-group jira-labels" title={g.root}>
+                  <span>
                     {multi ? `${nameOf(g.root)} · ` : ''}to do
-                  </div>
+                    {g.labels.length > 0 && ` · ${g.labels.join(', ')}`}
+                  </span>
+                  <button
+                    title={
+                      g.custom
+                        ? 'Labels set for this folder — change them, or clear to use the built-in ones'
+                        : 'Set the Jira labels this folder lists to-do tickets for'
+                    }
+                    onClick={() =>
+                      setEditing(
+                        editing?.root === g.root
+                          ? null
+                          : { root: g.root, text: g.custom ? g.labels.join(', ') : '' }
+                      )
+                    }
+                  >
+                    {g.labels.length ? 'labels' : 'set labels'}
+                  </button>
+                </div>
+                {editing?.root === g.root && (
+                  <input
+                    className="jira-label-input"
+                    autoFocus
+                    value={editing.text}
+                    placeholder={
+                      g.labels.length && !g.custom
+                        ? `${g.labels.join(', ')} (built-in) — comma-separated`
+                        : 'Cordova, mmxlib — comma-separated'
+                    }
+                    onChange={(e) => setEditing({ root: g.root, text: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void saveLabels(g.root, editing.text)
+                    }}
+                  />
                 )}
                 {g.error && <div className="pr-note branch-error">{g.error}</div>}
-                {!g.error && g.todos.length === 0 && <div className="pr-note">nothing to do</div>}
+                {!g.error && g.labels.length === 0 && editing?.root !== g.root && (
+                  <div className="pr-note">no Jira labels for this folder yet</div>
+                )}
+                {!g.error && g.labels.length > 0 && g.todos.length === 0 && (
+                  <div className="pr-note">nothing to do</div>
+                )}
                 {g.todos.map((t) => (
                   <button
                     key={t.key}
@@ -719,9 +771,11 @@ function JiraMenu({
                     {t.mine && <Mine />}
                   </button>
                 ))}
-                <button className="jira-more" onClick={() => window.open(g.searchUrl)}>
-                  open in Jira ↗
-                </button>
+                {g.searchUrl && (
+                  <button className="jira-more" onClick={() => window.open(g.searchUrl)}>
+                    open in Jira ↗
+                  </button>
+                )}
               </Fragment>
             ))
           )}
@@ -901,14 +955,15 @@ export function StatusBar({ status, color, onOpenDocs }: Props): React.JSX.Eleme
     ...(cwd ? [[cwd, git?.prUrl ?? null] as const] : []),
     ...extraRepos.map((r) => [r.root, r.git.prUrl] as const)
   ])
-  // any workspace repo with Jira labels turns the Jira link into the to-do menu
+  // a Bitbucket repo (where labels can be set) or one with built-in labels
+  // turns the Jira link into the to-do menu
   const hasTodos = [
     ...(cwd ? [{ root: cwd, remoteUrl: git?.remoteUrl }] : []),
     ...extraRepos.map((r) => ({ root: r.root, remoteUrl: r.git.remoteUrl }))
-  ].some(
-    ({ root, remoteUrl }) =>
-      !!jiraLabelsFor((remoteUrl && parseRemote(remoteUrl)?.repo) || nameOf(root))
-  )
+  ].some(({ root, remoteUrl }) => {
+    const remote = remoteUrl ? parseRemote(remoteUrl) : null
+    return remote?.host === 'bitbucket' || !!jiraLabelsFor(remote?.repo || nameOf(root))
+  })
   // remote per workspace repo, for the branch menu's right-click open
   const remoteByRoot = new Map<string, string>([
     ...(cwd && git?.remoteUrl ? [[cwd, git.remoteUrl] as const] : []),

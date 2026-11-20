@@ -207,7 +207,8 @@ export function joinWork(input: {
       updated,
       starts: [],
       handedOff: null,
-      warning: null
+      warning: null,
+      plan: null
     }
     byTicket.set(t.key, item)
     items.push(item)
@@ -235,7 +236,8 @@ export function joinWork(input: {
         updated: src.updated,
         starts: [],
         handedOff: null,
-        warning: `${key} is already in ${ticket.status}, but this PR isn't merged — changes may be missing`
+        warning: `${key} is already in ${ticket.status}, but this PR isn't merged — changes may be missing`,
+        plan: null
       })
       continue
     }
@@ -253,7 +255,8 @@ export function joinWork(input: {
       updated: src.updated,
       starts: [],
       handedOff: null,
-      warning: null
+      warning: null,
+      plan: null
     })
   }
 
@@ -271,7 +274,8 @@ export function joinWork(input: {
       updated: issue.updated,
       starts: [],
       handedOff: null,
-      warning: null
+      warning: null,
+      plan: null
     })
   }
 
@@ -291,7 +295,8 @@ export function joinWork(input: {
       updated: 0,
       starts: [],
       handedOff: null,
-      warning: null
+      warning: null,
+      plan: null
     })
   }
 

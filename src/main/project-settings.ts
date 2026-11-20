@@ -21,6 +21,10 @@ const pathFor = (cwd: string): string => join(cwd, SETTINGS_FILE)
 function knownSettings(raw: Record<string, unknown>): ProjectSettings {
   const out: ProjectSettings = {}
   if (typeof raw.tabColor === 'string' && raw.tabColor) out.tabColor = raw.tabColor
+  if (Array.isArray(raw.jiraLabels)) {
+    const labels = raw.jiraLabels.filter((l): l is string => typeof l === 'string' && !!l.trim())
+    if (labels.length) out.jiraLabels = labels
+  }
   return out
 }
 

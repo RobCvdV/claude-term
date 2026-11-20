@@ -3,8 +3,30 @@ import type { BranchPr, PrInfo, PrReview, ReviewItem } from '../shared/types'
 // Pure mapping from the gh CLI / Bitbucket API shapes to PrInfo — kept free of
 // electron imports so it's unit-testable (pr-list.ts owns the I/O).
 
-/** Dropdown cap: only the most recent open PRs are shown. */
+/** Dropdown cap; my own PRs are always shown. */
 export const MAX_PRS = 10
+
+/** Dropdown order: the branch's own PR, then mine, then the rest, newest first
+ *  within each. `current` is added when the listing's page missed it. */
+export function rankPrs(
+  prs: PrInfo[],
+  current: Pick<BranchPr, 'url' | 'number' | 'title'> | null
+): PrInfo[] {
+  const own =
+    current &&
+    (prs.find((p) => p.url === current.url) ?? {
+      number: current.number,
+      title: current.title,
+      url: current.url,
+      canMerge: false,
+      mine: false
+    })
+  const rest = prs.filter((p) => p !== own)
+  const mine = rest.filter((p) => p.mine)
+  const others = rest.filter((p) => !p.mine)
+  const top = [...(own ? [own] : []), ...mine]
+  return [...top, ...others.slice(0, Math.max(0, MAX_PRS - top.length))]
+}
 
 interface GhPr {
   number?: number
@@ -22,7 +44,6 @@ export function mapGithubPrs(json: string, canMerge: boolean, viewer?: string | 
   const rows = JSON.parse(json) as GhPr[]
   return rows
     .filter((r) => r.number != null && !!r.title && !!r.url)
-    .slice(0, MAX_PRS)
     .map((r) => ({
       number: r.number!,
       title: r.title!,
@@ -45,7 +66,6 @@ export function mapBitbucketPrs(body: unknown, viewerId?: string | null): PrInfo
   const rows = (body as { values?: BbPr[] }).values ?? []
   return rows
     .filter((r) => r.id != null && !!r.title && !!r.links?.html?.href)
-    .slice(0, MAX_PRS)
     .map((r) => ({
       number: r.id!,
       title: r.title!,

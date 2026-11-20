@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { PrInfo } from '../shared/types'
 import {
   accountIdFromCommits,
   bitbucketBranchPr,
@@ -8,7 +9,8 @@ import {
   mapGithubReviews,
   mapBitbucketPrs,
   mapGithubPrs,
-  MAX_PRS
+  MAX_PRS,
+  rankPrs
 } from './pr-data'
 
 const ghRow = (
@@ -57,16 +59,46 @@ describe('mapGithubPrs', () => {
     expect(mapGithubPrs(json, false, '').every((p) => p.mine)).toBe(false)
   })
 
-  it('drops malformed rows and caps at MAX_PRS', () => {
+  it('drops malformed rows', () => {
     const rows = [...Array.from({ length: 15 }, (_, i) => ghRow(i + 1)), { title: 'no number' }]
     const prs = mapGithubPrs(JSON.stringify(rows), false)
-    expect(prs).toHaveLength(MAX_PRS)
+    expect(prs).toHaveLength(15)
     expect(prs.every((p) => !p.canMerge)).toBe(true)
   })
 
   it('survives a row with no author at all', () => {
     const json = JSON.stringify([{ number: 5, title: 'x', url: 'https://h/5' }])
     expect(mapGithubPrs(json, false, 'rob')[0].mine).toBe(false)
+  })
+})
+
+describe('rankPrs', () => {
+  const pr = (n: number, mine = false): PrInfo => ({
+    number: n,
+    title: `t${n}`,
+    url: `https://h/${n}`,
+    canMerge: false,
+    mine
+  })
+  const newestFirst = Array.from({ length: 30 }, (_, i) => pr(30 - i, [3, 12].includes(30 - i)))
+
+  it('puts the branch PR first, then mine, then the newest of the rest up to the cap', () => {
+    const ranked = rankPrs(newestFirst, { url: 'https://h/5', number: 5, title: 't5' })
+    expect(ranked.map((p) => p.number)).toEqual([5, 12, 3, 30, 29, 28, 27, 26, 25, 24])
+    expect(ranked).toHaveLength(MAX_PRS)
+  })
+
+  it('adds the branch PR when the listing page missed it', () => {
+    const ranked = rankPrs([pr(9)], { url: 'https://h/1', number: 1, title: 'old one' })
+    expect(ranked.map((p) => [p.number, p.title])).toEqual([
+      [1, 'old one'],
+      [9, 't9']
+    ])
+  })
+
+  it('never drops my own PRs to make the cap', () => {
+    const mine = Array.from({ length: 12 }, (_, i) => pr(i + 1, true))
+    expect(rankPrs([...mine, pr(50)], null)).toHaveLength(12)
   })
 })
 

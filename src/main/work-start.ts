@@ -2,7 +2,14 @@ import { existsSync, readdirSync, statSync } from 'fs'
 import { open } from 'fs/promises'
 import { basename, dirname, join } from 'path'
 import { homedir } from 'os'
-import type { BoardStart, TabId, TabStatus, WorkItem } from '../shared/types'
+import type {
+  BoardStart,
+  BoardWorktree,
+  StartPlan,
+  TabId,
+  TabStatus,
+  WorkItem
+} from '../shared/types'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
 import { git } from './git-diff'
 import { switchBranch } from './git-actions'
@@ -11,6 +18,7 @@ import { branchTicket } from '../shared/jira-labels'
 import { claudeConfigDirIn } from './claude-dir'
 import { encodeProjectDir } from './session-home'
 import { cardPrompt, lastBranchIn, resumePrompt, type LocalRepo } from './work-start-data'
+import { readProjectSettings } from './project-settings'
 
 const remotes = new Map<string, RepoRef | null>()
 
@@ -60,7 +68,9 @@ export async function localRepos(seeds: string[]): Promise<LocalRepo[]> {
   const found = await Promise.all(
     [...roots].map(async (root) => {
       const ref = await remoteOf(root)
-      return ref ? { root, ref } : null
+      if (!ref) return null
+      const labels = readProjectSettings(root).jiraLabels
+      return labels ? { root, ref, labels } : { root, ref }
     })
   )
   return found.filter((r): r is LocalRepo => r !== null)
@@ -89,11 +99,30 @@ export type CloneState =
   | { kind: 'takeover'; tabId: TabId }
   | { kind: 'busy'; why: string }
 
+const heads = new Map<string, { at: number; current: string; dirty: boolean }>()
+
+/** The checked-out branch and whether anything is uncommitted; `maxAgeMs` allows a cached answer. */
+async function headState(
+  root: string,
+  maxAgeMs: number
+): Promise<{ current: string; dirty: boolean }> {
+  const hit = heads.get(root)
+  if (hit && maxAgeMs > 0 && Date.now() - hit.at <= maxAgeMs) return hit
+  const [current, status] = await Promise.all([
+    git(root, ['branch', '--show-current']),
+    git(root, ['status', '--porcelain'])
+  ])
+  const state = { at: Date.now(), current: current?.trim() ?? '', dirty: !!status?.trim() }
+  heads.set(root, state)
+  return state
+}
+
 /** Whether a clone can host the card's session, and how. */
 export async function cloneState(
   item: WorkItem,
   start: BoardStart,
-  snapshots: readonly TabStatus[]
+  snapshots: readonly TabStatus[],
+  maxAgeMs = 0
 ): Promise<CloneState> {
   const { root } = start
   const key = item.ticket?.key
@@ -106,8 +135,8 @@ export async function cloneState(
   if (!key && !start.branch) return { kind: 'free' }
   const working = users.find((s) => !idle(s))
   if (working) return { kind: 'busy', why: `a working tab is on ${branchIn(working, root)}` }
-  const current = (await git(root, ['branch', '--show-current']))?.trim() ?? ''
-  if (!wanted(current) && (await git(root, ['status', '--porcelain']))) {
+  const { current, dirty } = await headState(root, maxAgeMs)
+  if (!wanted(current) && dirty) {
     return { kind: 'busy', why: `uncommitted changes on ${current || 'HEAD'}` }
   }
   const own = users.find((s) => s.cwd === root)
@@ -250,5 +279,82 @@ export async function prepareStart(
     prompt: withNote(cardPrompt(item, null)),
     resume: null,
     warnings: []
+  }
+}
+
+/** What ▶ session would do on a click right now, for the chip; null when it can't. */
+export async function planStart(
+  item: WorkItem,
+  snapshots: readonly TabStatus[],
+  resumable: (root: string, branch: string) => Promise<boolean>
+): Promise<StartPlan | null> {
+  const [start] = item.starts
+  if (!start) return null
+  if (!start.sure) return { kind: 'choose' }
+  const state = await cloneState(item, start, snapshots, PLAN_GIT_MAX_AGE_MS)
+  if (state.kind === 'busy') return { kind: 'choose', why: state.why }
+  if (state.kind === 'here') return { kind: 'goto' }
+  const resume = !!start.branch && (await resumable(start.root, start.branch))
+  return { kind: resume ? 'resume' : 'new', root: start.root, takeover: state.kind === 'takeover' }
+}
+
+/** Plans run on every tab change; git state that old is good enough for a label. */
+const PLAN_GIT_MAX_AGE_MS = 20_000
+
+/**
+ * Every worktree ▶ session made, with whether it can go: no open PR for its
+ * branch, and the branch was deleted upstream or its ticket left my work.
+ */
+export async function listWorktrees(
+  repos: readonly LocalRepo[],
+  snapshots: readonly TabStatus[],
+  openBranches: ReadonlySet<string>,
+  activeTickets: ReadonlySet<string>
+): Promise<BoardWorktree[]> {
+  return Promise.all(
+    repos
+      .filter((r) => isWorktree(r.root))
+      .map(async (r): Promise<BoardWorktree> => {
+        const { current: branch, dirty } = await headState(r.root, 0)
+        const track = branch
+          ? await git(r.root, [
+              'for-each-ref',
+              '--format=%(upstream:track)',
+              `refs/heads/${branch}`
+            ])
+          : null
+        const key = branchTicket(branch)
+        const stale = openBranches.has(branch)
+          ? null
+          : track?.includes('[gone]')
+            ? 'branch deleted upstream'
+            : key && !activeTickets.has(key)
+              ? `${key} is no longer in your work`
+              : null
+        return {
+          root: r.root,
+          repo: r.ref.repo,
+          branch,
+          stale,
+          dirty,
+          inUse: tabsIn(snapshots, r.root).length > 0
+        }
+      })
+  )
+}
+
+/** Remove a worktree through its main clone; its branch stays. */
+export async function removeWorktree(root: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const common = await gitOrThrow(root, [
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-common-dir'
+    ])
+    await gitOrThrow(dirname(common), ['worktree', 'remove', root], 30_000)
+    heads.delete(root)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }

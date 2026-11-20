@@ -117,7 +117,7 @@ Left to right:
   as one dot, progress and done-count; click for each group with its own bar, and open a run in
   AWS. Needs `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `~/.zshrc`.
 - **PRs**, with a dot for the branch's review state: orange awaiting review, green approved,
-  red changes requested, blue merged, grey no PR.
+  red changes requested, blue merged, grey no PR. The list puts this branch's PR first, then yours.
 - **Jira**, **Releases** or **Downloads**, notification volume and the clock.
 
 The PR, Jira, branch and folder chips open a dropdown on a click or right-click (never on hover):
@@ -125,8 +125,9 @@ The PR, Jira, branch and folder chips open a dropdown on a click or right-click 
 - **Branch** — every workspace repo's local branches, newest first, with yours marked **mine**.
   Click to switch (the session is told to re-read files); right-click opens it on
   Bitbucket/GitHub.
-- **Jira** — in the driver repos, the To Do tickets for that repo's labels that are unassigned or
-  yours. Right-click → **Start Branch** creates or switches to the ticket's branch, assigns the
+- **Jira** — in Bitbucket repos, the To Do tickets for that folder's labels that are unassigned or
+  yours. **labels** in the dropdown sets them per folder (kept in
+  `.claude/claude-term-settings.local.json`); without them the driver repos use built-in ones. Right-click → **Start Branch** creates or switches to the ticket's branch, assigns the
   ticket to you, moves it to Active and asks the session for a first look.
 
 ### Mission control
@@ -158,16 +159,23 @@ and a card with an open session shows it — click to go there.
   or item kinds; the choice is remembered. **Handed off** (off by default) shows your PRs whose
   ticket is now on someone else's name.
 - `/` focuses the filter (every word must match key, title, repo or status), `Esc` clears it.
+- Lanes sort newest first or most urgent first (a waiting session, a warning, a red build,
+  requested changes, a PR to merge).
 - **merge** on an approved, green PR merges it (after a confirmation) and offers to move its
   ticket to Deploy. A ticket lagging its PRs gets **→ Peer review** / **→ Deploy**, and a PR whose
   ticket already moved on to Deploy, Beta or Done is flagged ⚠ as possibly missing changes.
 - **▶ session** puts a local clone on the card's branch (a to-do ticket gets its branch and moves
   to Active) and resumes the branch's last conversation, telling it only what is new, or starts one
-  asking Claude about the card. A clone whose own tab sits idle with nothing to commit is taken
-  over in that tab. When the usual clone is busy (a working tab, or uncommitted changes) — or on
-  right-click — a menu shows every clone's state, plus **New worktree**, which checks the branch
-  out under `.worktrees/` next to the repo.
-- Contexts live in `workContexts` in the app's `app-settings.json`.
+  asking Claude about the card. The chip says which (`↻ resume`, `▶ new`, `· idle tab` when it
+  takes over a clone's idle tab with nothing to commit, `▶ choose…` when the usual clone is busy).
+  Right-click shows every clone's state, plus **New worktree**, which checks the branch out under
+  `.worktrees/` next to the repo and first runs `worktreeSetup[<repo>]` (e.g. `npm ci`) in the tab
+  when set. **Worktrees** in the header removes them again; those whose branch is gone upstream, or
+  whose ticket left your work, are marked done.
+- Builds, reviews and ticket moves on work without a tab notify like a tab's own, also while the
+  board is closed (Settings → Watch my open work in the background).
+- Contexts live in `workContexts`, worktree setup commands in `worktreeSetup`, both in the app's
+  `app-settings.json`.
 
 ### Focus follows the conversation
 
@@ -308,6 +316,18 @@ The details are in [docs/companion.md](docs/companion.md).
 | `Esc`    | To Claude Code, and focus the terminal    |
 | `⌘L`     | Focus the prompt box                      |
 | `⌘.`     | Spelling fixes                            |
+
+### Work board
+
+| Keys                 | Action                                       |
+| -------------------- | -------------------------------------------- |
+| `↑ ↓ ← →`, `j k h l` | Pick a card; `Esc` lets go                   |
+| `↵`                  | Go to its tab, or open it                    |
+| `s` / `⇧S`           | ▶ session / pick the clone or a new worktree |
+| `m`                  | Merge its approved, green PR                 |
+| `t`                  | Move its ticket to where its PRs say         |
+| `o`                  | Open it in the browser                       |
+| `/`                  | Filter; `Esc` clears it                      |
 
 ### File window
 

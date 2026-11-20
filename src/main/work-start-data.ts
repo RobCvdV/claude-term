@@ -8,6 +8,8 @@ const MAX_STARTS = 12
 export interface LocalRepo {
   root: string
   ref: RepoRef
+  /** the folder's own Jira labels, when set */
+  labels?: string[]
 }
 
 /** host + `owner/repo` of a PR, issue or repo web url */
@@ -69,7 +71,9 @@ export function startsFor(
     const workspaces = contexts.find((c) => c.id === item.context)?.bitbucketWorkspaces ?? []
     const fit = repos.filter((r) => r.ref.host === 'bitbucket' && workspaces.includes(r.ref.owner))
     const labels = item.ticket.labels
-    const labelled = fit.filter((r) => jiraLabelsFor(r.ref.repo)?.some((l) => labels.includes(l)))
+    const labelled = fit.filter((r) =>
+      (r.labels ?? jiraLabelsFor(r.ref.repo))?.some((l) => labels.includes(l))
+    )
     const used = fit.filter((r) => recency.has(r.root))
     const pool = labelled.length ? labelled : used.length ? used : fit
     for (const r of pool) add({ root: r.root, branch: null, sure: false })

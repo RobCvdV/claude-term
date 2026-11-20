@@ -125,6 +125,16 @@ function HowTo(): React.JSX.Element {
         <Keys k="⌥⌘L">Select the open file in the tree</Keys>
       </section>
       <section>
+        <h3>Work board</h3>
+        <Keys k="↑ ↓ ← →">Pick a card (j k h l too) — Esc lets go</Keys>
+        <Keys k="↵">Go to its tab, or open it</Keys>
+        <Keys k="s">▶ session — ⇧S picks the clone, or a new worktree</Keys>
+        <Keys k="m">Merge its approved, green PR</Keys>
+        <Keys k="t">Move its ticket to where its PRs say</Keys>
+        <Keys k="o">Open it in the browser</Keys>
+        <Keys k="/">Filter — Esc clears it</Keys>
+      </section>
+      <section>
         <h3>Status bar</h3>
         <Keys k="click">
           Folder chip opens Finder — (+N) lists the session&apos;s other folders
@@ -134,10 +144,11 @@ function HowTo(): React.JSX.Element {
           also be removed from the tab
         </Keys>
         <Keys k="PRs">
-          Click or right-click: open PRs of every workspace repo, grouped by folder, the ones you
-          opened marked <b>mine</b> — click opens, right-click: Open / Merge. The dot before it is
-          this branch&apos;s PR: orange awaiting review, green approved, red changes requested, blue
-          merged, grey no PR (✓ when ready to merge)
+          Click or right-click: open PRs of every workspace repo, grouped by folder — this
+          branch&apos;s PR first, then the ones you opened (marked <b>mine</b>), then the newest
+          others. Click opens, right-click: Open / Merge. The dot before it is this branch&apos;s
+          PR: orange awaiting review, green approved, red changes requested, blue merged, grey no PR
+          (✓ when ready to merge)
         </Keys>
         <Keys k="branch">
           Right-click the branch chip: every workspace repo&apos;s branches, the ones whose newest
@@ -145,9 +156,10 @@ function HowTo(): React.JSX.Element {
           remote
         </Keys>
         <Keys k="Jira">
-          Right-click (driver repos): To Do tickets that are free or <b>mine</b>, in board order —
-          click opens, right-click → Start Branch switches to or creates its branch, puts it on your
-          name in Active and asks Claude for a first look
+          Right-click (Bitbucket repos): To Do tickets with the folder&apos;s labels (set them under{' '}
+          <b>labels</b>) that are free or <b>mine</b>, in board order — click opens, right-click →
+          Start Branch switches to or creates its branch, puts it on your name in Active and asks
+          Claude for a first look
         </Keys>
         <Keys k="~N">
           Changed-file count opens the diff window — review this turn&apos;s changes, or undo them
@@ -289,14 +301,16 @@ function Guide(): React.JSX.Element {
           tickets, PRs, reviews and GitHub issues with their builds, in lanes by whose move it is,
           with a tab per context (MendriX, Personal). Lane and kind toggles are remembered, and PRs
           whose ticket you handed to someone else stay hidden unless <b>Handed off</b> is on;{' '}
-          <b>/</b> focuses the filter and <b>Esc</b> clears it. A card with an open session shows it
-          — click to go there. <b>merge</b> on an approved, green PR merges it after a confirmation
-          and offers to move the ticket to Deploy; <b>→ Peer review</b> / <b>→ Deploy</b> fix a
-          ticket that lags its PRs, and ⚠ flags an unmerged PR whose ticket already moved on.{' '}
-          <b>▶ session</b> puts a local clone on the card&apos;s branch and resumes its last
-          conversation or starts one about the card — in the clone&apos;s own tab when that sits
-          idle with nothing to commit. When that clone is busy, or on right-click, a menu shows
-          every clone&apos;s state plus <b>New worktree</b>.
+          <b>/</b> focuses the filter and <b>Esc</b> clears it; the arrows (or <b>j k h l</b>) pick
+          a card for the keys in the cheat sheet, and the lanes sort newest or most urgent first. A
+          card with an open session shows it — click to go there. <b>merge</b> on an approved, green
+          PR merges it after a confirmation and offers to move the ticket to Deploy;{' '}
+          <b>→ Peer review</b> / <b>→ Deploy</b> fix a ticket that lags its PRs, and ⚠ flags an
+          unmerged PR whose ticket already moved on. <b>▶ session</b> puts a local clone on the
+          card&apos;s branch and resumes its last conversation or starts one about the card; the
+          chip says which, and whether it takes over a clone&apos;s idle tab. When that clone is
+          busy, or on right-click, a menu shows every clone&apos;s state plus <b>New worktree</b>;{' '}
+          <b>Worktrees</b> in the header removes them again.
         </p>
       </section>
       <section>
@@ -309,11 +323,13 @@ function Guide(): React.JSX.Element {
           and (off by default) a session needing input while the app is in the background — each
           with its own switch, plus one for all of them, &quot;only in the background&quot; and
           sound. The first look at a branch only sets a baseline, and tabs sharing a branch raise
-          one notification. Clicking one jumps to its tab. Also here: the Jira status lookup (off by
-          default — it reads the Jira token from the keychain), CI polling, the review list, the
-          behind-main threshold, window and tab behaviour, keep-awake, spell check, volume, and
-          which services have credentials — Jira connects here; the rest read tokens from your login
-          shell when the app starts.
+          one notification. Clicking one jumps to its tab.{' '}
+          <b>Watch my open work in the background</b> (on by default) does the same for Work board
+          items without a tab, sweeping every 5 minutes even while the board is closed; those open
+          the PR or ticket. Also here: the Jira status lookup (off by default — it reads the Jira
+          token from the keychain), CI polling, the review list, the behind-main threshold, window
+          and tab behaviour, keep-awake, spell check, volume, and which services have credentials —
+          Jira connects here; the rest read tokens from your login shell when the app starts.
         </p>
       </section>
       <section>

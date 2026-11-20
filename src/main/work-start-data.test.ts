@@ -65,6 +65,7 @@ const ticket = (over: Partial<WorkItem> = {}): WorkItem => ({
   starts: [],
   handedOff: null,
   warning: null,
+  plan: null,
   ...over
 })
 
@@ -100,6 +101,12 @@ describe('startsFor', () => {
       { root: '/dev/tms-2', branch: null, sure: false },
       { root: '/dev/tms', branch: null, sure: false }
     ])
+  })
+
+  it("a folder's own labels win over the built-in ones", () => {
+    const mmx = ticket({ ticket: { ...ticket().ticket!, labels: ['mmxlib'] } })
+    const own = repos.map((r) => (r.root === '/dev/next' ? { ...r, labels: ['mmxlib'] } : r))
+    expect(startsFor(mmx, own, [], contexts).map((s) => s.root)).toEqual(['/dev/next'])
   })
 
   it('without matching labels, the workspace clones used before', () => {

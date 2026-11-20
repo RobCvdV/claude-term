@@ -30,6 +30,13 @@ describe('readProjectSettings', () => {
     expect(readProjectSettings(dir)).toEqual({ tabColor: '#d97757' })
   })
 
+  it('reads Jira labels, dropping blanks and non-strings', () => {
+    put('{ "jiraLabels": ["Cordova", " ", 3, "mmxlib"] }')
+    expect(readProjectSettings(dir)).toEqual({ jiraLabels: ['Cordova', 'mmxlib'] })
+    put('{ "jiraLabels": [] }')
+    expect(readProjectSettings(dir)).toEqual({})
+  })
+
   it('ignores a value of the wrong shape rather than passing it on', () => {
     put('{ "tabColor": 42 }')
     expect(readProjectSettings(dir)).toEqual({})

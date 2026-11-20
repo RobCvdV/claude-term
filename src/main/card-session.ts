@@ -1,17 +1,19 @@
-import { BrowserWindow, Menu } from 'electron'
+import { BrowserWindow, dialog, Menu } from 'electron'
 import { basename } from 'path'
-import type { BoardStart, TabStatus, WorkItem } from '../shared/types'
+import type { BoardStart, BoardWorktree, TabStatus, WorkItem } from '../shared/types'
 import type { PtyManager } from './pty-manager'
 import type { StatusServer } from './status-server'
 import type { TerminalWindows } from './terminal-windows'
 import type { ActionResult } from './board-actions'
 import { bringForward } from './background-mode'
+import { appSettings } from './app-settings'
 import {
   addWorktree,
   cloneState,
   isWorktree,
   prepareStart,
   remoteOf,
+  removeWorktree,
   type CloneState
 } from './work-start'
 
@@ -27,8 +29,10 @@ export interface CardSessionDeps {
 
 type Choice = { start: BoardStart; state: CloneState } | { worktreeOf: string }
 
-const WORKTREE_NOTE =
-  'This is a fresh git worktree: dependencies are not installed and nothing is built yet.'
+const worktreeNote = (setup: string | undefined): string =>
+  setup
+    ? `This is a fresh git worktree; \`${setup}\` ran in the terminal before this session started.`
+    : 'This is a fresh git worktree: dependencies are not installed and nothing is built yet.'
 
 function describe(item: WorkItem, start: BoardStart, state: CloneState): string {
   const what = start.branch ?? (item.ticket ? 'ticket branch' : 'current branch')
@@ -105,12 +109,15 @@ export async function startFromCard(
   let start: BoardStart
   let state: CloneState
   let note = ''
+  let setup: string | undefined
   if ('worktreeOf' in choice) {
     const wt = await addWorktree(item, choice.worktreeOf)
     if (!wt.ok) return wt
     ;({ start } = wt)
     state = await cloneState(item, start, snaps)
-    note = WORKTREE_NOTE
+    const repo = (await remoteOf(choice.worktreeOf))?.repo
+    setup = (repo && appSettings().worktreeSetup?.[repo]) || undefined
+    note = worktreeNote(setup)
   } else {
     ;({ start, state } = choice)
   }
@@ -122,20 +129,88 @@ export async function startFromCard(
 
   const res = await prepareStart(item, start, snaps, note)
   if (!res.ok) return res
-  const launch = { resume: res.resume ?? undefined, prompt: res.prompt || undefined }
+  const launch = { prompt: res.prompt || undefined, setup }
   if (state.kind === 'takeover') {
     deps.status.markRestarted(state.tabId)
-    await deps.ptys.restart(state.tabId, launch)
+    await deps.ptys.restart(state.tabId, { ...launch, resume: res.resume ?? undefined })
     if (res.resume) deps.status.markClaudeActive(state.tabId, res.resume)
     deps.windows.activate(state.tabId)
   } else {
     const win = deps.windows.focusedOrPrimary()
     if (!win) return { ok: false, error: 'no terminal window' }
     bringForward(win)
-    win.webContents.send('folder:openTab', res.cwd, res.prompt, res.resume)
+    win.webContents.send('folder:openTab', res.cwd, launch, res.resume)
   }
   deps.refresh()
   return res.warnings.length
     ? { ok: true, error: `Jira: ${res.warnings.join('; ')}` }
     : { ok: true }
+}
+
+/** The worktrees ▶ session made, to remove: those that can go first, without asking. */
+export function worktreeMenu(
+  win: BrowserWindow | null,
+  worktrees: readonly BoardWorktree[],
+  changed: () => void
+): Promise<ActionResult> {
+  return new Promise((resolve) => {
+    if (!win || !worktrees.length) return resolve({ ok: false })
+    let picked = false
+    const remove = async (list: readonly BoardWorktree[]): Promise<void> => {
+      const failed: string[] = []
+      for (const wt of list) {
+        const res = await removeWorktree(wt.root)
+        if (!res.ok) failed.push(`${wt.branch}: ${res.error}`)
+      }
+      changed()
+      resolve(failed.length ? { ok: false, error: failed.join('; ') } : { ok: true })
+    }
+    const keepOpen = async (wt: BoardWorktree): Promise<void> => {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Cancel', 'Remove'],
+        defaultId: 0,
+        cancelId: 0,
+        message: `Remove the worktree of ${wt.branch}?`,
+        detail: 'Its work still looks open. The branch and its commits stay in the repo.'
+      })
+      if (response === 1) await remove([wt])
+      else resolve({ ok: false })
+    }
+    const removable = (wt: BoardWorktree): boolean => !wt.inUse && !wt.dirty
+    const sorted = [...worktrees].sort((a, b) => Number(!!b.stale) - Number(!!a.stale))
+    const template: Electron.MenuItemConstructorOptions[] = sorted.map((wt) => {
+      const state = wt.inUse
+        ? 'open in a tab'
+        : wt.dirty
+          ? 'uncommitted changes'
+          : (wt.stale ?? 'work still open')
+      return {
+        label: `Remove ${wt.repo} / ${wt.branch} — ${state}`,
+        enabled: removable(wt),
+        click: () => {
+          picked = true
+          void (wt.stale ? remove([wt]) : keepOpen(wt))
+        }
+      }
+    })
+    const done = sorted.filter((wt) => wt.stale && removable(wt))
+    if (done.length > 1) {
+      template.unshift(
+        {
+          label: `Remove all ${done.length} that can go`,
+          click: () => {
+            picked = true
+            void remove(done)
+          }
+        },
+        { type: 'separator' }
+      )
+    }
+    // on macOS the close callback can fire before the item's click
+    Menu.buildFromTemplate(template).popup({
+      window: win,
+      callback: () => setTimeout(() => !picked && resolve({ ok: false }), 200)
+    })
+  })
 }

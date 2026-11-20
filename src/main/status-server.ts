@@ -586,6 +586,15 @@ export class StatusServer {
     this.onUpdate(tab.status)
   }
 
+  /** /clear or /resume moved the tab's foreground session on to `to`. */
+  switchSession(tabId: TabId, from: string, to: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || this.frozen || tab.status.sessionId !== from) return
+    tab.status.sessionId = to
+    this.seenSessions.add(to)
+    this.onUpdate(tab.status)
+  }
+
   markClaudeActive(tabId: TabId, sessionId?: string): void {
     const tab = this.tabs.get(tabId)
     if (!tab || this.frozen) return
@@ -700,6 +709,18 @@ export class StatusServer {
       tab.status.busySince = null
       tab.background = []
       tab.status.running = runningOf(true, null, [])
+      this.onUpdate(tab.status)
+      return
+    }
+    // /clear, /resume and /branch end one session and start the next in the same
+    // process, and the two hooks race: an end arriving after the new start
+    // used to drop the Claude UI of a session that is still running.
+    if (name === 'SessionEnd' && (evt.reason === 'clear' || evt.reason === 'resume')) {
+      tab.status.activity = 'idle'
+      tab.status.busySince = null
+      tab.status.doing = null
+      tab.turnRunning = false
+      tab.background = []
       this.onUpdate(tab.status)
       return
     }

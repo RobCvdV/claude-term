@@ -34,7 +34,9 @@ export const SETTINGS_DEFAULTS: AppSettings = {
     },
     { id: 'personal', name: 'Personal', jira: null, bitbucketWorkspaces: [], github: true }
   ],
-  board: { context: 'all', hiddenLanes: [], hiddenKinds: [], showHandedOff: false }
+  board: { context: 'all', hiddenLanes: [], hiddenKinds: [], showHandedOff: false, sort: 'newest' },
+  boardWatch: true,
+  worktreeSetup: {}
 }
 
 /** Apply a patch; `notify` merges per key so one switch never resets the rest. */

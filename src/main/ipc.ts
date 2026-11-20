@@ -119,6 +119,7 @@ import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } fr
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
+import { rankPrs } from './pr-data'
 import { repoDownloads } from './downloads'
 import { fetchTodos } from './jira-client'
 import { startTicket } from './jira-start'
@@ -132,6 +133,7 @@ import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
 import type {
   JiraTodoGroup,
+  TabLaunch,
   PrGroup,
   PrInfo,
   ProjectChanges,
@@ -142,7 +144,7 @@ import type {
   StartTicketResult,
   TurnStep
 } from '../shared/types'
-import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
+import type { BranchPr, GitInfo, VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 /** Mod events that only report progress; kept out of ui-bridge.log. */
 const PROGRESS_EVENTS = new Set(['spinner', 'tool.start', 'tool.end'])
@@ -326,6 +328,11 @@ export function createServices(windows: TerminalWindows): AppServices {
     // progress events would bury the keyboard trail this log is for
     // a heartbeat repeats what the log already says
     if (!PROGRESS_EVENTS.has(String(event.kind)) && !event.beat) logUiBridge(tabId, 'mod', event)
+    // the foreground session's /clear: its successor speaks for the tab from now on
+    if (event.kind === 'session.switch' && typeof event.from === 'string') {
+      status.switchSession(tabId, event.from, String(event.session_id))
+      return
+    }
     const isKeyOwnerEvent = event.kind === 'keys' || event.kind === 'session.end'
     if (isKeyOwnerEvent && !speaksForTab(event.session_id, status.snapshot(tabId)?.sessionId)) {
       // once per session and state, so a background agent's heartbeats stay visible but quiet
@@ -493,7 +500,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
       resume?: string,
       addedDirs?: string[],
       removedDirs?: string[],
-      prompt?: string
+      launch?: TabLaunch
     ): Promise<TabInfo> => {
       // a persisted cwd may no longer exist — fall back to home rather than fail
       let dir = cwd && existsSync(cwd) ? cwd : homedir()
@@ -539,9 +546,9 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         if (target.mode === 'attach') {
           await ptys.create(tabId, dir, undefined, target.jobId)
         } else if (target.mode === 'resume') {
-          await ptys.create(tabId, dir, resume, undefined, prompt)
+          await ptys.create(tabId, dir, resume, undefined, launch)
         } else {
-          await ptys.create(tabId, dir, undefined, undefined, prompt)
+          await ptys.create(tabId, dir, undefined, undefined, launch)
         }
         // Both revive paths self-report via statusline within ~1s, but seed the UI
         // now so the prompt box doesn't flicker in — and an attached bg agent
@@ -553,7 +560,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         // that launched it — synthesize activity until a real feed shows up
         if (target.mode === 'attach') status.markAttached(tabId, resume as string, target.jobId)
       } else {
-        await ptys.create(tabId, dir, undefined, undefined, prompt)
+        await ptys.create(tabId, dir, undefined, undefined, launch)
       }
       return { tabId, cwd: dir, title: basename(dir) || dir }
     }
@@ -680,24 +687,26 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   // Status-bar PR dropdown: open PRs of every workspace repo (the tab's own
   // plus added dirs living in other repos), and the per-PR context menu.
-  const repoTargets = (tabId: TabId): Array<{ root: string; repo: RepoRef }> => {
+  const repoTargets = (
+    tabId: TabId
+  ): Array<{ root: string; repo: RepoRef; current: BranchPr | null }> => {
     const snap = status.snapshot(tabId)
     if (!snap) return []
-    const out: Array<{ root: string; repo: RepoRef }> = []
-    const add = (root: string, remoteUrl: string | undefined): void => {
-      const repo = remoteUrl ? parseRemote(remoteUrl) : null
-      if (repo) out.push({ root, repo })
+    const out: Array<{ root: string; repo: RepoRef; current: BranchPr | null }> = []
+    const add = (root: string, git: GitInfo | null | undefined): void => {
+      const repo = git?.remoteUrl ? parseRemote(git.remoteUrl) : null
+      if (repo) out.push({ root, repo, current: git?.pr ?? null })
     }
-    add(snap.cwd, snap.git?.remoteUrl)
-    for (const r of snap.extraRepos) add(r.root, r.git.remoteUrl)
+    add(snap.cwd, snap.git)
+    for (const r of snap.extraRepos) add(r.root, r.git)
     return out
   }
 
   ipcMain.handle('prs:list', async (_e, tabId: TabId): Promise<PrGroup[]> => {
     return Promise.all(
-      repoTargets(tabId).map(async ({ root, repo }) => ({
+      repoTargets(tabId).map(async ({ root, repo, current }) => ({
         root,
-        prs: await listOpenPrs(root, repo)
+        prs: rankPrs(await listOpenPrs(root, repo), current)
       }))
     )
   })
@@ -707,24 +716,41 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     return own ? repoDownloads(own.repo) : null
   })
 
-  // Status-bar Jira dropdown: to-do tickets per workspace repo that has labels.
-  ipcMain.handle('jira:todos', async (_e, tabId: TabId): Promise<JiraTodoGroup[]> => {
+  // Status-bar Jira dropdown: to-do tickets per workspace repo — by the folder's
+  // own labels, else the built-in ones; a Bitbucket repo without either is
+  // listed empty so its labels can be set.
+  const workspaceRepos = (tabId: TabId): { root: string; remoteUrl?: string }[] => {
     const snap = status.snapshot(tabId)
     if (!snap) return []
-    const repos = [
+    return [
       { root: snap.cwd, remoteUrl: snap.git?.remoteUrl },
       ...snap.extraRepos.map((r) => ({ root: r.root, remoteUrl: r.git.remoteUrl }))
     ]
+  }
+  ipcMain.handle('jira:todos', async (_e, tabId: TabId): Promise<JiraTodoGroup[]> => {
     const groups: JiraTodoGroup[] = []
-    for (const { root, remoteUrl } of repos) {
-      const name = (remoteUrl && parseRemote(remoteUrl)?.repo) || basename(root)
-      const labels = jiraLabelsFor(name)
-      if (!labels) continue
+    for (const { root, remoteUrl } of workspaceRepos(tabId)) {
+      const remote = remoteUrl ? parseRemote(remoteUrl) : null
+      const own = readProjectSettings(root).jiraLabels
+      const labels = own ?? jiraLabelsFor(remote?.repo || basename(root))
+      if (!labels) {
+        if (remote?.host === 'bitbucket')
+          groups.push({ root, labels: [], custom: false, todos: [], searchUrl: '' })
+        continue
+      }
       const { todos, error } = await fetchTodos(labels)
-      groups.push({ root, labels, todos, searchUrl: todoSearchUrl(labels), error })
+      groups.push({ root, labels, custom: !!own, todos, searchUrl: todoSearchUrl(labels), error })
     }
     return groups
   })
+  ipcMain.handle(
+    'jira:setLabels',
+    (_e, tabId: TabId, root: string, labels: string[] | null): boolean => {
+      if (!workspaceRepos(tabId).some((r) => r.root === root)) return false
+      const clean = (labels ?? []).map((l) => l.trim()).filter(Boolean)
+      return writeProjectSettings(root, { jiraLabels: clean.length ? clean : null })
+    }
+  )
 
   // Right-click on a ticket: Open / Copy are handled here, "Start branch" goes
   // back to the dropdown, which shows its progress.

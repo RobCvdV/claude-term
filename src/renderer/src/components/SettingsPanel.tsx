@@ -172,6 +172,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): React.JSX.E
                 label="Show PRs waiting on my review"
                 hint="Mission control, every 5 minutes"
               />
+              <Toggle
+                on={s.boardWatch}
+                onChange={(boardWatch) => set({ boardWatch })}
+                label="Watch my open work in the background"
+                hint="Work board items without a tab notify too, also while the board is closed"
+              />
               <label className="settings-row">
                 <span>Flag a PR&apos;d branch from</span>
                 <input
