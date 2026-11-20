@@ -4,7 +4,7 @@ import { BrowserWindow, dialog, Menu, shell } from 'electron'
 import type { PrInfo } from '../shared/types'
 import type { RepoRef } from '../shared/repo-links'
 import { loginShellEnv } from './shell-env'
-import { accountIdFromCommits, mapBitbucketPrs, mapGithubPrs, MAX_PRS } from './pr-data'
+import { accountIdFromCommits, mapBitbucketPrs, mapGithubPrs } from './pr-data'
 import { bitbucketCreds, bitbucketGet } from './bitbucket-api'
 import { openBitbucketPrs } from './bitbucket-prs'
 
@@ -23,7 +23,7 @@ const inflight = new Map<string, Promise<PrInfo[]>>()
 const repoKey = (repo: RepoRef): string => `${repo.host}/${repo.owner}/${repo.repo}`
 
 /**
- * The repo's open PRs, most recent first, capped at MAX_PRS. Serves a cached
+ * The repo's open PRs (one page), most recent first. Serves a cached
  * answer while fresh; errors resolve to the stale list (or empty) so the
  * dropdown never rejects.
  */
@@ -62,16 +62,7 @@ async function fetchGithub(cwd: string): Promise<PrInfo[]> {
   const env = await loginShellEnv()
   const [listOut, merge, viewer] = await Promise.all([
     gh(
-      [
-        'pr',
-        'list',
-        '--state',
-        'open',
-        '--limit',
-        String(MAX_PRS),
-        '--json',
-        'number,title,url,author'
-      ],
+      ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,url,author'],
       cwd,
       env
     ),

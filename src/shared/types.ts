@@ -311,7 +311,10 @@ export interface JiraTodo {
 export interface JiraTodoGroup {
   /** absolute path of the workspace folder */
   root: string
+  /** empty: no labels yet, so no list — the dropdown offers to set them */
   labels: string[]
+  /** the labels come from this folder's settings, not the built-in ones */
+  custom: boolean
   todos: JiraTodo[]
   /** the same search in Jira, for the "open in Jira" footer */
   searchUrl: string
@@ -452,6 +455,8 @@ export interface ChangedFile {
 export interface ProjectSettings {
   /** accent colour of a tab opened in this project (`/color` writes it here) */
   tabColor?: string
+  /** Jira labels of this folder's to-do list, instead of the built-in ones */
+  jiraLabels?: string[]
 }
 
 /** A change to a project's settings; null removes the key from the file. */

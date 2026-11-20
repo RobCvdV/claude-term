@@ -144,10 +144,11 @@ function HowTo(): React.JSX.Element {
           also be removed from the tab
         </Keys>
         <Keys k="PRs">
-          Click or right-click: open PRs of every workspace repo, grouped by folder, the ones you
-          opened marked <b>mine</b> — click opens, right-click: Open / Merge. The dot before it is
-          this branch&apos;s PR: orange awaiting review, green approved, red changes requested, blue
-          merged, grey no PR (✓ when ready to merge)
+          Click or right-click: open PRs of every workspace repo, grouped by folder — this
+          branch&apos;s PR first, then the ones you opened (marked <b>mine</b>), then the newest
+          others. Click opens, right-click: Open / Merge. The dot before it is this branch&apos;s
+          PR: orange awaiting review, green approved, red changes requested, blue merged, grey no PR
+          (✓ when ready to merge)
         </Keys>
         <Keys k="branch">
           Right-click the branch chip: every workspace repo&apos;s branches, the ones whose newest
@@ -155,9 +156,10 @@ function HowTo(): React.JSX.Element {
           remote
         </Keys>
         <Keys k="Jira">
-          Right-click (driver repos): To Do tickets that are free or <b>mine</b>, in board order —
-          click opens, right-click → Start Branch switches to or creates its branch, puts it on your
-          name in Active and asks Claude for a first look
+          Right-click (Bitbucket repos): To Do tickets with the folder&apos;s labels (set them under{' '}
+          <b>labels</b>) that are free or <b>mine</b>, in board order — click opens, right-click →
+          Start Branch switches to or creates its branch, puts it on your name in Active and asks
+          Claude for a first look
         </Keys>
         <Keys k="~N">
           Changed-file count opens the diff window — review this turn&apos;s changes, or undo them

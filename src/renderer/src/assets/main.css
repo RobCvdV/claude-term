@@ -2462,6 +2462,41 @@ body.rail-resizing {
   font-size: 10px;
 }
 
+.pr-dropdown .jira-labels {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pr-dropdown .jira-labels > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-dropdown .jira-labels button {
+  width: auto;
+  padding: 0;
+  font-size: 9px;
+  color: var(--accent);
+  text-transform: none;
+}
+
+.pr-dropdown .jira-label-input {
+  margin: 2px 8px 4px;
+  width: calc(100% - 16px);
+  box-sizing: border-box;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
 /* ---- help overlay (Help menu / ⌘/) ---- */
 .help-panel {
   width: min(980px, 94vw);

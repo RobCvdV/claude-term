@@ -100,6 +100,8 @@ export interface ClaudeTermApi {
   listPrs(tabId: TabId): Promise<PrGroup[]>
   /** to-do tickets of every workspace repo that has Jira labels */
   jiraTodos(tabId: TabId): Promise<JiraTodoGroup[]>
+  /** a workspace folder's own Jira labels; null or [] goes back to the built-in ones */
+  setJiraLabels(tabId: TabId, root: string, labels: string[] | null): Promise<boolean>
   /** native right-click menu for a ticket; resolves 'start' when Start Branch was picked */
   jiraTicketMenu(key: string): Promise<'start' | null>
   /** switch/create the ticket's branch in `root`, claim it in Jira */
@@ -355,6 +357,7 @@ const api: ClaudeTermApi = {
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
   jiraTodos: (tabId) => ipcRenderer.invoke('jira:todos', tabId),
+  setJiraLabels: (tabId, root, labels) => ipcRenderer.invoke('jira:setLabels', tabId, root, labels),
   jiraTicketMenu: (key) => ipcRenderer.invoke('jira:ticketMenu', key),
   jiraStart: (tabId, root, key) => ipcRenderer.invoke('jira:start', tabId, root, key),
   repoDownloads: (tabId) => ipcRenderer.invoke('downloads:get', tabId),

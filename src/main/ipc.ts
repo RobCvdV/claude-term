@@ -119,6 +119,7 @@ import { bookWorklogs, fetchBooked, jiraConnect, jiraDisconnect, jiraStatus } fr
 import { getVolume, setVolume } from './volume'
 import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
+import { rankPrs } from './pr-data'
 import { repoDownloads } from './downloads'
 import { fetchTodos } from './jira-client'
 import { startTicket } from './jira-start'
@@ -143,7 +144,7 @@ import type {
   StartTicketResult,
   TurnStep
 } from '../shared/types'
-import type { VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
+import type { BranchPr, GitInfo, VolumeOp, WorklogPlan, WorklogPlanEntry } from '../shared/types'
 
 /** Mod events that only report progress; kept out of ui-bridge.log. */
 const PROGRESS_EVENTS = new Set(['spinner', 'tool.start', 'tool.end'])
@@ -686,24 +687,26 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   // Status-bar PR dropdown: open PRs of every workspace repo (the tab's own
   // plus added dirs living in other repos), and the per-PR context menu.
-  const repoTargets = (tabId: TabId): Array<{ root: string; repo: RepoRef }> => {
+  const repoTargets = (
+    tabId: TabId
+  ): Array<{ root: string; repo: RepoRef; current: BranchPr | null }> => {
     const snap = status.snapshot(tabId)
     if (!snap) return []
-    const out: Array<{ root: string; repo: RepoRef }> = []
-    const add = (root: string, remoteUrl: string | undefined): void => {
-      const repo = remoteUrl ? parseRemote(remoteUrl) : null
-      if (repo) out.push({ root, repo })
+    const out: Array<{ root: string; repo: RepoRef; current: BranchPr | null }> = []
+    const add = (root: string, git: GitInfo | null | undefined): void => {
+      const repo = git?.remoteUrl ? parseRemote(git.remoteUrl) : null
+      if (repo) out.push({ root, repo, current: git?.pr ?? null })
     }
-    add(snap.cwd, snap.git?.remoteUrl)
-    for (const r of snap.extraRepos) add(r.root, r.git.remoteUrl)
+    add(snap.cwd, snap.git)
+    for (const r of snap.extraRepos) add(r.root, r.git)
     return out
   }
 
   ipcMain.handle('prs:list', async (_e, tabId: TabId): Promise<PrGroup[]> => {
     return Promise.all(
-      repoTargets(tabId).map(async ({ root, repo }) => ({
+      repoTargets(tabId).map(async ({ root, repo, current }) => ({
         root,
-        prs: await listOpenPrs(root, repo)
+        prs: rankPrs(await listOpenPrs(root, repo), current)
       }))
     )
   })
@@ -713,24 +716,41 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     return own ? repoDownloads(own.repo) : null
   })
 
-  // Status-bar Jira dropdown: to-do tickets per workspace repo that has labels.
-  ipcMain.handle('jira:todos', async (_e, tabId: TabId): Promise<JiraTodoGroup[]> => {
+  // Status-bar Jira dropdown: to-do tickets per workspace repo — by the folder's
+  // own labels, else the built-in ones; a Bitbucket repo without either is
+  // listed empty so its labels can be set.
+  const workspaceRepos = (tabId: TabId): { root: string; remoteUrl?: string }[] => {
     const snap = status.snapshot(tabId)
     if (!snap) return []
-    const repos = [
+    return [
       { root: snap.cwd, remoteUrl: snap.git?.remoteUrl },
       ...snap.extraRepos.map((r) => ({ root: r.root, remoteUrl: r.git.remoteUrl }))
     ]
+  }
+  ipcMain.handle('jira:todos', async (_e, tabId: TabId): Promise<JiraTodoGroup[]> => {
     const groups: JiraTodoGroup[] = []
-    for (const { root, remoteUrl } of repos) {
-      const name = (remoteUrl && parseRemote(remoteUrl)?.repo) || basename(root)
-      const labels = jiraLabelsFor(name)
-      if (!labels) continue
+    for (const { root, remoteUrl } of workspaceRepos(tabId)) {
+      const remote = remoteUrl ? parseRemote(remoteUrl) : null
+      const own = readProjectSettings(root).jiraLabels
+      const labels = own ?? jiraLabelsFor(remote?.repo || basename(root))
+      if (!labels) {
+        if (remote?.host === 'bitbucket')
+          groups.push({ root, labels: [], custom: false, todos: [], searchUrl: '' })
+        continue
+      }
       const { todos, error } = await fetchTodos(labels)
-      groups.push({ root, labels, todos, searchUrl: todoSearchUrl(labels), error })
+      groups.push({ root, labels, custom: !!own, todos, searchUrl: todoSearchUrl(labels), error })
     }
     return groups
   })
+  ipcMain.handle(
+    'jira:setLabels',
+    (_e, tabId: TabId, root: string, labels: string[] | null): boolean => {
+      if (!workspaceRepos(tabId).some((r) => r.root === root)) return false
+      const clean = (labels ?? []).map((l) => l.trim()).filter(Boolean)
+      return writeProjectSettings(root, { jiraLabels: clean.length ? clean : null })
+    }
+  )
 
   // Right-click on a ticket: Open / Copy are handled here, "Start branch" goes
   // back to the dropdown, which shows its progress.

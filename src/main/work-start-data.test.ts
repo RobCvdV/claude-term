@@ -103,6 +103,12 @@ describe('startsFor', () => {
     ])
   })
 
+  it("a folder's own labels win over the built-in ones", () => {
+    const mmx = ticket({ ticket: { ...ticket().ticket!, labels: ['mmxlib'] } })
+    const own = repos.map((r) => (r.root === '/dev/next' ? { ...r, labels: ['mmxlib'] } : r))
+    expect(startsFor(mmx, own, [], contexts).map((s) => s.root)).toEqual(['/dev/next'])
+  })
+
   it('without matching labels, the workspace clones used before', () => {
     const history = [used('/dev/next', 'feature/MTX-9-y', 5), used('/dev/tms', 'x', 2)]
     expect(startsFor(ticket(), repos, history, contexts).map((s) => s.root)).toEqual([

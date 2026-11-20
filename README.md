@@ -117,7 +117,7 @@ Left to right:
   as one dot, progress and done-count; click for each group with its own bar, and open a run in
   AWS. Needs `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `~/.zshrc`.
 - **PRs**, with a dot for the branch's review state: orange awaiting review, green approved,
-  red changes requested, blue merged, grey no PR.
+  red changes requested, blue merged, grey no PR. The list puts this branch's PR first, then yours.
 - **Jira**, **Releases** or **Downloads**, notification volume and the clock.
 
 The PR, Jira, branch and folder chips open a dropdown on a click or right-click (never on hover):
@@ -125,8 +125,9 @@ The PR, Jira, branch and folder chips open a dropdown on a click or right-click 
 - **Branch** — every workspace repo's local branches, newest first, with yours marked **mine**.
   Click to switch (the session is told to re-read files); right-click opens it on
   Bitbucket/GitHub.
-- **Jira** — in the driver repos, the To Do tickets for that repo's labels that are unassigned or
-  yours. Right-click → **Start Branch** creates or switches to the ticket's branch, assigns the
+- **Jira** — in Bitbucket repos, the To Do tickets for that folder's labels that are unassigned or
+  yours. **labels** in the dropdown sets them per folder (kept in
+  `.claude/claude-term-settings.local.json`); without them the driver repos use built-in ones. Right-click → **Start Branch** creates or switches to the ticket's branch, assigns the
   ticket to you, moves it to Active and asks the session for a first look.
 
 ### Mission control

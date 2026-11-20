@@ -18,6 +18,7 @@ import { branchTicket } from '../shared/jira-labels'
 import { claudeConfigDirIn } from './claude-dir'
 import { encodeProjectDir } from './session-home'
 import { cardPrompt, lastBranchIn, resumePrompt, type LocalRepo } from './work-start-data'
+import { readProjectSettings } from './project-settings'
 
 const remotes = new Map<string, RepoRef | null>()
 
@@ -67,7 +68,9 @@ export async function localRepos(seeds: string[]): Promise<LocalRepo[]> {
   const found = await Promise.all(
     [...roots].map(async (root) => {
       const ref = await remoteOf(root)
-      return ref ? { root, ref } : null
+      if (!ref) return null
+      const labels = readProjectSettings(root).jiraLabels
+      return labels ? { root, ref, labels } : { root, ref }
     })
   )
   return found.filter((r): r is LocalRepo => r !== null)
