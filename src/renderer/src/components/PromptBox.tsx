@@ -12,6 +12,7 @@ import { promptHistoryFor, pushPrompt } from '../prompt-history'
 import { draftFor, lastImageNumber, saveDraft } from '../prompt-drafts'
 import { suggestWidgetAccepting } from '../suggest-widget'
 import { onTuiDraft, onUiKeys, setTermView, termView } from '../ui-keys'
+import { MONACO_SCROLLBAR } from '../scrollbar'
 
 const MIN_HEIGHT = 64
 const MAX_HEIGHT = 240
@@ -221,7 +222,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
       renderLineHighlight: 'none',
       overviewRulerLanes: 0,
       hideCursorInOverviewRuler: true,
-      scrollbar: { vertical: 'auto', horizontal: 'hidden', verticalScrollbarSize: 8 },
+      scrollbar: { ...MONACO_SCROLLBAR, vertical: 'auto', horizontal: 'hidden' },
       padding: { top: 8, bottom: 8 },
       automaticLayout: true,
       // our wordPattern makes / and @ word characters, which routes them to the

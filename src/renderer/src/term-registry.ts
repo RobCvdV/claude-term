@@ -15,6 +15,9 @@ import { fileLinkProvider, fileLinksInLine } from './terminal-links'
 import { isFocusToggle } from './focus-policy'
 import { cwdFromOsc7 } from './tab-title'
 import { setTermView, termView, uiKeysOwner } from './ui-keys'
+import { macEditingSequence } from './mac-editing-keys'
+import { inputSelection } from './term-input-selection'
+import { XTERM_SCROLLBAR_THEME } from './scrollbar'
 
 export interface TermEntry {
   term: Terminal
@@ -50,6 +53,13 @@ export function setTerminalFocusToggleHandler(fn: (tabId: TabId) => boolean): vo
 }
 
 /** App registers this to follow the folder the tab's shell reports (OSC 7). */
+/** Whether a tab's terminal gets the macOS editing keys (no prompt box), and
+ *  whether Claude Code or the shell reads them. */
+let editingMode: (tabId: TabId) => 'claude' | 'shell' | null = () => null
+export function setTerminalEditingMode(fn: (tabId: TabId) => 'claude' | 'shell' | null): void {
+  editingMode = fn
+}
+
 let cwdHandler: (tabId: TabId, cwd: string) => void = () => {}
 export function setTerminalCwdHandler(fn: (tabId: TabId, cwd: string) => void): void {
   cwdHandler = fn
@@ -98,7 +108,8 @@ export function createTerm(tabId: TabId, size?: { cols: number; rows: number }):
       background: '#1a1b1e',
       foreground: '#d4d4d8',
       cursor: '#d4d4d8',
-      selectionBackground: '#3b3f46'
+      selectionBackground: '#3b3f46',
+      ...XTERM_SCROLLBAR_THEME
     }
   })
   const fit = new FitAddon()
@@ -124,8 +135,36 @@ export function createTerm(tabId: TabId, size?: { cols: number; rows: number }):
   const containerEl = document.createElement('div')
   containerEl.className = 'term-container'
   term.open(containerEl)
+  const selection = inputSelection(
+    term,
+    () => editingMode(tabId) === 'claude' && uiKeysOwner(tabId) !== 'tui',
+    (data) => window.claudeTerm.ptyInput(tabId, data)
+  )
+  containerEl.addEventListener('mousedown', () => selection.clear(), true)
+  // an image has no text for xterm to paste: ⌃V has Claude Code read the clipboard itself
+  containerEl.addEventListener(
+    'paste',
+    (e) => {
+      const data = e.clipboardData
+      if (editingMode(tabId) !== 'claude' || !data) return
+      const text = data.getData('text/plain')
+      if (text && selection.paste(text)) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (text) return
+      if (![...data.items].some((i) => i.type.startsWith('image/'))) return
+      e.preventDefault()
+      e.stopPropagation()
+      window.claudeTerm.ptyInput(tabId, '\x16')
+    },
+    true
+  )
 
-  term.onData((data) => window.claudeTerm.ptyInput(tabId, data))
+  term.onData((data) => {
+    if (!selection.holds(data)) window.claudeTerm.ptyInput(tabId, data)
+  })
   term.onResize(({ cols, rows }) => window.claudeTerm.ptyResize(tabId, cols, rows))
   term.parser.registerOscHandler(1337, (data) => {
     if (!data.startsWith(SHELL_CMD_OSC)) return false
@@ -156,6 +195,14 @@ export function createTerm(tabId: TabId, size?: { cols: number; rows: number }):
       if (!focusToggleHandler(tabId)) return true
       e.preventDefault()
       e.stopPropagation()
+      return false
+    }
+    const mode = e.type === 'keydown' ? editingMode(tabId) : null
+    if (mode === 'claude' && selection.key(e)) return false
+    const seq = mode && macEditingSequence(e, mode === 'claude')
+    if (seq) {
+      e.preventDefault()
+      window.claudeTerm.ptyInput(tabId, seq)
       return false
     }
     if (e.type === 'keydown' && e.key === 'Escape') {

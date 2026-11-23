@@ -101,6 +101,20 @@ function HowTo(): React.JSX.Element {
         <div className="help-note">
           Drop files anywhere: they become @-mentions; images attach as compact chips.
         </div>
+        <h3>Without the prompt box</h3>
+        <Keys k="⌘← ⌘→">Line start / end, in the terminal</Keys>
+        <Keys k="⌥← ⌥→">Word left / right</Keys>
+        <Keys k="⌘⌫ ⌥⌫">Delete to line start / the word before</Keys>
+        <Keys k="⌘Z">Undo</Keys>
+        <Keys k="⇧Enter">Newline (Claude Code only)</Keys>
+        <Keys k="⇧ + ← →">
+          Select (with ⌥ by word, ⌘ to the line&apos;s end) — typing or ⌫ replaces it, ⌘C ⌘X copy
+          and cut; ⇧↑ ⇧↓ stay Claude Code&apos;s effort keys
+        </Keys>
+        <div className="help-note">
+          Settings → <i>Type prompts in the prompt box</i> off, or ⌘K → <i>Type in the terminal</i>:
+          you type straight into Claude Code, and these keys work there as in a text field.
+        </div>
       </section>
       <section>
         <h3>File window</h3>
@@ -225,6 +239,14 @@ function Guide(): React.JSX.Element {
           of the tab, completing the extra folders it currently has (the folder chip&apos;s
           right-click menu does the same). When Claude shows a grayed-out suggested next prompt in
           the terminal, <b>Tab</b> in the empty box runs it.
+        </p>
+        <p>
+          Prefer one input? Turn <i>Type prompts in the prompt box</i> off in Settings (or ⌘K →{' '}
+          <i>Type in the terminal</i>): the box goes away and you type into Claude Code itself,
+          where <code>⌘← ⌘→</code>, <code>⌥← ⌥→</code>, <code>⌘⌫ ⌥⌫</code>, <code>⌘Z</code> and{' '}
+          <code>⇧Enter</code> work as in a text field, <code>⇧</code> with them selects, and pasting
+          an image attaches it. The box&apos;s own extras (spell check, app commands like{' '}
+          <code>/color</code>, image chips) are not there.
         </p>
       </section>
       <section>

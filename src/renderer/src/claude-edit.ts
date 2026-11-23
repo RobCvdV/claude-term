@@ -1,5 +1,6 @@
 import type * as monacoNs from 'monaco-editor'
 import { setupMonaco } from './monaco-setup'
+import { MONACO_SCROLLBAR } from './scrollbar'
 
 /**
  * "Edit selection with Claude" in a file window: ⌃Space with text selected
@@ -154,6 +155,7 @@ function showDiff(editor: Editor, path: string, session: EditSession, text: stri
     originalEditable: false,
     automaticLayout: true,
     minimap: { enabled: false },
+    scrollbar: MONACO_SCROLLBAR,
     scrollBeyondLastLine: false,
     fontSize: 13,
     theme: 'claude-term'

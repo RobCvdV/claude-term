@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  AppSettings,
   BranchHistoryEntry,
   TabLaunch,
   DocGroup,
@@ -34,11 +35,13 @@ import { setUiKeys } from './ui-keys'
 import {
   disposeTerm,
   focusTerm,
+  getTerm,
   primeTerm,
   serializeTerm,
   setTerminalEscapeHandler,
   setTerminalFocusToggleHandler,
   setTerminalCwdHandler,
+  setTerminalEditingMode,
   terminalAtNormalInput,
   visibleScreen
 } from './term-registry'
@@ -104,6 +107,8 @@ export default function App(): React.JSX.Element {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   // ⌘1–9 / ⌘[ ⌘] stay in this window (else they number every window's tabs)
   const [tabKeysPerWindow, setTabKeysPerWindow] = useState(true)
+  const [promptBox, setPromptBox] = useState(true)
+  const promptBoxRef = useRef(true)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
   // What the persisted session said each restored tab was hosting. Kept as the
@@ -179,9 +184,10 @@ export default function App(): React.JSX.Element {
   }, [statuses])
 
   // The one place focus actually moves. Every decision comes from focus-policy.
+  // without a prompt box, the terminal is where you type
   const applyFocus = (tabId: TabId, target: FocusTarget): void => {
-    if (target === 'box') promptRefs.current.get(tabId)?.focus()
-    else if (target === 'terminal') focusTerm(tabId)
+    if (target === 'box' && promptBoxRef.current) promptRefs.current.get(tabId)?.focus()
+    else if (target !== 'none') focusTerm(tabId)
   }
 
   // Put focus where it's most useful for the tab's *current* state. Deferred a
@@ -190,7 +196,7 @@ export default function App(): React.JSX.Element {
   const restoreFocus = useCallback((tabId: TabId): void => {
     requestAnimationFrame(() => {
       const target = focusForTab(focusStateOf(statusesRef.current[tabId]))
-      if (target === 'box') promptRefs.current.get(tabId)?.focus()
+      if (target === 'box' && promptBoxRef.current) promptRefs.current.get(tabId)?.focus()
       else focusTerm(tabId)
     })
   }, [])
@@ -213,8 +219,12 @@ export default function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    void window.claudeTerm.appSettings().then((s) => setTabKeysPerWindow(s.tabKeysPerWindow))
-    return window.claudeTerm.onAppSettings((s) => setTabKeysPerWindow(s.tabKeysPerWindow))
+    const apply = (s: AppSettings): void => {
+      setTabKeysPerWindow(s.tabKeysPerWindow)
+      setPromptBox(s.promptBox)
+    }
+    void window.claudeTerm.appSettings().then(apply)
+    return window.claudeTerm.onAppSettings(apply)
   }, [])
 
   // the menu's Settings… (⌘,); again while open closes it
@@ -302,6 +312,17 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
+  useEffect(() => {
+    setTerminalEditingMode((tabId) =>
+      promptBoxRef.current ? null : statusesRef.current[tabId]?.claudeActive ? 'claude' : 'shell'
+    )
+  }, [])
+  // the box went away: its focus goes to the terminal
+  useEffect(() => {
+    promptBoxRef.current = promptBox
+    if (!promptBox && activeIdRef.current) focusTerm(activeIdRef.current)
+  }, [promptBox])
+
   // ⌥Tab in the terminal takes focus back to the prompt box, the other half of
   // the box's own ⌥Tab. Unlike every rule in focus-policy this is the user
   // saying where focus goes, so it ignores the tab's state entirely — the only
@@ -348,7 +369,12 @@ export default function App(): React.JSX.Element {
         .filter(Boolean)
       if (paths.length === 0) return
       const st = statusesRef.current[tabId]
-      if (st?.claudeActive) {
+      if (st?.claudeActive && !promptBoxRef.current) {
+        // a paste, so Claude Code turns image paths into attachments
+        const text = paths.map((p) => (isImagePath(p) ? p : promptTokenForPath(p, st.cwd)))
+        getTerm(tabId)?.term.paste(text.join(' ') + ' ')
+        focusTerm(tabId)
+      } else if (st?.claudeActive) {
         const items = paths.map((p) => {
           const isImage = isImagePath(p)
           return {
@@ -708,7 +734,7 @@ export default function App(): React.JSX.Element {
         setShowPalette((v) => !v)
       } else if (e.key === 'l') {
         e.preventDefault()
-        if (activeId) promptRefs.current.get(activeId)?.focus()
+        if (activeId) applyFocus(activeId, 'box')
       } else if (e.key === 'f') {
         e.preventDefault()
         openSearch()
@@ -825,6 +851,11 @@ export default function App(): React.JSX.Element {
     },
     { id: 'find', label: 'Find in terminal', shortcut: '⌘F', run: openSearch },
     {
+      id: 'prompt-box',
+      label: promptBox ? 'Type in the terminal (hide the prompt box)' : 'Use the prompt box',
+      run: () => void window.claudeTerm.setAppSettings({ promptBox: !promptBox })
+    },
+    {
       id: 'new-window',
       label: 'New window',
       shortcut: '⌘N',
@@ -908,7 +939,9 @@ export default function App(): React.JSX.Element {
   // tee up "Log my hours" after preparing a dispatch.
   const fillPromptIfEmpty = useCallback(
     (text: string): void => {
-      if (activeId) promptRefs.current.get(activeId)?.fillIfEmpty(text)
+      if (!activeId) return
+      if (promptBoxRef.current) promptRefs.current.get(activeId)?.fillIfEmpty(text)
+      else if (terminalAtNormalInput(activeId)) getTerm(activeId)?.term.paste(text)
     },
     [activeId]
   )
@@ -1006,7 +1039,7 @@ export default function App(): React.JSX.Element {
               onOpenDocs={openDocsFor}
             />
           )}
-          {showClaudeUi && activeId && (
+          {showClaudeUi && activeId && promptBox && (
             <PromptBox
               key={activeId}
               ref={(h) => {
