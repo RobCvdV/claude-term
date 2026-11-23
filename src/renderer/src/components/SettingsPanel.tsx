@@ -199,6 +199,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): React.JSX.E
             <section>
               <h3>Windows &amp; tabs</h3>
               <Toggle
+                on={s.promptBox}
+                onChange={(promptBox) => set({ promptBox })}
+                label="Type prompts in the prompt box"
+                hint="off: type straight into Claude Code, with ⌘← ⌘→ ⌥← ⌥→ ⌘⌫ ⌥⌫ ⌘Z ⇧Enter as in a text field"
+              />
+              <Toggle
                 on={s.tabKeysPerWindow}
                 onChange={(tabKeysPerWindow) => set({ tabKeysPerWindow })}
                 label="Tab shortcuts stay in their window"

@@ -95,6 +95,9 @@ You need the `claude` CLI on your `PATH`.
 - Misspelled words get a muted underline; `⌘.` lists fixes and **Add to dictionary**.
 - `⌃R ⌃O ⌃T ⌃B` go to Claude Code. The box keeps its own editing keys (`⌃A ⌃E ⌃K ⌃H ⌃D ⌃F ⌃N ⌃P`
   and `⌃Z`).
+- Prefer one input? Turn **Type prompts in the prompt box** off in Settings (or ⌘K → **Type in the
+  terminal**): you type into Claude Code itself, with the macOS editing keys below. The box's
+  extras (spell check, app commands, image chips) are not there.
 
 ### Status bar
 
@@ -316,6 +319,17 @@ The details are in [docs/companion.md](docs/companion.md).
 | `Esc`    | To Claude Code, and focus the terminal    |
 | `⌘L`     | Focus the prompt box                      |
 | `⌘.`     | Spelling fixes                            |
+
+Without the prompt box, in the terminal:
+
+| Keys        | Action                                                    |
+| ----------- | --------------------------------------------------------- |
+| `⌘←` `⌘→`   | Line start / end                                          |
+| `⌥←` `⌥→`   | Word left / right                                         |
+| `⌘⌫` `⌥⌫`   | Delete to line start / the word before                    |
+| `⌘Z`        | Undo                                                      |
+| `⇧Enter`    | Newline (Claude Code only)                                |
+| `⇧` + those | Select; typing or `⌫` replaces it, `⌘C` `⌘X` copy and cut |
 
 ### Work board
 

@@ -796,6 +796,8 @@ export interface AppSettings {
   board: BoardView
   /** keep sweeping the Work board while it is closed, to notify about work without a tab */
   boardWatch: boolean
+  /** type into the prompt box; off: straight into Claude Code, with macOS editing keys */
+  promptBox: boolean
   /** repo name → command run in a new worktree's tab before claude, e.g. `npm ci` */
   worktreeSetup: Record<string, string>
 }

@@ -12,6 +12,7 @@ import {
   shownText
 } from './file-editor-state'
 import type { LoadedFile } from './file-editor-state'
+import { MONACO_SCROLLBAR } from './scrollbar'
 
 /**
  * The editing half of a detached file window (docs, settings): which file is
@@ -244,6 +245,7 @@ export function useFileEditor<E extends { path: string }>(spec: FileEditorSpec<E
       automaticLayout: true,
       minimap: { enabled: false },
       fontSize: 13,
+      scrollbar: MONACO_SCROLLBAR,
       scrollBeyondLastLine: false,
       // ⌘F starts from the selection when there is one, not the word at the cursor
       find: { seedSearchStringFromSelection: 'selection' },

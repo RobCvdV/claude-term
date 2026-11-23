@@ -45,6 +45,7 @@ import { filterFor } from './completion-filter'
 import { MARKDOWN_LANG } from './config-lang'
 import { registerSpellActions } from './spell'
 import { registerGrammarActions } from './grammar'
+import { MONACO_SCROLLBAR_THEME } from './scrollbar'
 
 self.MonacoEnvironment = {
   getWorker: (_id, label) => (label === 'json' ? new jsonWorker() : new editorWorker())
@@ -148,7 +149,7 @@ export function setupMonaco(): typeof monaco {
       'editor.lineHighlightBackground': '#2a2b30',
       'editorWidget.background': '#232428',
       'editorWidget.border': '#35363c',
-      'scrollbarSlider.background': '#35363c88',
+      ...MONACO_SCROLLBAR_THEME,
       // spelling is the only thing that raises Info markers here — keep the
       // squiggle muted so a typo never reads as an error
       'editorInfo.foreground': '#8a8f99',

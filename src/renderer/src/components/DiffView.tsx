@@ -18,6 +18,7 @@ import {
   turnStep,
   type DiffScope
 } from '../diff-rail'
+import { MONACO_SCROLLBAR } from '../scrollbar'
 
 /**
  * What the turn just did to the working tree, as a Monaco diff against HEAD.
@@ -127,6 +128,7 @@ export function DiffView({ tabId, onOpenFile }: Props): React.JSX.Element {
       renderSideBySide: sideBySide,
       minimap: { enabled: false },
       fontSize: 13,
+      scrollbar: MONACO_SCROLLBAR,
       scrollBeyondLastLine: false,
       renderOverviewRuler: false
     })
