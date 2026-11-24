@@ -104,11 +104,11 @@ cheap. The parse cache is shared with the companion's conversation follower.
   in `editor.onKeyDown` with `preventDefault()`, and skip when `.suggest-widget.visible` so Monaco
   can accept the suggestion. Other keys like `⇧Tab` are fine via `addCommand`. Synthetic CDP key
   events don't feed the EditContext, so `⇧Enter` newlines can't be exercised over CDP.
-- **`/add-dir` can only be seen as it is submitted.** Claude Code keeps no readable record of a
+- **`/add-dir` can only be seen as it runs.** Claude Code keeps no readable record of a
   runtime `/add-dir` — not in the statusline payload, the transcript or `~/.claude.json`. The file
   window learns extra roots from `permissions.additionalDirectories` in the settings chain and from
-  `/add-dir <path>` passing through the prompt box. One typed directly into the terminal can't be
-  seen; put it in `permissions.additionalDirectories` to make it stick. `/remove-dir` drops a
+  `/add-dir <path>` as it runs (the prompt box, or the term-bridge mod's `command.start`). It is
+  recorded as it starts, so a folder declined in Claude Code's own question still shows. `/remove-dir` drops a
   folder from the tab's record and remembers the removal, but Claude Code has no removal command,
   so the running session keeps access until the tab restarts.
 - **Profile isolation** (2026-07-21 incident): package name and productName are both

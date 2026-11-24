@@ -677,6 +677,8 @@ export default function App(): React.JSX.Element {
     void window.claudeTerm.setProjectSettings(tabId, { tabColor: off ? null : color })
   }, [])
 
+  useEffect(() => window.claudeTerm.onTabColor(setTabColor), [setTabColor])
+
   // step to the prev/next tab, wrapping around — across windows when set so
   const stepTab = useCallback(
     (delta: number): void => {

@@ -93,6 +93,9 @@ Settings (or ⌘K → **Use the prompt box**) for an editor under the terminal:
   there complete as `repo:branch` / `repo:script` (`/switch mmxlib:main`), and `/add-file`
   offers each added folder as a starting point.
 
+  Without the box, `/color`, `/add-file`, `/switch`, `/npm` and `/remove-dir` are Claude Code
+  slash commands (from the app's term-bridge mod), with the same argument completion.
+
 - `@` completes project files (git files, untracked included). `@../`, `@/` and `@~/` browse
   one folder level at a time.
 - `↑ ↓` walk your prompt history; `←` on an empty box opens Claude Code's agents overview.

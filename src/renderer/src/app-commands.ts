@@ -1,5 +1,5 @@
-import type { NpmScript, SlashCommand, TabId } from '../../shared/types'
-import { scriptKey } from '../../shared/npm-script'
+import type { SlashCommand, TabId } from '../../shared/types'
+import { npmRunLine, scriptKey } from '../../shared/npm-script'
 import { getSpellConfig, setSpellConfig, type SpellConfig, type SpellLang } from './spell'
 
 // App-local commands: intercepted in the prompt box and handled inside the app,
@@ -181,17 +181,6 @@ export const APP_COMMANDS: AppCommand[] = [
     }
   }
 ]
-
-/** The runnable `!npm …` line for a script (trailing space invites params). */
-function npmRunLine(s: NpmScript): string {
-  const dir = [s.root, s.dir].filter(Boolean).join('/')
-  const prefix = dir ? `--prefix ${quoteArg(dir)} ` : ''
-  return `!npm ${prefix}run ${quoteArg(s.name)} `
-}
-
-function quoteArg(v: string): string {
-  return /[^\w./:@-]/.test(v) ? JSON.stringify(v) : v
-}
 
 const SPELL_CHOICES = [
   { label: 'en+nl', value: 'en+nl', detail: 'Spelling: English and Dutch' },

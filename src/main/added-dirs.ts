@@ -14,12 +14,9 @@ import { claudeConfigDir } from './claude-dir'
  *
  *  1. `permissions.additionalDirectories` in the settings chain — static, and
  *     the only thing that survives independently of this app.
- *  2. `/add-dir <path>` submitted through the app's prompt box, sniffed as it
- *     passes through the main process.
- *
- * KNOWN GAP: `/add-dir` typed straight into the terminal bypasses the prompt
- * box and cannot be observed. Put it in `permissions.additionalDirectories` to
- * make it stick.
+ *  2. `/add-dir <path>` as it is run: sniffed in the prompt box, or reported
+ *     by the term-bridge mod when typed straight into Claude Code (as it starts,
+ *     so a folder declined in Claude Code's own question still shows).
  *
  * Removal is app-side only: Claude Code has no `/remove-dir`, so `/remove-dir`
  * here drops the folder from the tab's record and suppresses it (StatusServer
