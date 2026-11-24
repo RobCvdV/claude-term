@@ -40,11 +40,6 @@ export class PanelWindow {
     return !!this.win && !this.win.isDestroyed()
   }
 
-  toggle(): void {
-    if (this.isOpen()) this.win!.close()
-    else this.open()
-  }
-
   /** Open it, or bring it forward; `inactive` (a launch) leaves the keys alone. */
   open(inactive = false): void {
     if (this.isOpen()) {

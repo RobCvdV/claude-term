@@ -240,18 +240,17 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
     else previewRef.current?.focus()
   }
 
-  // ⌘E to the editor (or the page in View) and ⌘P between the two, from anywhere
-  // in the window — ahead of Monaco, whose ⌘E is "use selection for find"
+  // ⌘P to the editor (or the page in View) and ⇧⌘P between the two, from
+  // anywhere in the window — ahead of Monaco
   const keysRef = useRef({ togglePreview, focusContent })
   useEffect(() => {
     keysRef.current = { togglePreview, focusContent }
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
-      if (e.code === 'KeyE') keysRef.current.focusContent()
-      else if (e.code === 'KeyP') keysRef.current.togglePreview()
-      else return
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.code !== 'KeyP') return
+      if (e.shiftKey) keysRef.current.togglePreview()
+      else keysRef.current.focusContent()
       e.preventDefault()
       e.stopPropagation()
     }
@@ -346,7 +345,7 @@ export function DocsView({ tabId, group, target, onOpenFile }: Props): React.JSX
                     className="docs-btn"
                     onClick={togglePreview}
                     disabled={content == null}
-                    title={mode === 'edit' ? 'Preview this file (⌘P)' : 'Edit this file (⌘P)'}
+                    title={mode === 'edit' ? 'Preview this file (⇧⌘P)' : 'Edit this file (⇧⌘P)'}
                   >
                     {mode === 'edit' ? 'View' : 'Edit'}
                   </button>

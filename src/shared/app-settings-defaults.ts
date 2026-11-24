@@ -36,7 +36,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   ],
   board: { context: 'all', hiddenLanes: [], hiddenKinds: [], showHandedOff: false, sort: 'newest' },
   boardWatch: true,
-  promptBox: true,
+  promptBox: false,
   worktreeSetup: {}
 }
 

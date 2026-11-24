@@ -46,6 +46,34 @@ export function installCycleKey(win: BrowserWindow, cycle: () => void): void {
   })
 }
 
+/** Which panel a key opens: ⌘E Mission control, ⇧⌘E the Work board. */
+export function panelForKey(input: {
+  type: string
+  code: string
+  meta: boolean
+  shift: boolean
+  control: boolean
+  alt: boolean
+}): 'mission' | 'board' | null {
+  if (input.type !== 'keyDown' || !input.meta || input.control || input.alt) return null
+  if (input.code !== 'KeyE') return null
+  return input.shift ? 'board' : 'mission'
+}
+
+/** ⌘E / ⇧⌘E open (or bring forward) their panel from any of the app's windows —
+ *  caught before the page, so no editor or window can take the keys for itself. */
+export function installPanelKeys(
+  win: BrowserWindow,
+  open: { mission: () => void; board: () => void }
+): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    const panel = panelForKey(input)
+    if (!panel) return
+    event.preventDefault()
+    open[panel]()
+  })
+}
+
 /** The traffic lights keep their size whatever the page zoom, so the tab bar's
  *  inset for them has to be divided back out in CSS. Set from here rather than
  *  pushed over IPC: on a reload the renderer has not subscribed yet. */

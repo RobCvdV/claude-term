@@ -8,7 +8,7 @@ import { ensureActivityHook } from './activity-hook-install'
 import { loginShellEnv } from './shell-env'
 import { findOwnBackgroundAgents, stopBackgroundAgent, type LiveAgent } from './agents'
 import { setupUpdater, installUpdate, checkForUpdatesInteractive, pendingUpdate } from './updater'
-import { installAppMenu, installCycleKey, installZoomKeys } from './menu'
+import { installAppMenu, installCycleKey, installPanelKeys, installZoomKeys } from './menu'
 import { TerminalWindows } from './terminal-windows'
 import { windowsOf } from './window-order'
 import { appSettings, onAppSettings } from './app-settings'
@@ -141,6 +141,10 @@ keepBackgroundRendering()
 app.on('browser-window-created', (_event, win) => {
   installZoomKeys(win)
   installCycleKey(win, () => windows.cycle())
+  installPanelKeys(win, {
+    mission: () => services.mission.open(),
+    board: () => services.board.open()
+  })
 })
 
 function makeWindow(bounds: WindowBounds | undefined): BrowserWindow {

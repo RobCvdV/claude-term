@@ -55,9 +55,13 @@ function HowTo(): React.JSX.Element {
           Command palette — fuzzy-jump to a tab, recall a recent branch (Enter copies its name), or
           run an action
         </Keys>
-        <Keys k="⌘E">Mission control window — every tab at a glance; ⌘E again closes it</Keys>
+        <Keys k="⌘E">
+          Mission control window — every tab at a glance; opens or comes to the front, from any
+          window
+        </Keys>
         <Keys k="⇧⌘E">
-          Work board window — your open tickets, PRs and reviews; ⇧⌘E again closes it
+          Work board window — your open tickets, PRs and reviews; opens or comes to the front, from
+          any window
         </Keys>
         <Keys k="⌘,">
           Settings — notifications, polling, integrations and the app&apos;s switches
@@ -112,8 +116,9 @@ function HowTo(): React.JSX.Element {
           and cut; ⇧↑ ⇧↓ stay Claude Code&apos;s effort keys
         </Keys>
         <div className="help-note">
-          Settings → <i>Type prompts in the prompt box</i> off, or ⌘K → <i>Type in the terminal</i>:
-          you type straight into Claude Code, and these keys work there as in a text field.
+          The default: you type straight into Claude Code, where these keys work as in a text field.
+          Settings → <i>Type prompts in the prompt box</i>, or ⌘K → <i>Use the prompt box</i>, swaps
+          in the box instead.
         </div>
       </section>
       <section>
@@ -134,8 +139,8 @@ function HowTo(): React.JSX.Element {
         <Keys k="⌥⌘C">Copy the path</Keys>
         <Keys k="⌃Space">Context menu (right-click too) — includes Show in Finder</Keys>
         <Keys k="⌘L">Back to the file tree, where you left it</Keys>
-        <Keys k="⌘E">To the editor (or the page, in View) without opening anything</Keys>
-        <Keys k="⌘P">Switch between View and Edit (markdown, images, HTML)</Keys>
+        <Keys k="⌘P">To the editor (or the page, in View) without opening anything</Keys>
+        <Keys k="⇧⌘P">Switch between View and Edit (markdown, images, HTML)</Keys>
         <Keys k="⌥⌘L">Select the open file in the tree</Keys>
       </section>
       <section>
@@ -241,12 +246,12 @@ function Guide(): React.JSX.Element {
           the terminal, <b>Tab</b> in the empty box runs it.
         </p>
         <p>
-          Prefer one input? Turn <i>Type prompts in the prompt box</i> off in Settings (or ⌘K →{' '}
-          <i>Type in the terminal</i>): the box goes away and you type into Claude Code itself,
-          where <code>⌘← ⌘→</code>, <code>⌥← ⌥→</code>, <code>⌘⌫ ⌥⌫</code>, <code>⌘Z</code> and{' '}
-          <code>⇧Enter</code> work as in a text field, <code>⇧</code> with them selects, and pasting
-          an image attaches it. The box&apos;s own extras (spell check, app commands like{' '}
-          <code>/color</code>, image chips) are not there.
+          The box is off by default: you type into Claude Code itself, where <code>⌘← ⌘→</code>,{' '}
+          <code>⌥← ⌥→</code>, <code>⌘⌫ ⌥⌫</code>, <code>⌘Z</code> and <code>⇧Enter</code> work as in
+          a text field, <code>⇧</code> with them selects, and pasting an image attaches it. Turn{' '}
+          <i>Type prompts in the prompt box</i> on in Settings (or ⌘K → <i>Use the prompt box</i>)
+          for the box and its extras: spell check, app commands like <code>/color</code>, image
+          chips.
         </p>
       </section>
       <section>
@@ -289,17 +294,17 @@ function Guide(): React.JSX.Element {
       <section>
         <h3>Mission control</h3>
         <p>
-          <b>⌘E</b> opens a window with every tab of every terminal window at a glance (<b>⌘E</b>
-          again closes it): activity and elapsed time, context usage, and per workspace repo the
-          branch with its Jira status and topic (the ticket summary, else the PR title), the
-          PR&apos;s review state and comment count, the build (with progress while it runs) and
-          unpushed / behind counts — plus your last prompt (<b>asked</b>) and a summary of
-          Claude&apos;s latest reply (<b>latest</b>; long turns are compressed by the local Bonsai
-          model when one is running — plain truncation otherwise). The header counts what needs you
-          across all tabs, and a card with a failed build, requested changes or a question gets a
-          red edge. Click a card to jump there — the window stays open, so it can sit beside your
-          terminals at whatever size you give it, and it opens where you left it (also after a
-          restart, if it was open). Click a chip to open the ticket, PR or build.
+          <b>⌘E</b>, from any window, opens a window with every tab of every terminal window at a
+          glance (or brings it to the front; ⌘W closes it): activity and elapsed time, context
+          usage, and per workspace repo the branch with its Jira status and topic (the ticket
+          summary, else the PR title), the PR&apos;s review state and comment count, the build (with
+          progress while it runs) and unpushed / behind counts — plus your last prompt (<b>asked</b>
+          ) and a summary of Claude&apos;s latest reply (<b>latest</b>; long turns are compressed by
+          the local Bonsai model when one is running — plain truncation otherwise). The header
+          counts what needs you across all tabs, and a card with a failed build, requested changes
+          or a question gets a red edge. Click a card to jump there — the window stays open, so it
+          can sit beside your terminals at whatever size you give it, and it opens where you left it
+          (also after a restart, if it was open). Click a chip to open the ticket, PR or build.
         </p>
         <p>
           A PR that is approved, green (or only waiting on an approval step) and has nothing
@@ -319,20 +324,20 @@ function Guide(): React.JSX.Element {
       <section>
         <h3>Work board</h3>
         <p>
-          <b>⇧⌘E</b> (also Mission control&apos;s header or the ⌘K palette) opens it: your open Jira
-          tickets, PRs, reviews and GitHub issues with their builds, in lanes by whose move it is,
-          with a tab per context (MendriX, Personal). Lane and kind toggles are remembered, and PRs
-          whose ticket you handed to someone else stay hidden unless <b>Handed off</b> is on;{' '}
-          <b>/</b> focuses the filter and <b>Esc</b> clears it; the arrows (or <b>j k h l</b>) pick
-          a card for the keys in the cheat sheet, and the lanes sort newest or most urgent first. A
-          card with an open session shows it — click to go there. <b>merge</b> on an approved, green
-          PR merges it after a confirmation and offers to move the ticket to Deploy;{' '}
-          <b>→ Peer review</b> / <b>→ Deploy</b> fix a ticket that lags its PRs, and ⚠ flags an
-          unmerged PR whose ticket already moved on. <b>▶ session</b> puts a local clone on the
-          card&apos;s branch and resumes its last conversation or starts one about the card; the
-          chip says which, and whether it takes over a clone&apos;s idle tab. When that clone is
-          busy, or on right-click, a menu shows every clone&apos;s state plus <b>New worktree</b>;{' '}
-          <b>Worktrees</b> in the header removes them again.
+          <b>⇧⌘E</b> from any window (also Mission control&apos;s header or the ⌘K palette) opens it
+          or brings it to the front: your open Jira tickets, PRs, reviews and GitHub issues with
+          their builds, in lanes by whose move it is, with a tab per context (MendriX, Personal).
+          Lane and kind toggles are remembered, and PRs whose ticket you handed to someone else stay
+          hidden unless <b>Handed off</b> is on; <b>/</b> focuses the filter and <b>Esc</b> clears
+          it; the arrows (or <b>j k h l</b>) pick a card for the keys in the cheat sheet, and the
+          lanes sort newest or most urgent first. A card with an open session shows it — click to go
+          there. <b>merge</b> on an approved, green PR merges it after a confirmation and offers to
+          move the ticket to Deploy; <b>→ Peer review</b> / <b>→ Deploy</b> fix a ticket that lags
+          its PRs, and ⚠ flags an unmerged PR whose ticket already moved on. <b>▶ session</b> puts a
+          local clone on the card&apos;s branch and resumes its last conversation or starts one
+          about the card; the chip says which, and whether it takes over a clone&apos;s idle tab.
+          When that clone is busy, or on right-click, a menu shows every clone&apos;s state plus{' '}
+          <b>New worktree</b>; <b>Worktrees</b> in the header removes them again.
         </p>
       </section>
       <section>
@@ -468,10 +473,10 @@ function Guide(): React.JSX.Element {
           paste files to and from Finder (a clash gets Finder&apos;s &quot;copy&quot; name), and{' '}
           <code>⌃Space</code> or a right-click opens the same actions as a menu with{' '}
           <b>Show in Finder</b>. <code>⌥⌘L</code> or the ◎ button selects the open file in its tree.
-          <code>⌘L</code> jumps back to the tree and <code>⌘E</code> to the editor. Markdown opens
+          <code>⌘L</code> jumps back to the tree and <code>⌘P</code> to the editor. Markdown opens
           rendered, with spell/grammar checking when you edit it; images open as images (SVG shows
           your unsaved edits too) and HTML can be viewed as a page — scripts never run.{' '}
-          <code>⌘P</code> or the View/Edit button switches; a file with nothing to show beyond its
+          <code>⇧⌘P</code> or the View/Edit button switches; a file with nothing to show beyond its
           text opens straight in the editor, highlighted for its type (XML-like files such as SVG
           and project files read as XML). <code>⌘S</code> saves, a dot marks unsaved changes, and
           closing the window (or its tab) prompts first. A file changed outside the window (Claude
