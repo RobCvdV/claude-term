@@ -73,7 +73,7 @@ export function targetEntry(d: ProjectDocs, target?: DocTarget | null): FileItem
 }
 
 /** Markdown and images open as what they show; anything else opens in the
- *  editor — HTML too, whose page is a ⌘P away. */
+ *  editor — HTML too, whose page is a ⇧⌘P away. */
 export function modeFor(path: string): 'view' | 'edit' {
   const kind = previewKind(path)
   return kind === 'markdown' || kind === 'image' ? 'view' : 'edit'

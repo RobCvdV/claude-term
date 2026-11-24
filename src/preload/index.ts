@@ -258,11 +258,10 @@ export interface ClaudeTermApi {
   reportTabs(tabs: MissionTab[], activeId: TabId | null, title: string): void
   /** switch to a tab in whichever window holds it, and bring that forward */
   activateGlobalTab(tabId: TabId): void
-  /** ⌘E: open the Mission control window, or close it */
-  toggleMission(): void
+  /** ⌘E: open the Mission control window, or bring it forward */
   openMission(): void
-  /** open the Work board window, or close it */
-  toggleBoard(): void
+  /** ⇧⌘E: open the Work board window, or bring it forward */
+  openBoard(): void
   boardState(): Promise<WorkBoardState>
   /** sweep Jira / Bitbucket / GitHub now */
   refreshBoard(): void
@@ -439,9 +438,8 @@ const api: ClaudeTermApi = {
   onMoveActiveTab: (cb) => subscribe('tabs:moveActive', cb),
   reportTabs: (tabs, activeId, title) => ipcRenderer.send('tabs:report', tabs, activeId, title),
   activateGlobalTab: (tabId) => ipcRenderer.send('tabs:activateGlobal', tabId),
-  toggleMission: () => ipcRenderer.send('mission:toggle'),
   openMission: () => ipcRenderer.send('mission:open'),
-  toggleBoard: () => ipcRenderer.send('board:toggle'),
+  openBoard: () => ipcRenderer.send('board:open'),
   boardState: () => ipcRenderer.invoke('board:state'),
   refreshBoard: () => ipcRenderer.send('board:refresh'),
   onBoardUpdate: (cb) => subscribe('board:update', cb),

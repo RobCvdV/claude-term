@@ -95,15 +95,11 @@ export function BoardWindow(): React.JSX.Element {
     return window.claudeTerm.onBoardUpdate(setBoard)
   }, [])
 
-  // "/" jumps to the filter, Escape clears it; ⇧⌘E closes the board, ⌘E opens Mission control
+  // "/" jumps to the filter, Escape clears it
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const inFilter = document.activeElement === filterRef.current
-      if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'e') {
-        e.preventDefault()
-        if (e.shiftKey) window.claudeTerm.toggleBoard()
-        else window.claudeTerm.toggleMission()
-      } else if (e.key === '/' && !inFilter && !e.metaKey && !e.ctrlKey) {
+      if (e.key === '/' && !inFilter && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
         filterRef.current?.focus()
       } else if (e.key === 'Escape' && inFilter) {

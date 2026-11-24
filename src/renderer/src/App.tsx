@@ -107,8 +107,8 @@ export default function App(): React.JSX.Element {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   // ⌘1–9 / ⌘[ ⌘] stay in this window (else they number every window's tabs)
   const [tabKeysPerWindow, setTabKeysPerWindow] = useState(true)
-  const [promptBox, setPromptBox] = useState(true)
-  const promptBoxRef = useRef(true)
+  const [promptBox, setPromptBox] = useState(false)
+  const promptBoxRef = useRef(false)
   const promptRefs = useRef(new Map<TabId, PromptBoxHandle>())
   const manualTitles = useRef(new Set<TabId>())
   // What the persisted session said each restored tab was hosting. Kept as the
@@ -738,12 +738,6 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'f') {
         e.preventDefault()
         openSearch()
-      } else if (e.key === 'e') {
-        e.preventDefault()
-        window.claudeTerm.toggleMission()
-      } else if (e.key.toLowerCase() === 'e' && e.shiftKey) {
-        e.preventDefault()
-        window.claudeTerm.toggleBoard()
       } else if (e.key.toLowerCase() === 'a' && e.shiftKey) {
         e.preventDefault()
         jumpAttention()
@@ -893,7 +887,7 @@ export default function App(): React.JSX.Element {
       id: 'board',
       label: 'Work board',
       shortcut: '⇧⌘E',
-      run: () => window.claudeTerm.toggleBoard()
+      run: () => window.claudeTerm.openBoard()
     },
     { id: 'settings', label: 'Settings', shortcut: '⌘,', run: () => setShowSettings(true) },
     { id: 'activity', label: 'Activity hours', run: () => setShowActivity(true) },
@@ -1056,7 +1050,6 @@ export default function App(): React.JSX.Element {
               onEditDoc={editDoc}
               onOpenPalette={openPalette}
               onFindInTerminal={openSearch}
-              onOpenMission={() => window.claudeTerm.toggleMission()}
               onShowHelp={() => setHelpSection('howto')}
             />
           )}

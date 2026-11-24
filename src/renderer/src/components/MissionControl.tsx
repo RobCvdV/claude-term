@@ -272,7 +272,7 @@ export function MissionControl({
           <button
             className="range-btn mission-board-link"
             title="Open work across Jira, Bitbucket and GitHub (⇧⌘E)"
-            onClick={() => window.claudeTerm.toggleBoard()}
+            onClick={() => window.claudeTerm.openBoard()}
           >
             Work board
           </button>

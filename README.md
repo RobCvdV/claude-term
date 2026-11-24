@@ -19,8 +19,9 @@ integrations are tuned for MendriX work (MTX tickets).
 
 ## Highlights
 
-- **Prompt box** — a real editor under the terminal: multiline, spell + grammar check,
-  `/` command and `@` file completion, history.
+- **One input, Mac keys** — type straight into Claude Code with `⌘←`, `⌥←`, `⌘⌫`, `⌘Z` and
+  shift-selection working as in a text field; or turn on the **prompt box**, a real editor with
+  spell check, `/` and `@` completion and history.
 - **Live status bar** — activity, branch and ticket, PR review, CI, context use and rate limits.
 - **Mission control** (`⌘E`) — every tab and repo at a glance, with what needs you, in a window
   you can keep open beside your terminals.
@@ -71,6 +72,10 @@ You need the `claude` CLI on your `PATH`.
 
 ### The prompt box
 
+Off by default: you type straight into Claude Code, with the macOS editing keys and
+shift-selection [below](#keyboard-shortcuts). Turn **Type prompts in the prompt box** on in
+Settings (or ⌘K → **Use the prompt box**) for an editor under the terminal:
+
 - `Enter` sends, `⇧Enter` adds a newline. Typing straight into the terminal still works.
 - `/` completes slash commands: Claude Code's own, your commands, skills and plugins, and the
   app's own commands:
@@ -95,9 +100,6 @@ You need the `claude` CLI on your `PATH`.
 - Misspelled words get a muted underline; `⌘.` lists fixes and **Add to dictionary**.
 - `⌃R ⌃O ⌃T ⌃B` go to Claude Code. The box keeps its own editing keys (`⌃A ⌃E ⌃K ⌃H ⌃D ⌃F ⌃N ⌃P`
   and `⌃Z`).
-- Prefer one input? Turn **Type prompts in the prompt box** off in Settings (or ⌘K → **Type in the
-  terminal**): you type into Claude Code itself, with the macOS editing keys below. The box's
-  extras (spell check, app commands, image chips) are not there.
 
 ### Status bar
 
@@ -135,7 +137,7 @@ The PR, Jira, branch and folder chips open a dropdown on a click or right-click 
 
 ### Mission control
 
-`⌘E` opens (and closes) a window with every tab of every terminal window: activity, elapsed time and context use, and per repo the branch, Jira
+`⌘E`, from any window, opens (or brings to the front) a window with every tab of every terminal window: activity, elapsed time and context use, and per repo the branch, Jira
 status, topic (ticket summary or PR title), PR review and comments, build state and unpushed /
 behind counts — plus your last prompt and a summary of Claude's latest reply.
 
@@ -153,7 +155,7 @@ behind counts — plus your last prompt and a summary of Claude's latest reply.
 
 ### Work board
 
-`⇧⌘E` opens and closes it (also Mission control's header or the ⌘K palette). It lists your open
+`⇧⌘E`, from any window, opens it or brings it to the front (also Mission control's header or the ⌘K palette). It lists your open
 work across Jira (assigned to you, minus Deploy / Beta / Done), Bitbucket (`mendrix`,
 `mendrixmobile`) and GitHub, with each PR's build. A ticket's PRs join its card by branch name,
 and a card with an open session shows it — click to go there.
@@ -297,8 +299,8 @@ The details are in [docs/companion.md](docs/companion.md).
 | `⇧⌘M`        | Move the tab back to the main window |
 | `` ⌃` ``     | Next terminal window                 |
 | `⌘K`         | Command palette                      |
-| `⌘E`         | Open / close Mission control         |
-| `⇧⌘E`        | Open / close the Work board          |
+| `⌘E`         | Mission control (from any window)    |
+| `⇧⌘E`        | Work board (from any window)         |
 | `⌘,`         | Settings                             |
 | `⌘⇧A`        | Next tab waiting for input           |
 | `⌘F`         | Find in the conversation             |
@@ -357,9 +359,9 @@ Without the prompt box, in the terminal:
 | `⌘C` `⌘V`   | Copy and paste files with Finder                        |
 | `⌥⌘C`       | Copy the path                                           |
 | `⌃Space`    | Context menu in the tree (right-click too)              |
-| `⌘L` / `⌘E` | To the tree / to the editor                             |
+| `⌘L` / `⌘P` | To the tree / to the editor                             |
 | `⌥⌘L`       | Select the open file in the tree                        |
-| `⌘P`        | Switch between View and Edit                            |
+| `⇧⌘P`       | Switch between View and Edit                            |
 | `⌘S`        | Save                                                    |
 | `⌃Space`    | In the editor: Claude completion, or edit the selection |
 | `⌘↵`        | Apply Claude's edit                                     |

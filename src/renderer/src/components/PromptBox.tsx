@@ -36,8 +36,6 @@ interface Props {
   onOpenPalette: () => void
   /** ⌘F — likewise; terminal scrollback search, never Monaco's find widget */
   onFindInTerminal: () => void
-  /** ⌘E — likewise; mission control, never Monaco's find-with-selection */
-  onOpenMission: () => void
   /** ⌘/ — likewise; the help overlay, never Monaco's toggle-comment */
   onShowHelp: () => void
 }
@@ -72,7 +70,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     onEditDoc,
     onOpenPalette,
     onFindInTerminal,
-    onOpenMission,
     onShowHelp
   },
   ref
@@ -97,8 +94,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   openPaletteRef.current = onOpenPalette
   const findInTerminalRef = useRef(onFindInTerminal)
   findInTerminalRef.current = onFindInTerminal
-  const openMissionRef = useRef(onOpenMission)
-  openMissionRef.current = onOpenMission
   const showHelpRef = useRef(onShowHelp)
   showHelpRef.current = onShowHelp
   const colorRef = useRef(onColor)
@@ -549,10 +544,6 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => openPaletteRef.current())
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () =>
       findInTerminalRef.current()
-    )
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => openMissionRef.current())
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE, () =>
-      window.claudeTerm.toggleBoard()
     )
     // ⌘/ is Monaco's toggle-comment — rebind to the Quick How-To overlay
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => showHelpRef.current())

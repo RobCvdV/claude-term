@@ -949,9 +949,8 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   ipcMain.on('tabs:report', (e, tabs: MissionTab[], activeTab: TabId | null, title: string) =>
     windows.reportTabs(e.sender, tabs, activeTab, title)
   )
-  ipcMain.on('mission:toggle', () => services.mission.toggle())
   ipcMain.on('mission:open', () => services.mission.open())
-  ipcMain.on('board:toggle', () => services.board.toggle())
+  ipcMain.on('board:open', () => services.board.open())
   ipcMain.handle('mission:tabs', (): MissionTabs => windows.missionTabs())
   ipcMain.on('tabs:activateGlobal', (_e, tabId: TabId) => windows.activate(tabId))
   ipcMain.on('tabs:selectGlobal', (_e, index: number) => windows.selectGlobal(index))
