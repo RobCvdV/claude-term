@@ -127,7 +127,8 @@ import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { rankPrs } from './pr-data'
 import { repoDownloads } from './downloads'
-import { fetchTodos } from './jira-client'
+import { fetchMyIssues, fetchTodos } from './jira-client'
+import { mapMyJiraIssues } from './work-board-data'
 import { startTicket } from './jira-start'
 import { confirmAndMove } from './board-actions'
 import { jiraLabelsFor, ticketUrl, todoSearchUrl } from '../shared/jira-labels'
@@ -496,6 +497,7 @@ export interface IpcHandles {
 
 /** a /npm line is typed this long after its command, once the prompt is empty again */
 const TYPE_AFTER_COMMAND_MS = 400
+const PICKUP_TICKETS_TTL_MS = 60_000
 
 export function registerIpc(services: AppServices, windows: TerminalWindows): IpcHandles {
   const { ptys, status, checkpoints, parked, queue, notifier } = services
@@ -1312,11 +1314,55 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     ptys.injectPrompt(tabId, text, imageCount ?? 0)
   })
 
+  // /pickup's typeahead: my open tickets (asked once a minute), not started
+  // first, then the folder's to-do list by its Jira labels
+  let mine: { at: number; tickets: { key: string; summary: string; status: string }[] } = {
+    at: 0,
+    tickets: []
+  }
+  const pickupTickets = async (
+    tabId: TabId
+  ): Promise<{ key: string; summary: string; status: string }[]> => {
+    if (Date.now() - mine.at > PICKUP_TICKETS_TTL_MS) {
+      try {
+        // not started, then in progress, then the ones already in review or beyond
+        const rank = { todo: 0, progress: 1 } as Record<string, number>
+        const tickets = mapMyJiraIssues(await fetchMyIssues())
+          .sort((a, b) => (rank[a.category] ?? 2) - (rank[b.category] ?? 2))
+          .map((t) => ({ key: t.key, summary: t.summary, status: t.status }))
+        mine = { at: Date.now(), tickets }
+      } catch {
+        // Jira not connected or out of reach: the to-do list may still answer
+      }
+    }
+    const snap = status.snapshot(tabId)
+    const cwd = snap?.cwd
+    const remote = snap?.git?.remoteUrl ? parseRemote(snap.git.remoteUrl) : null
+    const labels = cwd
+      ? (readProjectSettings(cwd).jiraLabels ?? jiraLabelsFor(remote?.repo || basename(cwd)))
+      : null
+    const todos = labels ? (await fetchTodos(labels)).todos : []
+    const seen = new Set(mine.tickets.map((t) => t.key))
+    return [
+      ...mine.tickets,
+      ...todos
+        .filter((t) => !seen.has(t.key))
+        .map((t) => ({ key: t.key, summary: t.summary, status: 'To Do' }))
+    ]
+  }
+
   // the box's app commands, run or completed for the mod's slash commands
   const modCommands: ModCommandDeps = {
     cwd: (tabId) => status.getCwd(tabId),
     // after the command's own output is drawn, so the `!` lands on an empty prompt
     type: (tabId, text) => setTimeout(() => ptys.write(tabId, text), TYPE_AFTER_COMMAND_MS),
+    submit: (tabId, text) =>
+      setTimeout(() => ptys.injectPrompt(tabId, text), TYPE_AFTER_COMMAND_MS),
+    tickets: (tabId) => pickupTickets(tabId),
+    pickup: async (tabId, key) => {
+      const cwd = status.getCwd(tabId)
+      return cwd ? startTicket(cwd, key, null) : { ok: false, error: 'no working directory' }
+    },
     setColor: (tabId, color) => windows.sendForTab(tabId, 'tab:color', tabId, color),
     createFile: (tabId, path) => createWithFolders(windows.windowOfTab(tabId), tabId, path),
     openInEditor: (tabId, path) => {

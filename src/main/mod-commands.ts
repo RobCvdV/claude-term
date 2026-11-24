@@ -1,5 +1,5 @@
 import { relative } from 'path'
-import type { CreateDocResult, NpmScript, TabId } from '../shared/types'
+import type { CreateDocResult, NpmScript, StartTicketResult, TabId } from '../shared/types'
 import { npmRunLine, scriptKey } from '../shared/npm-script'
 
 /**
@@ -26,7 +26,12 @@ export interface ModCommandDeps {
   cwd(tabId: TabId): string | null
   /** type into Claude Code's input once the command is done (a leading `!` is shell mode) */
   type(tabId: TabId, text: string): void
+  /** send a prompt to the session once the command is done */
+  submit(tabId: TabId, text: string): void
   setColor(tabId: TabId, color: string): void
+  /** tickets to pick up, the likeliest first */
+  tickets(tabId: TabId): Promise<{ key: string; summary: string; status: string }[]>
+  pickup(tabId: TabId, key: string): Promise<StartTicketResult>
   createFile(tabId: TabId, path: string): Promise<CreateDocResult | null>
   openInEditor(tabId: TabId, path: string): void
   switchBranch(
@@ -61,8 +66,21 @@ export const MOD_COMMANDS = [
     description: 'Run an npm script (one folder deep, added folders as repo:script)',
     hint: '<[repo:]script>'
   },
-  { name: 'remove-dir', description: 'Take an added folder back out of this tab', hint: '<folder>' }
+  {
+    name: 'remove-dir',
+    description: 'Take an added folder back out of this tab',
+    hint: '<folder>'
+  },
+  {
+    name: 'pickup',
+    description: 'Start on a Jira ticket: its branch, assigned to you in Active, and a first look',
+    hint: '<ticket>'
+  }
 ] as const
+
+const TICKET_RE = /^[A-Z][A-Z0-9]+-\d+$/
+/** a typeahead, not a search page */
+const MAX_TICKETS = 30
 
 const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'pink', 'off']
 
@@ -107,6 +125,15 @@ export async function runModCommand(
       deps.type(tabId, [base, ...params].join(' ') + ' ')
       return { text: '' }
     }
+    case 'pickup': {
+      const key = arg.split(/\s+/)[0]?.toUpperCase() ?? ''
+      if (!TICKET_RE.test(key)) return { text: 'Usage: /pickup <ticket, e.g. MTX-123>' }
+      const res = await deps.pickup(tabId, key)
+      if (!res.ok) return { text: res.error }
+      deps.submit(tabId, res.prompt)
+      const jira = res.warnings.length ? ` — but Jira: ${res.warnings.join('; ')}` : ''
+      return { text: `${res.created ? 'Created' : 'On'} ${res.branch}${jira}` }
+    }
     case 'remove-dir': {
       if (!arg) return { text: 'Usage: /remove-dir <folder>' }
       const res = deps.removeDir(tabId, arg)
@@ -146,6 +173,11 @@ export async function completeModCommand(
         text: scriptKey(s),
         description: s.command
       }))
+    case 'pickup':
+      return (await deps.tickets(tabId))
+        .filter((t) => t.key.toLowerCase().includes(q) || t.summary.toLowerCase().includes(q))
+        .slice(0, MAX_TICKETS)
+        .map((t) => ({ text: t.key, description: `${t.summary} · ${t.status}` }))
     case 'remove-dir':
       return deps
         .extraDirs(tabId)

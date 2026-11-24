@@ -5,7 +5,19 @@ function deps(over: Partial<ModCommandDeps> = {}): ModCommandDeps {
   return {
     cwd: () => '/p',
     type: vi.fn(),
+    submit: vi.fn(),
     setColor: vi.fn(),
+    tickets: vi.fn(async () => [
+      { key: 'MTX-12', summary: 'Fix the login', status: 'Active' },
+      { key: 'MTX-345', summary: 'Crash on start', status: 'To Do' }
+    ]),
+    pickup: vi.fn(async () => ({
+      ok: true as const,
+      branch: 'bugfix/MTX-12-fix-the-login',
+      created: true,
+      prompt: 'Look at MTX-12',
+      warnings: []
+    })),
     createFile: vi.fn(async () => ({ ok: true as const, path: '/p/docs/a.md' })),
     openInEditor: vi.fn(),
     switchBranch: vi.fn(async () => ({ ok: true, branch: 'feature/x' })),
@@ -48,6 +60,15 @@ describe('runModCommand', () => {
     expect(d.type).toHaveBeenCalledWith('t', '!npm run test --watch ')
   })
 
+  it('/pickup starts the ticket and hands the session its prompt', async () => {
+    const d = deps()
+    const r = await runModCommand(d, 't', 'pickup', 'mtx-12')
+    expect(d.pickup).toHaveBeenCalledWith('t', 'MTX-12')
+    expect(d.submit).toHaveBeenCalledWith('t', 'Look at MTX-12')
+    expect(r.text).toBe('Created bugfix/MTX-12-fix-the-login')
+    expect((await runModCommand(d, 't', 'pickup', 'login')).text).toMatch(/^Usage/)
+  })
+
   it('asks for the argument when it is missing', async () => {
     expect((await runModCommand(deps(), 't', 'switch', '  ')).text).toMatch(/^Usage/)
   })
@@ -68,6 +89,12 @@ describe('completeModCommand', () => {
       'src/',
       'docs/',
       '/dev/mmxlib/'
+    ])
+    expect(await completeModCommand(d, 't', 'pickup', 'mtx-3')).toEqual([
+      { text: 'MTX-345', description: 'Crash on start · To Do' }
+    ])
+    expect((await completeModCommand(d, 't', 'pickup', 'login')).map((s) => s.text)).toEqual([
+      'MTX-12'
     ])
     expect((await completeModCommand(d, 't', 'color', 'o')).map((s) => s.text)).toEqual([
       'orange',

@@ -94,7 +94,9 @@ Settings (or ⌘K → **Use the prompt box**) for an editor under the terminal:
   offers each added folder as a starting point.
 
   Without the box, `/color`, `/add-file`, `/switch`, `/npm` and `/remove-dir` are Claude Code
-  slash commands (from the app's term-bridge mod), with the same argument completion.
+  slash commands (from the app's term-bridge mod), with the same argument completion. So is
+  `/pickup MTX-…`: it completes your open tickets and the folder's to-do list with their titles,
+  then does what **Start Branch** in the Jira dropdown does.
 
 - `@` completes project files (git files, untracked included). `@../`, `@/` and `@~/` browse
   one folder level at a time.
