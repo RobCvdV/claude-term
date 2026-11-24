@@ -250,8 +250,11 @@ function Guide(): React.JSX.Element {
           <code>⌥← ⌥→</code>, <code>⌘⌫ ⌥⌫</code>, <code>⌘Z</code> and <code>⇧Enter</code> work as in
           a text field, <code>⇧</code> with them selects, and pasting an image attaches it. Turn{' '}
           <i>Type prompts in the prompt box</i> on in Settings (or ⌘K → <i>Use the prompt box</i>)
-          for the box and its extras: spell check, app commands like <code>/color</code>, image
-          chips.
+          for the box and its extras: spell check and image chips. The app commands —{' '}
+          <code>/color</code>, <code>/add-file</code>, <code>/switch</code>, <code>/npm</code>,{' '}
+          <code>/remove-dir</code> — work in Claude Code too, with their completion, and{' '}
+          <code>/pickup</code> completes your tickets by key or title and starts on one as Start
+          Branch does.
         </p>
       </section>
       <section>

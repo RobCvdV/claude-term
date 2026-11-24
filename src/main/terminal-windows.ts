@@ -226,6 +226,13 @@ export class TerminalWindows {
     return [...this.owner].filter(([, w]) => w === id).map(([t]) => t)
   }
 
+  /** The terminal window a tab lives in. */
+  windowOfTab(tabId: TabId): BrowserWindow | null {
+    const id = this.owner.get(tabId)
+    const win = id !== undefined ? this.entries.get(id)?.win : undefined
+    return win && !win.isDestroyed() ? win : null
+  }
+
   /** tab-scoped traffic: to the owning window, or held while the tab moves */
   sendForTab(tabId: TabId, channel: string, ...args: unknown[]): void {
     const held = this.transit.get(tabId)

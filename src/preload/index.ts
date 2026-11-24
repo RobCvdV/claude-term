@@ -96,6 +96,8 @@ export interface ClaudeTermApi {
   ): Promise<{ ok: true; dir: string } | { ok: false; error: string }>
   /** "Open in New Tab…" was picked in the folder context menu */
   onOpenFolderTab(cb: (dir: string, launch?: TabLaunch, resume?: string | null) => void): () => void
+  /** /color typed straight into Claude Code */
+  onTabColor(cb: (tabId: TabId, color: string) => void): () => void
   /** open PRs of every workspace repo, grouped by folder (max 10 per repo) */
   listPrs(tabId: TabId): Promise<PrGroup[]>
   /** to-do tickets of every workspace repo that has Jira labels */
@@ -354,6 +356,7 @@ const api: ClaudeTermApi = {
   extraDirs: (tabId) => ipcRenderer.invoke('dirs:extra', tabId),
   removeDir: (tabId, dir) => ipcRenderer.invoke('dirs:remove', tabId, dir),
   onOpenFolderTab: (cb) => subscribe('folder:openTab', cb),
+  onTabColor: (cb) => subscribe('tab:color', cb),
   listPrs: (tabId) => ipcRenderer.invoke('prs:list', tabId),
   jiraTodos: (tabId) => ipcRenderer.invoke('jira:todos', tabId),
   setJiraLabels: (tabId, root, labels) => ipcRenderer.invoke('jira:setLabels', tabId, root, labels),

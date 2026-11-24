@@ -15,6 +15,35 @@ let loopGen = 0
 const lastRender: Record<string, number> = {}
 /** Background tasks whose end has been reported (their rows redraw). */
 const endedTasks = new Set<string>()
+/** claude-term's prompt-box commands this session serves, and which of them
+ *  the mod registered (a name Claude Code has built in is only hooked) */
+const appCommands = new Set<string>()
+const registered = new Set<string>()
+
+interface AppCommandSpec {
+  name: string
+  description: string
+  hint?: string
+}
+
+/** Serve claude-term's prompt-box commands as slash commands of this session. */
+async function registerAppCommands($: Engine): Promise<void> {
+  const r = await call($, 'commands', {})
+  const list = Array.isArray(r.commands) ? (r.commands as AppCommandSpec[]) : []
+  for (const c of list) {
+    appCommands.add(c.name)
+    try {
+      await $.command.register({
+        name: c.name,
+        description: `${c.description} (claude-term)`,
+        ...(c.hint ? { argumentHint: c.hint } : {})
+      })
+      registered.add(c.name)
+    } catch {
+      // a built-in of the same name: its run is still hooked below
+    }
+  }
+}
 
 /** The session id after a /clear or /resume has moved the process on to a new one. */
 async function currentId($: Engine): Promise<string> {
@@ -175,6 +204,22 @@ async function probeLoop($: Engine, gen: number): Promise<void> {
   }
 }
 
+/** Run a claude-term command: print its answer and leave the model a note. */
+async function runAppCommand(
+  $: Engine,
+  e: { command: string; args: string },
+  next: () => Promise<{ text?: string }>
+): Promise<{ text?: string; context?: readonly string[] }> {
+  const r = await call($, 'command', { name: e.command, args: e.args })
+  // Claude Code's own command of this name still runs
+  if (!registered.has(e.command)) return next()
+  if (typeof r.text !== 'string') return { text: 'claude-term did not answer' }
+  return {
+    ...(r.text ? { text: r.text } : {}),
+    ...(typeof r.context === 'string' && r.context ? { context: [r.context] } : {})
+  }
+}
+
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
@@ -190,6 +235,7 @@ export const register: Register = (on) => {
     sessionId = String(await $.session.id())
     await report($, 'session.start')
     void probeLoop($, ++loopGen)
+    void registerAppCommands($)
     return r
   })
 
@@ -207,9 +253,20 @@ export const register: Register = (on) => {
   on('command.run', async ($, e, next) => {
     const started = Date.now()
     await report($, 'command.start', { command: e.command, args: e.args })
-    const r = await next(e)
+    const r = appCommands.has(e.command) ? await runAppCommand($, e, () => next(e)) : await next(e)
     await report($, 'command.end', { command: e.command, ms: Date.now() - started })
     return r
+  })
+
+  // argument completion for the app commands: `/switch fea` lists branches
+  on('prompt.autocomplete', async ($, e, next) => {
+    const m = /^\/(\S+)\s/.exec(e.text)
+    const name = m?.[1]
+    if (!m || !name || !appCommands.has(name) || e.start < m[0].length) return next(e)
+    const r = await call($, 'complete', { name, query: e.token })
+    const mine = Array.isArray(r.suggestions) ? (r.suggestions as { text: string }[]) : []
+    const theirs = await next(e)
+    return { suggestions: [...theirs.suggestions, ...mine.filter((s) => s.text)] }
   })
 
   on('prompt.submit', async ($, e, next) => {

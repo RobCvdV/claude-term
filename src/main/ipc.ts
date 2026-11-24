@@ -109,6 +109,12 @@ import { parseFileLink } from '../shared/file-link'
 import { closeDocsWindowForTab, openOrFocusDocsWindow } from './docs-window'
 import { listConfigFiles } from './config-files'
 import { addedDirFromPrompt, mergeAddedDirs } from './added-dirs'
+import {
+  completeModCommand,
+  MOD_COMMANDS,
+  runModCommand,
+  type ModCommandDeps
+} from './mod-commands'
 import { addedFolders, matchExtraDir, type FolderChip } from '../shared/status-folders'
 import { sessionHomeDir } from './session-home'
 import { disposeAll, disposeTab, type TabResources } from './tab-lifecycle'
@@ -121,7 +127,8 @@ import { showFolderContextMenu } from './folder-context-menu'
 import { listOpenPrs, showPrContextMenu } from './pr-list'
 import { rankPrs } from './pr-data'
 import { repoDownloads } from './downloads'
-import { fetchTodos } from './jira-client'
+import { fetchMyIssues, fetchTodos } from './jira-client'
+import { mapMyJiraIssues } from './work-board-data'
 import { startTicket } from './jira-start'
 import { confirmAndMove } from './board-actions'
 import { jiraLabelsFor, ticketUrl, todoSearchUrl } from '../shared/jira-labels'
@@ -333,6 +340,12 @@ export function createServices(windows: TerminalWindows): AppServices {
       status.switchSession(tabId, event.from, String(event.session_id))
       return
     }
+    // a /add-dir typed straight into Claude Code
+    if (event.kind === 'command.start' && event.command === 'add-dir') {
+      const cwd = status.getCwd(tabId)
+      const dir = cwd ? addedDirFromPrompt(`/add-dir ${String(event.args ?? '')}`, cwd) : null
+      if (dir && existsSync(dir)) status.addDirectory(tabId, dir)
+    }
     const isKeyOwnerEvent = event.kind === 'keys' || event.kind === 'session.end'
     if (isKeyOwnerEvent && !speaksForTab(event.session_id, status.snapshot(tabId)?.sessionId)) {
       // once per session and state, so a background agent's heartbeats stay visible but quiet
@@ -481,6 +494,10 @@ export interface IpcHandles {
   disposeTabs: (tabIds: TabId[]) => Promise<void>
   resendStatus: (tabId: TabId) => void
 }
+
+/** a /npm line is typed this long after its command, once the prompt is empty again */
+const TYPE_AFTER_COMMAND_MS = 400
+const PICKUP_TICKETS_TTL_MS = 60_000
 
 export function registerIpc(services: AppServices, windows: TerminalWindows): IpcHandles {
   const { ptys, status, checkpoints, parked, queue, notifier } = services
@@ -662,12 +679,16 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
 
   ipcMain.handle('dirs:extra', (_e, tabId: TabId) => extraDirsOf(tabId))
 
-  ipcMain.handle('dirs:remove', (_e, tabId: TabId, arg: string) => {
+  const removeExtraDir = (
+    tabId: TabId,
+    arg: string
+  ): { ok: true; dir: string } | { ok: false; error: string } => {
     const dir = matchExtraDir(arg, extraDirsOf(tabId))
-    if (!dir) return { ok: false as const, error: 'Not an extra folder of this tab' }
+    if (!dir) return { ok: false, error: 'Not an extra folder of this tab' }
     status.removeDirectory(tabId, dir)
-    return { ok: true as const, dir }
-  })
+    return { ok: true, dir }
+  }
+  ipcMain.handle('dirs:remove', (_e, tabId: TabId, arg: string) => removeExtraDir(tabId, arg))
 
   // The tab is passed so an extra folder can offer "Remove from this tab" —
   // the home folder (and a /cd move) never can.
@@ -1170,7 +1191,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
    * never silently. Null means the user said no; the caller leaves it at that.
    */
   const createWithFolders = async (
-    sender: Electron.WebContents,
+    win: BrowserWindow | null,
     tabId: TabId,
     wanted: string
   ): Promise<CreateDocResult | null> => {
@@ -1180,7 +1201,6 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     if (!planned.ok) return planned
     const { path, missingDirs } = planned.plan
     if (missingDirs.length) {
-      const win = BrowserWindow.fromWebContents(sender)
       const many = missingDirs.length > 1
       const question = {
         type: 'question' as const,
@@ -1199,7 +1219,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   }
 
   ipcMain.handle('docs:create', (e, tabId: TabId, path: string) =>
-    createWithFolders(e.sender, tabId, path)
+    createWithFolders(BrowserWindow.fromWebContents(e.sender), tabId, path)
   )
   // "New file" in the file window: the OS save dialog picks the folder and the
   // name, we create it. Null means the user cancelled — not an error to report.
@@ -1219,7 +1239,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
         ? await dialog.showSaveDialog(win, options)
         : await dialog.showSaveDialog(options)
       if (picked.canceled || !picked.filePath) return null
-      return createWithFolders(e.sender, tabId, picked.filePath)
+      return createWithFolders(win, tabId, picked.filePath)
     }
   )
 
@@ -1248,6 +1268,18 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     return cwd ? listNpmScripts(cwd, query, 30, extraDirsOf(tabId)) : []
   })
 
+  /** The /switch command, whose arg may be `repo:branch`. */
+  const switchForCommand = async (
+    tabId: TabId,
+    arg: string
+  ): Promise<{ ok: boolean; error?: string; branch?: string; repo?: string }> => {
+    const cwd = status.getCwd(tabId)
+    if (!cwd) return { ok: false, error: 'no working directory' }
+    const target = resolveSwitchTarget(status.snapshot(tabId), cwd, arg)
+    const res = await switchBranch(target.root, target.branch)
+    return { ...res, branch: target.branch, repo: target.repo }
+  }
+
   ipcMain.handle('git:switch', async (_e, tabId: TabId, branch: string, root?: string) => {
     // `root` targets one of the tab's OTHER workspace repos (branch menu);
     // only folders the status bar actually points at are allowed
@@ -1255,12 +1287,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
       return { ok: false, error: 'not a workspace folder of this tab' }
     }
     if (root) return switchBranch(root, branch)
-    const cwd = status.getCwd(tabId)
-    if (!cwd) return { ok: false, error: 'no working directory' }
-    // no root: the /switch command, whose arg may be `repo:branch`
-    const target = resolveSwitchTarget(status.snapshot(tabId), cwd, branch)
-    const res = await switchBranch(target.root, target.branch)
-    return { ...res, branch: target.branch, repo: target.repo }
+    return switchForCommand(tabId, branch)
   })
 
   ipcMain.handle('branches:workspace', (_e, tabId: TabId) =>
@@ -1286,6 +1313,95 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
     }
     ptys.injectPrompt(tabId, text, imageCount ?? 0)
   })
+
+  // /pickup's typeahead: my open tickets (asked once a minute), not started
+  // first, then the folder's to-do list by its Jira labels
+  let mine: { at: number; tickets: { key: string; summary: string; status: string }[] } = {
+    at: 0,
+    tickets: []
+  }
+  const pickupTickets = async (
+    tabId: TabId
+  ): Promise<{ key: string; summary: string; status: string }[]> => {
+    if (Date.now() - mine.at > PICKUP_TICKETS_TTL_MS) {
+      try {
+        // not started, then in progress, then the ones already in review or beyond
+        const rank = { todo: 0, progress: 1 } as Record<string, number>
+        const tickets = mapMyJiraIssues(await fetchMyIssues())
+          .sort((a, b) => (rank[a.category] ?? 2) - (rank[b.category] ?? 2))
+          .map((t) => ({ key: t.key, summary: t.summary, status: t.status }))
+        mine = { at: Date.now(), tickets }
+      } catch {
+        // Jira not connected or out of reach: the to-do list may still answer
+      }
+    }
+    const snap = status.snapshot(tabId)
+    const cwd = snap?.cwd
+    const remote = snap?.git?.remoteUrl ? parseRemote(snap.git.remoteUrl) : null
+    const labels = cwd
+      ? (readProjectSettings(cwd).jiraLabels ?? jiraLabelsFor(remote?.repo || basename(cwd)))
+      : null
+    const todos = labels ? (await fetchTodos(labels)).todos : []
+    const seen = new Set(mine.tickets.map((t) => t.key))
+    return [
+      ...mine.tickets,
+      ...todos
+        .filter((t) => !seen.has(t.key))
+        .map((t) => ({ key: t.key, summary: t.summary, status: 'To Do' }))
+    ]
+  }
+
+  // the box's app commands, run or completed for the mod's slash commands
+  const modCommands: ModCommandDeps = {
+    cwd: (tabId) => status.getCwd(tabId),
+    // after the command's own output is drawn, so the `!` lands on an empty prompt
+    type: (tabId, text) => setTimeout(() => ptys.write(tabId, text), TYPE_AFTER_COMMAND_MS),
+    submit: (tabId, text) =>
+      setTimeout(() => ptys.injectPrompt(tabId, text), TYPE_AFTER_COMMAND_MS),
+    tickets: (tabId) => pickupTickets(tabId),
+    pickup: async (tabId, key) => {
+      const cwd = status.getCwd(tabId)
+      return cwd ? startTicket(cwd, key, null) : { ok: false, error: 'no working directory' }
+    },
+    setColor: (tabId, color) => windows.sendForTab(tabId, 'tab:color', tabId, color),
+    createFile: (tabId, path) => createWithFolders(windows.windowOfTab(tabId), tabId, path),
+    openInEditor: (tabId, path) => {
+      const cwd = status.getCwd(tabId)
+      openOrFocusDocsWindow(tabId, 'docs', cwd ? basename(cwd) : 'Docs', { path, edit: true })
+    },
+    switchBranch: (tabId, arg) => switchForCommand(tabId, arg),
+    removeDir: (tabId, arg) => removeExtraDir(tabId, arg),
+    npmScripts: async (tabId, query) => {
+      const cwd = status.getCwd(tabId)
+      return cwd ? listNpmScripts(cwd, query, 30, extraDirsOf(tabId)) : []
+    },
+    branches: async (tabId, query) => {
+      const cwd = status.getCwd(tabId)
+      return cwd ? workspaceBranchChoices(status.snapshot(tabId), cwd, listBranchRefs, query) : []
+    },
+    dirs: async (tabId, query) => {
+      const cwd = status.getCwd(tabId)
+      return cwd ? listDirs(cwd, query) : []
+    },
+    extraDirs: (tabId) => extraDirsOf(tabId)
+  }
+  const text = (v: unknown): string => (typeof v === 'string' ? v : '')
+  const modRequest = status.onModRequest
+  status.onModRequest = async (tabId, action, body) => {
+    if (action === 'commands') return { commands: MOD_COMMANDS }
+    if (action === 'command')
+      return runModCommand(modCommands, tabId, text(body.name), text(body.args))
+    if (action === 'complete') {
+      const suggestions = await completeModCommand(
+        modCommands,
+        tabId,
+        text(body.name),
+        text(body.query)
+      )
+      return { suggestions }
+    }
+    return modRequest(tabId, action, body)
+  }
 
   return {
     loadSession,
