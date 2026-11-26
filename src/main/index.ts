@@ -18,6 +18,7 @@ import { CiPoller } from './ci-status'
 import { recentlyMovedByUs, setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
 import { WorkBoard } from './work-board'
+import { boardDigest } from './companion/board-digest'
 import { BoardWatch } from './board-watch'
 import { startFromCard, worktreeMenu } from './card-session'
 import { confirmAndMove, mergeFromCard, type ActionResult } from './board-actions'
@@ -126,6 +127,10 @@ const board = new WorkBoard({
   onChange: (state) => services.board.send('board:update', state),
   onSwept: (items) => boardWatch.observe(items, services.status.allSnapshots())
 })
+
+// /claudia-board: what needs you, at most a minute old
+services.hub.boardDigest = async () =>
+  boardDigest((await board.current(60_000)).items, services.status.allSnapshots())
 
 // opt-in Chrome DevTools Protocol endpoint for scripted E2E checks; inert
 // unless the env var is set, so normal runs are unaffected. Must be set before

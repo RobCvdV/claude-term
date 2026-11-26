@@ -1,5 +1,5 @@
 import { basename } from 'path'
-import type { ClientFrame, CompanionSession } from 'claude-term-protocol'
+import type { AskKind, BoardDigestItem, ClientFrame, CompanionSession } from 'claude-term-protocol'
 import type { TabId, TabStatus } from '../../shared/types'
 import { addAllowRule } from './allow-rule'
 import type { ConversationFeed } from './conversation-feed'
@@ -71,6 +71,8 @@ export interface CompanionHubDeps {
  */
 export class CompanionHub {
   private pollTimer: NodeJS.Timeout | null = null
+  /** Set once the Work board exists: what in it needs the user, for `board` asks. */
+  boardDigest: (() => Promise<BoardDigestItem[]>) | null = null
 
   constructor(private readonly deps: CompanionHubDeps) {}
 
@@ -160,6 +162,22 @@ export class CompanionHub {
 
   sessionList(): CompanionSession[] {
     return this.deps.snapshots().map((status) => this.session(status))
+  }
+
+  /** Ask the connected assistant devices (Claudia) to look into something.
+   *  Returns how many devices it reached. */
+  ask(ask: AskKind, tabId: TabId): number {
+    const heard = this.deps.server.authenticatedCount()
+    if (ask !== 'board') {
+      this.deps.server.broadcast({ type: 'ask', ask, tabId })
+      return heard
+    }
+    // the board may need a sweep first; the command answers at once regardless
+    const digest = this.boardDigest?.() ?? Promise.resolve([])
+    void digest
+      .catch(() => [])
+      .then((board) => this.deps.server.broadcast({ type: 'ask', ask, tabId, board }))
+    return heard
   }
 
   /** A tab was renamed, opened or closed: the titles devices show may be stale. */

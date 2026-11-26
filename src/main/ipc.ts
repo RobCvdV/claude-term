@@ -1357,6 +1357,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   // the box's app commands, run or completed for the mod's slash commands
   const modCommands: ModCommandDeps = {
     cwd: (tabId) => status.getCwd(tabId),
+    askClaudia: (tabId, ask) => services.hub.ask(ask, tabId),
     // after the command's own output is drawn, so the `!` lands on an empty prompt
     type: (tabId, text) => setTimeout(() => ptys.write(tabId, text), TYPE_AFTER_COMMAND_MS),
     submit: (tabId, text) =>

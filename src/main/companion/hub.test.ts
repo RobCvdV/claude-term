@@ -272,6 +272,32 @@ describe('CompanionHub', () => {
     })
   })
 
+  it('asks the connected devices to look into something', () => {
+    const { hub, server } = setup()
+    expect(hub.ask('waiting', 't1')).toBe(1)
+    expect(server.broadcasts).toContainEqual({ type: 'ask', ask: 'waiting', tabId: 't1' })
+  })
+
+  it('sends what on the board needs the user with a board ask', async () => {
+    const { hub, server } = setup()
+    const item = {
+      id: 'MTX-1',
+      title: 'MTX-1 x',
+      reasons: ['ready to merge'],
+      url: 'u',
+      tabId: null
+    }
+    hub.boardDigest = async () => [item]
+    expect(hub.ask('board', 't1')).toBe(1)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(server.broadcasts).toContainEqual({
+      type: 'ask',
+      ask: 'board',
+      tabId: 't1',
+      board: [item]
+    })
+  })
+
   it('brings a tab to the front on request, and says so for one that is gone', () => {
     const { server, focusTab } = setup()
     server.onFrame('d1', { type: 'focus', tabId: 't1' } as never)

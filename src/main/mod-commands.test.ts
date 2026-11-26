@@ -26,6 +26,7 @@ function deps(over: Partial<ModCommandDeps> = {}): ModCommandDeps {
     branches: vi.fn(async () => [{ key: 'main' }, { key: 'lib:dev', root: '/lib', repo: 'lib' }]),
     dirs: vi.fn(async () => ['src/', 'docs/']),
     extraDirs: () => [{ name: 'mmxlib', path: '/dev/mmxlib' }],
+    askClaudia: vi.fn(() => 1),
     ...over
   }
 }
@@ -67,6 +68,16 @@ describe('runModCommand', () => {
     expect(d.submit).toHaveBeenCalledWith('t', 'Look at MTX-12')
     expect(r.text).toBe('Created bugfix/MTX-12-fix-the-login')
     expect((await runModCommand(d, 't', 'pickup', 'login')).text).toMatch(/^Usage/)
+  })
+
+  it('/claudia-* asks Claudia, or says she is not there', async () => {
+    const d = deps()
+    expect(await runModCommand(d, 't', 'claudia-waiting', '')).toEqual({ text: 'Asked Claudia.' })
+    expect(d.askClaudia).toHaveBeenCalledWith('t', 'waiting')
+    const none = deps({ askClaudia: () => 0 })
+    expect((await runModCommand(none, 't', 'claudia-status', '')).text).toBe(
+      "Claudia isn't connected."
+    )
   })
 
   it('asks for the argument when it is missing', async () => {

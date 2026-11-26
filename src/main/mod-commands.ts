@@ -4,8 +4,9 @@ import { npmRunLine, scriptKey } from '../shared/npm-script'
 
 /**
  * The prompt box's app commands (/color, /add-file, /switch, /npm,
- * /remove-dir) for a tab typing straight into Claude Code: the term-bridge mod
- * registers them as slash commands and asks here to run or complete one.
+ * /remove-dir, /pickup) and Claudia's (/claudia-*) for a tab typing straight
+ * into Claude Code: the term-bridge mod registers them as slash commands and
+ * asks here to run or complete one.
  */
 
 /** What the mod does with a run: print `text` and leave `context` for the model. */
@@ -43,6 +44,8 @@ export interface ModCommandDeps {
   branches(tabId: TabId, query: string): Promise<{ key: string; root?: string; repo?: string }[]>
   dirs(tabId: TabId, query: string): Promise<string[]>
   extraDirs(tabId: TabId): { name: string; path: string }[]
+  /** have Claudia look into something; how many devices heard it */
+  askClaudia(tabId: TabId, ask: 'status' | 'waiting' | 'board'): number
 }
 
 export const MOD_COMMANDS = [
@@ -70,6 +73,21 @@ export const MOD_COMMANDS = [
     name: 'remove-dir',
     description: 'Take an added folder back out of this tab',
     hint: '<folder>'
+  },
+  {
+    name: 'claudia-status',
+    description: 'Claudia: what this session is about and where it is at',
+    hint: ''
+  },
+  {
+    name: 'claudia-waiting',
+    description: 'Claudia: which sessions are waiting for you, one card each',
+    hint: ''
+  },
+  {
+    name: 'claudia-board',
+    description: 'Claudia: what on the Work board needs you, one card each',
+    hint: ''
   },
   {
     name: 'pickup',
@@ -133,6 +151,14 @@ export async function runModCommand(
       deps.submit(tabId, res.prompt)
       const jira = res.warnings.length ? ` — but Jira: ${res.warnings.join('; ')}` : ''
       return { text: `${res.created ? 'Created' : 'On'} ${res.branch}${jira}` }
+    }
+    case 'claudia-status':
+    case 'claudia-waiting':
+    case 'claudia-board': {
+      const ask =
+        name === 'claudia-status' ? 'status' : name === 'claudia-board' ? 'board' : 'waiting'
+      const heard = deps.askClaudia(tabId, ask)
+      return { text: heard ? 'Asked Claudia.' : "Claudia isn't connected." }
     }
     case 'remove-dir': {
       if (!arg) return { text: 'Usage: /remove-dir <folder>' }

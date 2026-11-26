@@ -254,7 +254,9 @@ function Guide(): React.JSX.Element {
           <code>/color</code>, <code>/add-file</code>, <code>/switch</code>, <code>/npm</code>,{' '}
           <code>/remove-dir</code> — work in Claude Code too, with their completion, and{' '}
           <code>/pickup</code> completes your tickets by key or title and starts on one as Start
-          Branch does.
+          Branch does. With Claudia paired, <code>/claudia-status</code> has her say where this
+          session is at, <code>/claudia-waiting</code> which sessions are waiting for you, and{' '}
+          <code>/claudia-board</code> what on the Work board needs you.
         </p>
       </section>
       <section>

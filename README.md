@@ -96,7 +96,10 @@ Settings (or ⌘K → **Use the prompt box**) for an editor under the terminal:
   Without the box, `/color`, `/add-file`, `/switch`, `/npm` and `/remove-dir` are Claude Code
   slash commands (from the app's term-bridge mod), with the same argument completion. So is
   `/pickup MTX-…`: it completes your open tickets and the folder's to-do list with their titles,
-  then does what **Start Branch** in the Jira dropdown does.
+  then does what **Start Branch** in the Jira dropdown does. `/claudia-status`,
+  `/claudia-waiting` and `/claudia-board` ask [Claudia](https://github.com/RobCvdV/ai-face),
+  when she is paired, to tell you where this session is at, which sessions are waiting for
+  you, or what on the Work board needs you.
 
 - `@` completes project files (git files, untracked included). `@../`, `@/` and `@~/` browse
   one folder level at a time.
