@@ -14,6 +14,9 @@ interface Props {
   onClose: () => void
 }
 
+/** how long the size must hold still before the terminal follows it */
+const FIT_SETTLE_MS = 80
+
 export function TerminalPane({
   tabId,
   active,
@@ -42,12 +45,22 @@ export function TerminalPane({
     // fit only once visible; rAF lets the display change land first.
     // Focus is owned by App (it decides terminal vs prompt box on tab switch).
     const raf = requestAnimationFrame(() => fitTerm(tabId))
+    // a burst of sizes (a display waking, a window dragged) is one resize, and
+    // one back to where it was is none: Claude Code redraws on every resize
+    let timer = 0
+    const refit = (): void => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => fitTerm(tabId), FIT_SETTLE_MS)
+    }
     const host = hostRef.current
-    const observer = new ResizeObserver(() => fitTerm(tabId))
+    const observer = new ResizeObserver(refit)
     if (host) observer.observe(host)
+    document.addEventListener('visibilitychange', refit)
     return () => {
       cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
       observer.disconnect()
+      document.removeEventListener('visibilitychange', refit)
     }
   }, [tabId, active])
 
