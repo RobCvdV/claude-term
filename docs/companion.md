@@ -68,6 +68,8 @@ care — Claude Code queues typed input itself.
   in place, so its PTY output is mostly cursor moves and spinner frames. Only the renderer's xterm
   knows what is on screen, so main asks it over `screen:request` / `screen:reply`
   (`src/main/screen-requests.ts`) and gives up rather than hang if no answer comes.
+- **Focus** — a device can bring a tab to the front (`focus` frame), so a desktop companion
+  such as Claudia can take you to the session that waits. Sessions carry the tab's title.
 
 ## Push notifications
 

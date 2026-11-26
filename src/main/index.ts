@@ -222,7 +222,10 @@ app.whenReady().then(async () => {
       services.board.closeForQuit()
     }
   }
-  windows.onTabsChanged = () => services.sendPanels('mission:tabs', windows.missionTabs())
+  windows.onTabsChanged = () => {
+    services.sendPanels('mission:tabs', windows.missionTabs())
+    services.hub.publishSessions()
+  }
   onAppSettings((s) => {
     windows.broadcast('app:settingsChanged', s)
     services.sendPanels('app:settingsChanged', s)

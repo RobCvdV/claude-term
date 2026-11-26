@@ -404,6 +404,15 @@ export class TerminalWindows {
     if (tabId) this.activate(tabId)
   }
 
+  /** the tab's name as its tab bar shows it */
+  titleOf(tabId: TabId): string | null {
+    for (const e of this.entries.values()) {
+      const tab = e.tabs.find((t) => t.tabId === tabId)
+      if (tab) return tab.title
+    }
+    return null
+  }
+
   /** bring the tab's window forward and switch it to the tab */
   activate(tabId: TabId): void {
     const id = this.owner.get(tabId)
