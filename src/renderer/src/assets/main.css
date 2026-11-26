@@ -3084,7 +3084,8 @@ label.settings-row {
   color: var(--orange);
 }
 
-.ci-unknown {
+.ci-unknown,
+.ci-stopped {
   color: var(--fg-dim);
 }
 

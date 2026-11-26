@@ -126,7 +126,7 @@ describe('mapGithubWork', () => {
 })
 
 describe('bitbucketStatusesCi', () => {
-  it('lets a failure win, then a running build, then success', () => {
+  it('lets a failure win, then a running build, then a stopped one, then success', () => {
     const s = (state: string, name = state): object => ({ state, name, url: `u/${name}` })
     expect(bitbucketStatusesCi({ values: [s('SUCCESSFUL'), s('FAILED')] })).toMatchObject({
       state: 'failed',
@@ -135,6 +135,11 @@ describe('bitbucketStatusesCi', () => {
     expect(bitbucketStatusesCi({ values: [s('SUCCESSFUL'), s('INPROGRESS')] })?.state).toBe(
       'running'
     )
+    expect(bitbucketStatusesCi({ values: [s('SUCCESSFUL'), s('STOPPED')] })).toMatchObject({
+      state: 'stopped',
+      url: 'u/STOPPED'
+    })
+    expect(bitbucketStatusesCi({ values: [s('STOPPED'), s('FAILED')] })?.state).toBe('failed')
     expect(bitbucketStatusesCi({ values: [s('SUCCESSFUL')] })?.state).toBe('success')
     expect(bitbucketStatusesCi({ values: [] })).toBe(null)
   })

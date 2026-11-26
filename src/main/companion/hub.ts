@@ -14,7 +14,11 @@ import type { CompanionServer } from './server'
 export const FEED_POLL_MS = 1_000
 
 /** Project a tab's status into what a phone needs to render a list row. */
-export function toSession(status: TabStatus, pendingPromptIds: string[]): CompanionSession {
+export function toSession(
+  status: TabStatus,
+  pendingPromptIds: string[],
+  title?: string
+): CompanionSession {
   return {
     tabId: status.tabId,
     sessionId: status.sessionId,
@@ -27,7 +31,8 @@ export function toSession(status: TabStatus, pendingPromptIds: string[]): Compan
     model: status.payload?.model?.display_name ?? null,
     pendingPromptIds,
     doing: status.activity === 'busy' ? (status.doing ?? null) : null,
-    running: status.running ?? []
+    running: status.running ?? [],
+    ...(title ? { title } : {})
   }
 }
 
@@ -50,6 +55,10 @@ export interface CompanionHubDeps {
   screen: (tabId: TabId) => Promise<string[] | null>
   /** Anything that changes whether a device is waiting on live work. */
   onChanged?: () => void
+  /** The tab's name as its tab bar shows it. */
+  tabTitle?: (tabId: TabId) => string | null
+  /** Bring the tab's window forward and switch to the tab. */
+  focusTab?: (tabId: TabId) => void
 }
 
 /**
@@ -145,12 +154,22 @@ export class CompanionHub {
     this.maybeNotify(status)
     this.deps.server.broadcast({
       type: 'session',
-      session: toSession(status, this.promptIds(status.tabId))
+      session: this.session(status)
     })
   }
 
   sessionList(): CompanionSession[] {
-    return this.deps.snapshots().map((status) => toSession(status, this.promptIds(status.tabId)))
+    return this.deps.snapshots().map((status) => this.session(status))
+  }
+
+  /** A tab was renamed, opened or closed: the titles devices show may be stale. */
+  publishSessions(): void {
+    this.deps.server.broadcast({ type: 'sessions', sessions: this.sessionList() })
+  }
+
+  private session(status: TabStatus): CompanionSession {
+    const title = this.deps.tabTitle?.(status.tabId) ?? undefined
+    return toSession(status, this.promptIds(status.tabId), title)
   }
 
   /**
@@ -297,6 +316,18 @@ export class CompanionHub {
         this.deps.queue.submit(frame.tabId, frame.text)
         return
       }
+
+      case 'focus':
+        if (!this.deps.snapshot(frame.tabId)) {
+          server.sendTo(deviceId, {
+            type: 'error',
+            code: 'no-such-session',
+            message: 'no such tab'
+          })
+          return
+        }
+        this.deps.focusTab?.(frame.tabId)
+        return
 
       default:
         return

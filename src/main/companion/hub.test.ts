@@ -93,6 +93,7 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
   injectPrompt: ReturnType<typeof vi.fn>
   screen: ReturnType<typeof vi.fn>
   addRule: ReturnType<typeof vi.fn>
+  focusTab: ReturnType<typeof vi.fn>
   queue: PromptQueue
   pushed: PushNotice[]
   setPushToken: (token: string | null) => void
@@ -102,6 +103,7 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
   const injectPrompt = vi.fn()
   const screen = vi.fn(async () => SCREEN_ROWS as string[] | null)
   const addRule = vi.fn(() => true)
+  const focusTab = vi.fn()
   let pushToken: string | null = 'ExponentPushToken[test]'
   const pushed: PushNotice[] = []
   const notifier = new Notifier({ hostFocused: () => false })
@@ -134,7 +136,9 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     pairedCount: () => server.paired,
     pushTargets: () => (pushToken ? [{ deviceId: 'd1', token: pushToken }] : []),
     screen,
-    addRule
+    addRule,
+    focusTab,
+    tabTitle: (tabId) => (tabId === 't1' ? 'feat/claudia' : null)
   })
   hub.start()
   return {
@@ -145,6 +149,7 @@ function setup(statuses: TabStatus[] = [tabStatus()]): {
     injectPrompt,
     screen,
     addRule,
+    focusTab,
     queue,
     pushed,
     setPushToken: (token) => (pushToken = token)
@@ -263,8 +268,17 @@ describe('CompanionHub', () => {
     server.onFrame('d1', { type: 'sessions' } as never)
     expect(server.sent[0].frame).toMatchObject({
       type: 'sessions',
-      sessions: [{ tabId: 't1', folder: 'thing' }]
+      sessions: [{ tabId: 't1', folder: 'thing', title: 'feat/claudia' }]
     })
+  })
+
+  it('brings a tab to the front on request, and says so for one that is gone', () => {
+    const { server, focusTab } = setup()
+    server.onFrame('d1', { type: 'focus', tabId: 't1' } as never)
+    expect(focusTab).toHaveBeenCalledWith('t1')
+    server.onFrame('d1', { type: 'focus', tabId: 'nope' } as never)
+    expect(focusTab).toHaveBeenCalledTimes(1)
+    expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
   })
 
   it('lists a prompt against the session that is blocked on it', () => {

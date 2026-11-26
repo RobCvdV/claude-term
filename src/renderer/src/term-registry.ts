@@ -375,11 +375,18 @@ export function terminalAtNormalInput(tabId: TabId): boolean {
   return rows
 }
 
+/** Below this the size is a window in transit (display asleep, minimizing),
+ *  not one to redraw Claude Code for: its leftovers would stay on screen. */
+const MIN_COLS = 20
+const MIN_ROWS = 5
+
 /** Safe to call only while the container is visible (xterm mis-measures when hidden). */
 export function fitTerm(tabId: TabId): void {
   const entry = entries.get(tabId)
   if (!entry) return
-  if (entry.containerEl.offsetParent === null) return
+  if (entry.containerEl.offsetParent === null || document.hidden) return
+  const dims = entry.fit.proposeDimensions()
+  if (!dims || dims.cols < MIN_COLS || dims.rows < MIN_ROWS) return
   entry.fit.fit()
 }
 
