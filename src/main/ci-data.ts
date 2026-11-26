@@ -11,6 +11,8 @@ export function jenkinsCiState(body: { building?: boolean; result?: string | nul
     case 'FAILURE':
     case 'UNSTABLE':
       return 'failed'
+    case 'ABORTED':
+      return 'stopped'
     default:
       return 'unknown'
   }
@@ -30,6 +32,8 @@ export function actionsCiState(runs: { status?: string; conclusion?: string | nu
     case 'timed_out':
     case 'startup_failure':
       return 'failed'
+    case 'cancelled':
+      return 'stopped'
     default:
       return 'unknown'
   }
@@ -43,6 +47,7 @@ export function circleCiCiState(workflows: { status?: string }[]): CiState {
   if (statuses.some((s) => s === 'failed' || s === 'error' || s === 'failing')) return 'failed'
   if (statuses.some((s) => s === 'on_hold')) return 'held'
   if (statuses.every((s) => s === 'success')) return 'success'
+  if (statuses.some((s) => s === 'canceled')) return 'stopped'
   return 'unknown'
 }
 
@@ -77,7 +82,7 @@ export const circleJobDone = (s: string | undefined): boolean => !!s && !CIRCLE_
 export const actionsJobDone = (s: string | undefined): boolean => s === 'completed'
 
 /** Bitbucket commit statuses (Jenkins, CircleCI, Pipelines all report here):
- *  any failure wins, then anything still running, then all passed. */
+ *  any failure wins, then anything still running, then an aborted build, then all passed. */
 export function bitbucketStatusesCi(body: unknown): BoardCi | null {
   const rows = (
     (body as { values?: { state?: string; name?: string; url?: string }[] }).values ?? []
@@ -85,10 +90,11 @@ export function bitbucketStatusesCi(body: unknown): BoardCi | null {
   if (!rows.length) return null
   const pick = (state: string): (typeof rows)[number] | undefined =>
     rows.find((r) => r.state === state)
-  const failed = pick('FAILED') ?? pick('STOPPED')
+  const failed = pick('FAILED')
   const running = pick('INPROGRESS')
-  const row = failed ?? running ?? rows[0]
-  const state: CiState = failed ? 'failed' : running ? 'running' : 'success'
+  const stopped = pick('STOPPED')
+  const row = failed ?? running ?? stopped ?? rows[0]
+  const state: CiState = failed ? 'failed' : running ? 'running' : stopped ? 'stopped' : 'success'
   return { state, url: row.url!, name: row.name || 'build' }
 }
 

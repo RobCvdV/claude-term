@@ -104,8 +104,8 @@ export interface TicketStatus {
   assignee: string | null
 }
 
-/** `held`: waiting on a manual approval (CircleCI on_hold) */
-export type CiState = 'success' | 'failed' | 'running' | 'held' | 'unknown'
+/** `held`: waiting on a manual approval (CircleCI on_hold); `stopped`: aborted before it finished */
+export type CiState = 'success' | 'failed' | 'running' | 'held' | 'stopped' | 'unknown'
 export type CiProvider = 'jenkins' | 'circleci' | 'actions'
 
 /** Latest CI build state for a tab's repo+branch, from the background poller. */
