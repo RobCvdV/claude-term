@@ -95,6 +95,13 @@ export class WorkBoard {
     void this.sweep()
   }
 
+  /** The board as of at most `maxAgeMs` ago, sweeping first when it is older. */
+  async current(maxAgeMs: number): Promise<WorkBoardState> {
+    const at = this.state.sweptAt
+    if (!at || Date.now() - at > maxAgeMs) await this.sweep()
+    return this.state
+  }
+
   /** Reviews or settings changed: rebuild the cards without fetching. */
   rejoin(): void {
     this.publish({ items: this.join() })
