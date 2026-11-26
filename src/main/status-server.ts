@@ -68,6 +68,8 @@ interface TabState {
   background?: RunningWork[]
   /** when the tab last went to needs-attention */
   attentionSince?: number
+  /** the mod says a dialog holds Claude Code's keys */
+  dialogOpen?: boolean
 }
 
 /**
@@ -560,6 +562,12 @@ export class StatusServer {
     this.onUpdate(tab.status)
   }
 
+  /** The mod saw a dialog take Claude Code's keys. */
+  noteDialogKeys(tabId: TabId): void {
+    const tab = this.tabs.get(tabId)
+    if (tab) tab.dialogOpen = true
+  }
+
   /** A dialog the mod holds for a phone is up. */
   markDialogOpen(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
@@ -578,6 +586,7 @@ export class StatusServer {
    */
   dialogClosed(tabId: TabId): void {
     const tab = this.tabs.get(tabId)
+    if (tab) tab.dialogOpen = false
     if (!tab || this.frozen || tab.status.activity !== 'needs-attention') return
     // a report sampled before the dialog was drawn says nothing about it
     if (Date.now() - (tab.attentionSince ?? 0) < DIALOG_GRACE_MS) return
@@ -760,6 +769,11 @@ export class StatusServer {
     }
     const next = map[name]
     if (!next) return
+    // a parallel tool call or a subagent finishing while a dialog is still up
+    // is not the dialog being answered
+    if (name === 'PostToolUse' && tab.dialogOpen && tab.status.activity === 'needs-attention') {
+      return
+    }
     tab.status.claudeActive = true
     // Keep the elapsed-timer origin stable across mid-turn tool completions;
     // only (re)start it when entering busy from a non-busy state.

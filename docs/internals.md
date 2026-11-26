@@ -47,6 +47,8 @@ Its events and the app's focus moves are logged side by side to `ui-bridge.log` 
   generic `Notification` hook is deliberately ignored: it also fires after 60 s idle and as a
   post-`Stop` "waiting for input" ping, which would yank focus mid-typing and leave tabs stuck
   in needs-attention.
+- While the mod reports a dialog holding the keys, a `PostToolUse` (a parallel tool call or a
+  subagent finishing) does not move the tab off needs-attention; the dialog closing does.
 - Focus returns to the box on the transition _into_ idle (`Stop`). Git and statusline updates
   carry the same activity and are ignored.
 - Overlays like `/usage`, `/config`, `/help` and `/model` close on `Esc` without firing any

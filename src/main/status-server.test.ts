@@ -431,6 +431,28 @@ describe('endpoint persistence', () => {
   })
 })
 
+describe('StatusServer dialogs', () => {
+  it('stays on needs input while a dialog is up, whatever else finishes', () => {
+    const server = new StatusServer()
+    server.registerTab('t1', '/repo', [], false)
+    hook(server, 't1', 'UserPromptSubmit')
+    hook(server, 't1', 'PermissionRequest')
+    server.noteDialogKeys('t1')
+    // a parallel Read, or a subagent's tool call
+    hook(server, 't1', 'PostToolUse')
+    expect(server.snapshot('t1')?.activity).toBe('needs-attention')
+    server.markTurn('t1', true)
+    ;(server as unknown as { tabs: Map<string, { attentionSince?: number }> }).tabs.get(
+      't1'
+    )!.attentionSince = 0
+    server.dialogClosed('t1')
+    expect(server.snapshot('t1')?.activity).toBe('busy')
+    hook(server, 't1', 'PermissionRequest')
+    hook(server, 't1', 'PostToolUse')
+    expect(server.snapshot('t1')?.activity).toBe('busy')
+  })
+})
+
 describe('StatusServer turn activity', () => {
   function tab(): { server: StatusServer; doing: () => TabStatus['doing'] } {
     const server = new StatusServer()

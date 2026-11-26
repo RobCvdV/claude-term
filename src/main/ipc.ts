@@ -263,7 +263,9 @@ export function createServices(windows: TerminalWindows): AppServices {
         .map((d) => ({ deviceId: d.deviceId, token: d.pushToken as string })),
     pairedCount: () => devices.list().length,
     screen: (tabId) => screens.request(tabId),
-    onChanged: updateSleepBlocker
+    onChanged: updateSleepBlocker,
+    tabTitle: (tabId) => windows.titleOf(tabId),
+    focusTab: (tabId) => windows.activate(tabId)
   })
   hub.start()
   const hubReady = companion.onReady
@@ -361,6 +363,7 @@ export function createServices(windows: TerminalWindows): AppServices {
       send('tab:uiKeys', tabId, event.state, event.text ?? null)
       parked.noteKeys(tabId, String(event.state))
       if (event.state === 'prompt' || event.state === 'typing') status.dialogClosed(tabId)
+      else if (event.state === 'dialog') status.noteDialogKeys(tabId)
     } else if (event.kind === 'session.end') send('tab:uiKeys', tabId, null)
     else if (event.kind === 'turn.start') status.markTurn(tabId, true)
     else if (event.kind === 'turn.complete') status.markTurn(tabId, false)
