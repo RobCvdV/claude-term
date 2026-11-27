@@ -1,5 +1,12 @@
 import { basename } from 'path'
-import type { AskKind, BoardDigestItem, ClientFrame, CompanionSession } from 'claude-term-protocol'
+import type {
+  AskKind,
+  BoardDigestItem,
+  BoardItem,
+  ClientFrame,
+  CompanionSession,
+  ProjectInfo
+} from 'claude-term-protocol'
 import type { TabId, TabStatus } from '../../shared/types'
 import { addAllowRule } from './allow-rule'
 import type { ConversationFeed } from './conversation-feed'
@@ -35,6 +42,15 @@ export function toSession(
     ...(title ? { title } : {})
   }
 }
+
+/** The board, the local projects, and starting sessions, for assistant devices. */
+export interface AssistantHooks {
+  board: () => Promise<BoardItem[]>
+  projects: () => Promise<ProjectInfo[]>
+  open: (req: { folder?: string; itemId?: string; prompt?: string }) => Promise<OpenResult>
+}
+
+export type OpenResult = { ok: true; folder: string | null } | { ok: false; error: string }
 
 export interface CompanionHubDeps {
   server: CompanionServer
@@ -73,6 +89,8 @@ export class CompanionHub {
   private pollTimer: NodeJS.Timeout | null = null
   /** Set once the Work board exists: what in it needs the user, for `board` asks. */
   boardDigest: (() => Promise<BoardDigestItem[]>) | null = null
+  /** Set once the Work board exists: what assistant devices may look at and start. */
+  assistant: AssistantHooks | null = null
 
   constructor(private readonly deps: CompanionHubDeps) {}
 
@@ -332,6 +350,40 @@ export class CompanionHub {
           return
         }
         this.deps.queue.submit(frame.tabId, frame.text)
+        return
+      }
+
+      case 'board':
+      case 'projects': {
+        const assistant = this.assistant
+        if (!assistant) return
+        void (frame.type === 'board' ? assistant.board() : assistant.projects())
+          .catch(() => [])
+          .then((list) =>
+            server.sendTo(
+              deviceId,
+              frame.type === 'board'
+                ? { type: 'board', items: list as BoardItem[] }
+                : { type: 'projects', projects: list as ProjectInfo[] }
+            )
+          )
+        return
+      }
+
+      case 'openSession': {
+        const { requestId, folder, itemId, prompt } = frame
+        const refuse = (message: string): void =>
+          server.sendTo(deviceId, { type: 'error', code: 'not-started', message })
+        if (!this.assistant) return refuse('this host cannot start sessions')
+        if (!folder === !itemId) return refuse('give a folder or a board item, not both')
+        void this.assistant
+          .open({ folder, itemId, prompt })
+          .catch((err: unknown) => ({ ok: false as const, error: String(err) }))
+          .then((res) =>
+            res.ok
+              ? server.sendTo(deviceId, { type: 'sessionOpened', requestId, folder: res.folder })
+              : refuse(res.error)
+          )
         return
       }
 

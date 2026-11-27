@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BoardPr, TabStatus, WorkItem } from '../../shared/types'
-import { boardDigest, MAX_DIGEST } from './board-digest'
+import { boardDigest, boardItems, MAX_DIGEST } from './board-digest'
 
 const pr = (over: Partial<BoardPr> = {}): BoardPr => ({
   url: 'https://bitbucket.org/ws/repo/pull-requests/5',
@@ -39,6 +39,26 @@ const item = (key: string, over: Partial<WorkItem> = {}): WorkItem => ({
   warning: null,
   plan: null,
   ...over
+})
+
+describe('boardItems', () => {
+  it('lists every lane, with reasons only where it needs you', () => {
+    const items = boardItems(
+      [
+        item('MTX-1', { prs: [pr({ ci: { state: 'failed', url: 'u', name: 'Build #9' } })] }),
+        item('MTX-2', { starts: [{ root: '/src/app', branch: null, sure: true }] })
+      ],
+      []
+    )
+    expect(items.map((i) => [i.id, i.lane, i.startable])).toEqual([
+      ['MTX-1', 'needs-you', false],
+      ['MTX-2', 'in-progress', true]
+    ])
+    expect(items[0].reasons[0]).toBe('PR #5: Build #9 failed')
+    expect(items[0].prs[0].ci).toEqual({ state: 'failed', name: 'Build #9' })
+    expect(items[1].reasons).toEqual([])
+    expect(items[1].title).toBe('MTX-2 Fix the thing')
+  })
 })
 
 describe('boardDigest', () => {

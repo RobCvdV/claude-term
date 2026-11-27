@@ -70,6 +70,9 @@ care — Claude Code queues typed input itself.
   (`src/main/screen-requests.ts`) and gives up rather than hang if no answer comes.
 - **Focus** — a device can bring a tab to the front (`focus` frame), so a desktop companion
   such as Claudia can take you to the session that waits. Sessions carry the tab's title.
+- **Assistant requests** (protocol 0.11) — `board` returns the whole Work board, `projects` the
+  local clones, and `openSession` starts a session in one of those folders (or an open tab's) with
+  a first prompt, or for a board item the way its ▶ session does.
 
 ## Push notifications
 

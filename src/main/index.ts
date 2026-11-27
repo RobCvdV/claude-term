@@ -18,7 +18,8 @@ import { CiPoller } from './ci-status'
 import { recentlyMovedByUs, setTicketFetcher } from './ticket-status'
 import { ReviewQueue } from './review-queue'
 import { WorkBoard } from './work-board'
-import { boardDigest } from './companion/board-digest'
+import { boardDigest, boardItems } from './companion/board-digest'
+import { isWorktree } from './work-start'
 import { BoardWatch } from './board-watch'
 import { startFromCard, worktreeMenu } from './card-session'
 import { confirmAndMove, mergeFromCard, type ActionResult } from './board-actions'
@@ -248,6 +249,37 @@ app.whenReady().then(async () => {
     ptys: services.ptys,
     status: services.status,
     refresh: () => board.refresh()
+  }
+  services.hub.assistant = {
+    board: async () =>
+      boardItems((await board.current(60_000)).items, services.status.allSnapshots()),
+    projects: async () => {
+      await board.current(10 * 60_000)
+      return board.projects().map((r) => ({
+        folder: r.root,
+        repo: `${r.ref.owner}/${r.ref.repo}`,
+        worktree: isWorktree(r.root)
+      }))
+    },
+    open: async ({ folder, itemId, prompt }) => {
+      const win = windows.focusedOrPrimary()
+      if (itemId) {
+        const res = await startFromCard(cardDeps, win, itemId, false, prompt)
+        return res.ok
+          ? { ok: true, folder: null }
+          : { ok: false, error: res.error ?? 'not started' }
+      }
+      // only where sessions already work: a known clone, or an open tab's folder
+      const known = new Set([
+        ...board.projects().map((r) => r.root),
+        ...services.status.allSnapshots().map((s) => s.cwd)
+      ])
+      if (!folder || !known.has(folder)) return { ok: false, error: 'not a known project folder' }
+      if (!win) return { ok: false, error: 'no terminal window' }
+      bringForward(win)
+      win.webContents.send('folder:openTab', folder, { prompt })
+      return { ok: true, folder }
+    }
   }
   ipcMain.on('board:replan', () => board.replan())
   ipcMain.handle('board:worktrees', (e) =>

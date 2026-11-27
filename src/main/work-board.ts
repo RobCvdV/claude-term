@@ -230,6 +230,11 @@ export class WorkBoard {
     }))
   }
 
+  /** The local clones found on the last sweep. */
+  projects(): LocalRepo[] {
+    return this.repos
+  }
+
   /** Repos a card could start in: every folder a branch was used in, and open tabs'. */
   private seedRoots(): string[] {
     const roots = this.deps.history().map((e) => e.root)
