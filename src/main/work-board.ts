@@ -56,6 +56,8 @@ export class WorkBoard {
   /** finished builds per commit never change; running ones are asked again */
   private builds = new Map<string, BoardCi | null>()
   private repos: LocalRepo[] = []
+  /** the sweep under way, for callers that need its result */
+  private sweepRun: Promise<void> | null = null
   /** ticket key → who has it, for my PRs whose ticket isn't on my name */
   private handedOff = new Map<string, string>()
   private plans = new Map<string, StartPlan | null>()
@@ -100,6 +102,12 @@ export class WorkBoard {
     const at = this.state.sweptAt
     if (!at || Date.now() - at > maxAgeMs) await this.sweep()
     return this.state
+  }
+
+  /** The local clones, found now if no sweep has yet: that needs no Jira or PR fetch. */
+  async localClones(): Promise<LocalRepo[]> {
+    if (!this.repos.length) this.repos = await localRepos(this.seedRoots())
+    return this.repos
   }
 
   /** Reviews or settings changed: rebuild the cards without fetching. */
@@ -159,8 +167,13 @@ export class WorkBoard {
     )
   }
 
-  private async sweep(): Promise<void> {
-    if (this.state.sweeping) return
+  /** One sweep at a time; a caller during one waits for it. */
+  private sweep(): Promise<void> {
+    this.sweepRun ??= this.sweepOnce().finally(() => (this.sweepRun = null))
+    return this.sweepRun
+  }
+
+  private async sweepOnce(): Promise<void> {
     this.publish({ sweeping: true })
     const contexts = this.deps.contexts()
     const errors: string[] = []
@@ -228,11 +241,6 @@ export class WorkBoard {
           : null,
       plan: this.plans.get(item.id) ?? null
     }))
-  }
-
-  /** The local clones found on the last sweep. */
-  projects(): LocalRepo[] {
-    return this.repos
   }
 
   /** Repos a card could start in: every folder a branch was used in, and open tabs'. */

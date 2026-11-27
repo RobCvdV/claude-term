@@ -253,14 +253,12 @@ app.whenReady().then(async () => {
   services.hub.assistant = {
     board: async () =>
       boardItems((await board.current(60_000)).items, services.status.allSnapshots()),
-    projects: async () => {
-      await board.current(10 * 60_000)
-      return board.projects().map((r) => ({
+    projects: async () =>
+      (await board.localClones()).map((r) => ({
         folder: r.root,
         repo: `${r.ref.owner}/${r.ref.repo}`,
         worktree: isWorktree(r.root)
-      }))
-    },
+      })),
     open: async ({ folder, itemId, prompt }) => {
       const win = windows.focusedOrPrimary()
       if (itemId) {
@@ -271,7 +269,7 @@ app.whenReady().then(async () => {
       }
       // only where sessions already work: a known clone, or an open tab's folder
       const known = new Set([
-        ...board.projects().map((r) => r.root),
+        ...(await board.localClones()).map((r) => r.root),
         ...services.status.allSnapshots().map((s) => s.cwd)
       ])
       if (!folder || !known.has(folder)) return { ok: false, error: 'not a known project folder' }
