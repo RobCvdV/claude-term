@@ -138,6 +138,7 @@ import { RateStore } from './rate-store'
 import { BranchHistory } from './branch-history'
 import { reflogBranches } from './branch-backfill'
 import { parseRemote, type RepoRef } from '../shared/repo-links'
+import { summonClaudia } from './claudia'
 import type {
   JiraTodoGroup,
   TabLaunch,
@@ -1358,6 +1359,7 @@ export function registerIpc(services: AppServices, windows: TerminalWindows): Ip
   const modCommands: ModCommandDeps = {
     cwd: (tabId) => status.getCwd(tabId),
     askClaudia: (tabId, ask) => services.hub.ask(ask, tabId),
+    summonClaudia: (away) => summonClaudia(away),
     // after the command's own output is drawn, so the `!` lands on an empty prompt
     type: (tabId, text) => setTimeout(() => ptys.write(tabId, text), TYPE_AFTER_COMMAND_MS),
     submit: (tabId, text) =>

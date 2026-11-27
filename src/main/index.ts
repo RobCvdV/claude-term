@@ -27,6 +27,7 @@ import { boardDrift, sessionFor } from '../shared/work-board'
 import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
 import { bringForward, inBackground, keepBackgroundRendering, showWindow } from './background-mode'
+import { claudiaScript, tellClaudia } from './claudia'
 import { E2ePoller } from './e2e-status'
 
 // userData isolation (session.json, zdotdir, forwarder). Must happen before
@@ -356,7 +357,10 @@ app.whenReady().then(async () => {
         }
       }
     },
-    () => frontWindow()?.webContents.send('settings:show')
+    () => frontWindow()?.webContents.send('settings:show'),
+    claudiaScript()
+      ? { summon: () => void tellClaudia(false), dismiss: () => void tellClaudia(true) }
+      : null
   )
 
   // First-run: offer to install the global activity-logging hook (feeds the

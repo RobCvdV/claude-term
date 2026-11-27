@@ -114,7 +114,9 @@ export function installAppMenu(
   onCheckForUpdates: () => void,
   onShowHelp: (section: HelpSection) => void,
   win: WindowActions,
-  onShowSettings: () => void
+  onShowSettings: () => void,
+  /** Claudia's (re)start and send-away, when she is on this Mac */
+  claudia: { summon: () => void; dismiss: () => void } | null
 ): void {
   const settingsItem: MenuItemConstructorOptions = {
     label: 'Settings…',
@@ -135,6 +137,14 @@ export function installAppMenu(
     { label: 'User Guide', click: () => onShowHelp('guide') }
   ]
 
+  const claudiaItems: MenuItemConstructorOptions[] = claudia
+    ? [
+        { label: 'Summon Claudia', click: claudia.summon },
+        { label: 'Send Claudia Away', click: claudia.dismiss },
+        { type: 'separator' }
+      ]
+    : []
+
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -146,6 +156,7 @@ export function installAppMenu(
               { type: 'separator' },
               settingsItem,
               { type: 'separator' },
+              ...claudiaItems,
               { role: 'services' },
               { type: 'separator' },
               { role: 'hide' },

@@ -256,7 +256,9 @@ function Guide(): React.JSX.Element {
           <code>/pickup</code> completes your tickets by key or title and starts on one as Start
           Branch does. With Claudia paired, <code>/claudia-status</code> has her say where this
           session is at, <code>/claudia-waiting</code> which sessions are waiting for you, and{' '}
-          <code>/claudia-board</code> what on the Work board needs you.
+          <code>/claudia-board</code> what on the Work board needs you. <code>/summon-claudia</code>{' '}
+          starts or restarts her (<code>away</code> sends her off), as do <i>Summon Claudia</i> and{' '}
+          <i>Send Claudia Away</i> in the app menu.
         </p>
       </section>
       <section>

@@ -4,7 +4,7 @@ import { npmRunLine, scriptKey } from '../shared/npm-script'
 
 /**
  * The prompt box's app commands (/color, /add-file, /switch, /npm,
- * /remove-dir, /pickup) and Claudia's (/claudia-*) for a tab typing straight
+ * /remove-dir, /pickup) and Claudia's (/claudia-*, /summon-claudia) for a tab typing straight
  * into Claude Code: the term-bridge mod registers them as slash commands and
  * asks here to run or complete one.
  */
@@ -46,6 +46,8 @@ export interface ModCommandDeps {
   extraDirs(tabId: TabId): { name: string; path: string }[]
   /** have Claudia look into something; how many devices heard it */
   askClaudia(tabId: TabId, ask: 'status' | 'waiting' | 'board'): number
+  /** start or restart Claudia, or send her away; what her script said */
+  summonClaudia(away: boolean): Promise<string>
 }
 
 export const MOD_COMMANDS = [
@@ -88,6 +90,11 @@ export const MOD_COMMANDS = [
     name: 'claudia-board',
     description: 'Claudia: what on the Work board needs you, one card each',
     hint: ''
+  },
+  {
+    name: 'summon-claudia',
+    description: 'Claudia: start her, or restart her if she is up ("away" sends her off)',
+    hint: '[away]'
   },
   {
     name: 'pickup',
@@ -159,6 +166,10 @@ export async function runModCommand(
         name === 'claudia-status' ? 'status' : name === 'claudia-board' ? 'board' : 'waiting'
       const heard = deps.askClaudia(tabId, ask)
       return { text: heard ? 'Asked Claudia.' : "Claudia isn't connected." }
+    }
+    case 'summon-claudia': {
+      if (arg && arg !== 'away') return { text: 'Usage: /summon-claudia [away]' }
+      return { text: await deps.summonClaudia(arg === 'away') }
     }
     case 'remove-dir': {
       if (!arg) return { text: 'Usage: /remove-dir <folder>' }
