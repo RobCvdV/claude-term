@@ -83,6 +83,24 @@ async function choose(
   })
 }
 
+const RANK: Record<CloneState['kind'], number> = { here: 0, free: 1, takeover: 2, busy: 9 }
+
+/** The clone an assistant's start uses, without asking: a usable one, sure ones first. */
+export function autoChoice(
+  item: WorkItem,
+  states: CloneState[]
+): { start: BoardStart; state: CloneState } | null {
+  const best = item.starts
+    .map((start, i) => ({
+      start,
+      state: states[i],
+      rank: RANK[states[i].kind] - (start.sure ? 0.5 : 0)
+    }))
+    .filter((c) => c.state.kind !== 'busy')
+    .sort((a, b) => a.rank - b.rank)[0]
+  return best ? { start: best.start, state: best.state } : null
+}
+
 /**
  * "▶ session" on a Work board card. A clone that is sure and usable is used
  * right away; otherwise (or on right-click) a menu shows every clone's state.
@@ -93,7 +111,8 @@ export async function startFromCard(
   deps: CardSessionDeps,
   from: BrowserWindow | null,
   itemId: string,
-  pick: boolean,
+  /** `auto`: an assistant asked; pick a usable clone instead of showing the menu */
+  pick: boolean | 'auto',
   /** added to the first prompt, e.g. what an assistant was asked to have it do */
   extra?: string
 ): Promise<ActionResult> {
@@ -105,7 +124,16 @@ export async function startFromCard(
   const direct = !pick && item.starts[0].sure && states[0].kind !== 'busy'
   const choice = direct
     ? { start: item.starts[0], state: states[0] }
-    : await choose(from, item, states)
+    : pick === 'auto'
+      ? autoChoice(item, states)
+      : await choose(from, item, states)
+  if (!choice && pick === 'auto') {
+    const why = item.starts.map((s, i) => {
+      const st = states[i]
+      return `${basename(s.root)}: ${st.kind === 'busy' ? st.why : st.kind}`
+    })
+    return { ok: false, error: `every clone is busy (${why.join('; ')})` }
+  }
   if (!choice) return { ok: false }
 
   let start: BoardStart
