@@ -23,7 +23,7 @@ import { isWorktree } from './work-start'
 import { BoardWatch } from './board-watch'
 import { startFromCard, worktreeMenu } from './card-session'
 import { confirmAndMove, mergeFromCard, type ActionResult } from './board-actions'
-import { boardDrift } from '../shared/work-board'
+import { boardDrift, sessionFor } from '../shared/work-board'
 import { stopCompletionWorkers } from './claude-complete'
 import { fetchTicketStatus } from './jira-client'
 import { bringForward, inBackground, keepBackgroundRendering, showWindow } from './background-mode'
@@ -262,7 +262,15 @@ app.whenReady().then(async () => {
     open: async ({ folder, itemId, prompt }) => {
       const win = windows.focusedOrPrimary()
       if (itemId) {
-        const res = await startFromCard(cardDeps, win, itemId, false, prompt)
+        const item = boardItem(itemId)
+        if (!item) return { ok: false, error: 'that card is no longer on the board' }
+        // a session already works on it: the job goes there
+        const session = sessionFor(item, services.status.allSnapshots())
+        if (session?.claudeActive && prompt) {
+          services.queue.submit(session.tabId, prompt)
+          return { ok: true, folder: session.cwd }
+        }
+        const res = await startFromCard(cardDeps, win, itemId, 'auto', prompt)
         return res.ok
           ? { ok: true, folder: null }
           : { ok: false, error: res.error ?? 'not started' }
