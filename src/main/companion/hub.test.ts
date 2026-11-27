@@ -307,6 +307,42 @@ describe('CompanionHub', () => {
     expect(server.sent[0].frame).toMatchObject({ type: 'error', code: 'no-such-session' })
   })
 
+  it('answers board and projects requests, and starts sessions only where it may', async () => {
+    const { hub, server } = setup()
+    const open = vi.fn(async (req: { folder?: string }) =>
+      req.folder === '/src/app'
+        ? { ok: true as const, folder: req.folder }
+        : { ok: false as const, error: 'not a known project folder' }
+    )
+    hub.assistant = {
+      board: async () => [],
+      projects: async () => [{ folder: '/src/app', repo: 'ws/app', worktree: false }],
+      open
+    }
+    server.onFrame('d1', { type: 'projects' } as never)
+    server.onFrame('d1', { type: 'openSession', requestId: 'r1', folder: '/src/app' } as never)
+    server.onFrame('d1', { type: 'openSession', folder: '/etc' } as never)
+    server.onFrame('d1', { type: 'openSession', folder: '/src/app', itemId: 'MTX-1' } as never)
+    await new Promise((r) => setTimeout(r, 0))
+    const frames = server.sent.map((s) => s.frame)
+    expect(frames).toContainEqual({
+      type: 'projects',
+      projects: [{ folder: '/src/app', repo: 'ws/app', worktree: false }]
+    })
+    expect(frames).toContainEqual({ type: 'sessionOpened', requestId: 'r1', folder: '/src/app' })
+    expect(frames).toContainEqual({
+      type: 'error',
+      code: 'not-started',
+      message: 'not a known project folder'
+    })
+    expect(frames).toContainEqual({
+      type: 'error',
+      code: 'not-started',
+      message: 'give a folder or a board item, not both'
+    })
+    expect(open).toHaveBeenCalledTimes(2)
+  })
+
   it('lists a prompt against the session that is blocked on it', () => {
     const { hub, parked } = setup()
     const id = park(parked)

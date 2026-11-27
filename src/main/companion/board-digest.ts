@@ -1,4 +1,4 @@
-import type { BoardDigestItem } from 'claude-term-protocol'
+import type { BoardDigestItem, BoardItem } from 'claude-term-protocol'
 import type { TabStatus, WorkItem } from '../../shared/types'
 import { boardDrift, laneOf, mergeable, sessionFor, urgency } from '../../shared/work-board'
 
@@ -26,6 +26,49 @@ export function reasonsFor(item: WorkItem, session: TabStatus | null): string[] 
   return reasons
 }
 
+/** PR titles often carry the key already: "[MTX-1] Fix it" */
+const titled = (item: WorkItem): string =>
+  item.ticket && !item.title.includes(item.ticket.key)
+    ? `${item.ticket.key} ${item.title}`
+    : item.title
+
+/** The whole Work board, every lane, for an assistant to answer "how far is X". */
+export function boardItems(items: WorkItem[], sessions: readonly TabStatus[]): BoardItem[] {
+  return items.map((item) => {
+    const session = sessionFor(item, sessions)
+    const lane = laneOf(item, session)
+    return {
+      id: item.id,
+      kind: item.kind,
+      title: titled(item),
+      url: item.url,
+      lane,
+      ticket: item.ticket
+        ? {
+            key: item.ticket.key,
+            status: item.ticket.status,
+            summary: item.ticket.summary,
+            assignee: item.ticket.assignee
+          }
+        : null,
+      prs: item.prs.map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        repo: pr.repo,
+        branch: pr.branch,
+        review: pr.review,
+        approvals: pr.approvals,
+        draft: pr.draft,
+        ci: pr.ci ? { state: pr.ci.state, name: pr.ci.name } : null
+      })),
+      reasons: lane === 'needs-you' ? reasonsFor(item, session) : [],
+      tabId: session?.tabId ?? null,
+      updated: item.updated,
+      startable: item.starts.length > 0
+    }
+  })
+}
+
 /** The Work board items in "Needs you", for Claudia to go through. */
 export function boardDigest(items: WorkItem[], sessions: readonly TabStatus[]): BoardDigestItem[] {
   return items
@@ -35,11 +78,7 @@ export function boardDigest(items: WorkItem[], sessions: readonly TabStatus[]): 
     .slice(0, MAX_DIGEST)
     .map(({ item, session }) => ({
       id: item.id,
-      // PR titles often carry the key already: "[MTX-1] Fix it"
-      title:
-        item.ticket && !item.title.includes(item.ticket.key)
-          ? `${item.ticket.key} ${item.title}`
-          : item.title,
+      title: titled(item),
       reasons: reasonsFor(item, session),
       url: item.url,
       tabId: session?.tabId ?? null

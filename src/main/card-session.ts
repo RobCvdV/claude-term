@@ -93,7 +93,9 @@ export async function startFromCard(
   deps: CardSessionDeps,
   from: BrowserWindow | null,
   itemId: string,
-  pick: boolean
+  pick: boolean,
+  /** added to the first prompt, e.g. what an assistant was asked to have it do */
+  extra?: string
 ): Promise<ActionResult> {
   const item = deps.item(itemId)
   if (!item) return { ok: false, error: 'the card is no longer on the board' }
@@ -127,7 +129,7 @@ export async function startFromCard(
     return { ok: true }
   }
 
-  const res = await prepareStart(item, start, snaps, note)
+  const res = await prepareStart(item, start, snaps, [note, extra].filter(Boolean).join('\n\n'))
   if (!res.ok) return res
   const launch = { prompt: res.prompt || undefined, setup }
   if (state.kind === 'takeover') {
