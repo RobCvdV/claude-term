@@ -27,6 +27,7 @@ function deps(over: Partial<ModCommandDeps> = {}): ModCommandDeps {
     dirs: vi.fn(async () => ['src/', 'docs/']),
     extraDirs: () => [{ name: 'mmxlib', path: '/dev/mmxlib' }],
     askClaudia: vi.fn(() => 1),
+    summonClaudia: vi.fn(async (away: boolean) => (away ? 'gone' : 'coming')),
     ...over
   }
 }
@@ -78,6 +79,14 @@ describe('runModCommand', () => {
     expect((await runModCommand(none, 't', 'claudia-status', '')).text).toBe(
       "Claudia isn't connected."
     )
+  })
+
+  it('/summon-claudia starts her, or sends her away', async () => {
+    const d = deps()
+    expect((await runModCommand(d, 't', 'summon-claudia', '')).text).toBe('coming')
+    expect((await runModCommand(d, 't', 'summon-claudia', 'away')).text).toBe('gone')
+    expect(d.summonClaudia).toHaveBeenCalledWith(true)
+    expect((await runModCommand(d, 't', 'summon-claudia', 'now')).text).toMatch(/^Usage/)
   })
 
   it('asks for the argument when it is missing', async () => {

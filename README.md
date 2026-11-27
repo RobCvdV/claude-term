@@ -99,7 +99,9 @@ Settings (or ⌘K → **Use the prompt box**) for an editor under the terminal:
   then does what **Start Branch** in the Jira dropdown does. `/claudia-status`,
   `/claudia-waiting` and `/claudia-board` ask [Claudia](https://github.com/RobCvdV/ai-face),
   when she is paired, to tell you where this session is at, which sessions are waiting for
-  you, or what on the Work board needs you.
+  you, or what on the Work board needs you. `/summon-claudia` starts her, or restarts her
+  (`away` sends her off), as do **Summon Claudia** and **Send Claudia Away** in the app
+  menu.
 
 - `@` completes project files (git files, untracked included). `@../`, `@/` and `@~/` browse
   one folder level at a time.
